@@ -28,4 +28,3 @@ export function ConnectWalletButton() {
         : "Connect Wallet"}
     </button>
   );
-}

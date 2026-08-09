@@ -18,6 +18,22 @@ type Institution = {
   code: string;
 };
 
+type CryptoOption = {
+  symbol: string;
+  name: string;
+};
+
+const CRYPTO_OPTIONS: CryptoOption[] = [
+  {
+    symbol: "USDT",
+    name: "Tether USD",
+  },
+  {
+    symbol: "USDC",
+    name: "USD Coin",
+  },
+];
+
 export default function Home() {
   const { authenticated } = usePrivy();
 
@@ -46,7 +62,21 @@ export default function Home() {
 
   const [amount, setAmount] = useState("");
 
+  // Crypto state
+  const [selectedCrypto, setSelectedCrypto] =
+    useState<CryptoOption | null>(null);
+
+  const [cryptoDropdownOpen, setCryptoDropdownOpen] =
+    useState(false);
+
+  const [cryptoAmount, setCryptoAmount] = useState("");
+
+  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const cryptoDropdownRef =
+    useRef<HTMLDivElement>(null);
 
   /*
    * Fetch Nigerian banks once wallet is connected
@@ -111,6 +141,34 @@ export default function Home() {
         )
       ) {
         setBankDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleClickOutside
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+    };
+  }, []);
+
+  /*
+   * Close crypto dropdown when clicking outside
+   */
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        cryptoDropdownRef.current &&
+        !cryptoDropdownRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setCryptoDropdownOpen(false);
       }
     };
 
@@ -258,6 +316,145 @@ export default function Home() {
 
     setStep(2);
   };
+
+  /*
+   * Select crypto
+   */
+  const handleCryptoSelect = (
+    crypto: CryptoOption
+  ) => {
+    setSelectedCrypto(crypto);
+    setCryptoDropdownOpen(false);
+
+    // Clear previous quote when crypto changes
+    setCryptoAmount("");
+    setQuoteError("");
+  };
+
+  /*
+   * Fetch Paycrest quote
+   */
+  useEffect(() => {
+    if (!selectedCrypto || !amount) {
+      setCryptoAmount("");
+      setQuoteError("");
+      setLoadingQuote(false);
+      return;
+    }
+
+    const nairaAmount = Number(amount);
+
+    if (
+      !Number.isFinite(nairaAmount) ||
+      nairaAmount <= 0
+    ) {
+      setCryptoAmount("");
+      setQuoteError("");
+      setLoadingQuote(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const getQuote = async () => {
+      setLoadingQuote(true);
+      setCryptoAmount("");
+      setQuoteError("");
+
+      try {
+        const response = await fetch(
+          "/api/quote",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              token: selectedCrypto.symbol,
+              nairaAmount,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              "Unable to get crypto quote."
+          );
+        }
+
+        if (
+          !data?.cryptoAmount ||
+          !Number.isFinite(
+            Number(data.cryptoAmount)
+          )
+        ) {
+          throw new Error(
+            "Invalid crypto amount returned."
+          );
+        }
+
+        if (!cancelled) {
+          setCryptoAmount(
+            Number(data.cryptoAmount).toFixed(2)
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error(
+            "Crypto quote failed:",
+            error
+          );
+
+          setCryptoAmount("");
+
+          setQuoteError(
+            error instanceof Error
+              ? error.message
+              : "Unable to get crypto quote."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingQuote(false);
+        }
+      }
+    };
+
+    const timeout = setTimeout(
+      getQuote,
+      500
+    );
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [amount, selectedCrypto]);
+
+  /*
+   * Amount input
+   */
+  const handleAmountChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = event.target.value
+      .replace(/[^0-9.]/g, "");
+
+    setAmount(value);
+    setCryptoAmount("");
+    setQuoteError("");
+  };
+
+  const showPayButton =
+    !!selectedCrypto &&
+    !!amount &&
+    Number(amount) > 0 &&
+    !!cryptoAmount &&
+    !loadingQuote &&
+    !quoteError;
 
   return (
     <main className="relative h-screen overflow-hidden bg-[#050511] text-foreground">
@@ -552,17 +749,77 @@ export default function Home() {
                   </div>
 
                   {/* Crypto Selector */}
-                  <div className="relative mt-5">
+                  <div
+                    ref={cryptoDropdownRef}
+                    className="relative mt-5"
+                  >
                     <button
                       type="button"
+                      onClick={() =>
+                        setCryptoDropdownOpen(
+                          (open) => !open
+                        )
+                      }
                       className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
                     >
-                      <span className="text-muted-foreground">
-                        Select Crypto to pay
+                      <span
+                        className={
+                          selectedCrypto
+                            ? "text-foreground"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {selectedCrypto
+                          ? `${selectedCrypto.symbol} · ${selectedCrypto.name}`
+                          : "Select Crypto to pay"}
                       </span>
 
-                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                      <ChevronDown
+                        className={`h-5 w-5 text-muted-foreground transition-transform ${
+                          cryptoDropdownOpen
+                            ? "rotate-180"
+                            : ""
+                        }`}
+                      />
                     </button>
+
+                    {/* Crypto Dropdown */}
+                    {cryptoDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                        <div className="p-1.5">
+                          {CRYPTO_OPTIONS.map(
+                            (crypto) => (
+                              <button
+                                key={
+                                  crypto.symbol
+                                }
+                                type="button"
+                                onClick={() =>
+                                  handleCryptoSelect(
+                                    crypto
+                                  )
+                                }
+                                className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">
+                                    {crypto.symbol}
+                                  </span>
+                                  <span className="text-[12px] text-muted-foreground">
+                                    {crypto.name}
+                                  </span>
+                                </div>
+
+                                {selectedCrypto?.symbol ===
+                                  crypto.symbol && (
+                                  <Check className="h-4 w-4 text-primary" />
+                                )}
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Amount */}
@@ -573,26 +830,41 @@ export default function Home() {
                       autoComplete="off"
                       placeholder="Enter Amount (₦)"
                       value={amount}
-                      onChange={(event) =>
-                        setAmount(
-                          event.target.value
-                            .replace(
-                              /[^0-9.]/g,
-                              ""
-                            )
-                        )
+                      onChange={
+                        handleAmountChange
                       }
                       className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary sm:h-[56px] sm:px-5 sm:text-[16px]"
                     />
+
+                    {/* Quote loading */}
+                    {loadingQuote && (
+                      <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>
+                          Calculating crypto amount...
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Quote error */}
+                    {quoteError &&
+                      !loadingQuote && (
+                        <div className="mt-2 px-1 text-[13px] text-destructive">
+                          {quoteError}
+                        </div>
+                      )}
                   </div>
 
                   {/* Pay Now */}
-                  <button
-                    type="button"
-                    className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary px-5 text-[15px] font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:h-[56px] sm:text-[16px]"
-                  >
-                    Pay now
-                  </button>
+                  {showPayButton && (
+                    <button
+                      type="button"
+                      className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary px-5 text-[15px] font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:h-[56px] sm:text-[16px]"
+                    >
+                      Pay {cryptoAmount}{" "}
+                      {selectedCrypto?.symbol}
+                    </button>
+                  )}
                 </>
               )}
             </div>

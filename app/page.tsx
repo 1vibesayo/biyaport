@@ -2,12 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  Loader2,
-  Search,
-} from "lucide-react";
+import { Check, ChevronDown, Loader2, Search } from "lucide-react";
 import {
   usePrivy,
   useSendTransaction,
@@ -22,20 +17,12 @@ import {
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
 import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
 
-/* =========================================================
-   BASE / USDT
-========================================================= */
-
 const BASE_CHAIN_ID = 8453;
 
 const BASE_USDT_ADDRESS =
   "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`;
 
 const USDT_DECIMALS = 6;
-
-/* =========================================================
-   TYPES
-========================================================= */
 
 type Institution = {
   name: string;
@@ -55,18 +42,12 @@ type TransactionResult = {
   amount?: string | number;
   senderFee?: string | number;
   transactionFee?: string | number;
+  providerAccount?: any;
   receiveAddress?: string;
-  validUntil?: string;
   providerNetwork?: string;
-  crypto?: string;
-  network?: string;
   transactionHash?: string;
   paymentStatus?: string;
 };
-
-/* =========================================================
-   CRYPTO OPTIONS
-========================================================= */
 
 const CRYPTO_OPTIONS: CryptoOption[] = [
   {
@@ -76,32 +57,18 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
   },
 ];
 
-/* =========================================================
-   PAGE
-========================================================= */
-
 export default function Home() {
   const { authenticated } = usePrivy();
-
   const { wallets } = useWallets();
-
-  const { sendTransaction } =
-    useSendTransaction();
+  const { sendTransaction } = useSendTransaction();
 
   const wallet = wallets[0];
 
-  /* =======================================================
-     GENERAL
-  ======================================================= */
-
   const [step, setStep] = useState(1);
 
-  /* =======================================================
-     BANK
-  ======================================================= */
-
-  const [institutions, setInstitutions] =
-    useState<Institution[]>([]);
+  const [institutions, setInstitutions] = useState<
+    Institution[]
+  >([]);
 
   const [selectedBank, setSelectedBank] =
     useState<Institution | null>(null);
@@ -109,34 +76,20 @@ export default function Home() {
   const [bankDropdownOpen, setBankDropdownOpen] =
     useState(false);
 
-  const [bankSearch, setBankSearch] =
-    useState("");
+  const [bankSearch, setBankSearch] = useState("");
 
-  const [loadingBanks, setLoadingBanks] =
-    useState(false);
+  const [loadingBanks, setLoadingBanks] = useState(false);
 
-  /* =======================================================
-     ACCOUNT
-  ======================================================= */
+  const [accountNumber, setAccountNumber] = useState("");
 
-  const [accountNumber, setAccountNumber] =
-    useState("");
-
-  const [accountName, setAccountName] =
-    useState("");
+  const [accountName, setAccountName] = useState("");
 
   const [verifyingAccount, setVerifyingAccount] =
     useState(false);
 
-  const [accountError, setAccountError] =
-    useState("");
+  const [accountError, setAccountError] = useState("");
 
-  /* =======================================================
-     PAYMENT
-  ======================================================= */
-
-  const [amount, setAmount] =
-    useState("");
+  const [amount, setAmount] = useState("");
 
   const [selectedCrypto, setSelectedCrypto] =
     useState<CryptoOption | null>(null);
@@ -144,18 +97,11 @@ export default function Home() {
   const [cryptoDropdownOpen, setCryptoDropdownOpen] =
     useState(false);
 
-  const [cryptoAmount, setCryptoAmount] =
-    useState("");
+  const [cryptoAmount, setCryptoAmount] = useState("");
 
-  const [loadingQuote, setLoadingQuote] =
-    useState(false);
+  const [loadingQuote, setLoadingQuote] = useState(false);
 
-  const [quoteError, setQuoteError] =
-    useState("");
-
-  /* =======================================================
-     TRANSACTION
-  ======================================================= */
+  const [quoteError, setQuoteError] = useState("");
 
   const [creatingTransaction, setCreatingTransaction] =
     useState(false);
@@ -166,19 +112,12 @@ export default function Home() {
   const [transaction, setTransaction] =
     useState<TransactionResult | null>(null);
 
-  /* =======================================================
-     REFS
-  ======================================================= */
-
-  const bankDropdownRef =
-    useRef<HTMLDivElement>(null);
+  const bankDropdownRef = useRef<HTMLDivElement>(null);
 
   const cryptoDropdownRef =
     useRef<HTMLDivElement>(null);
 
-  /* =======================================================
-     LOAD BANKS
-  ======================================================= */
+  /* ---------------- BANKS ---------------- */
 
   useEffect(() => {
     if (!authenticated) {
@@ -199,11 +138,6 @@ export default function Home() {
 
         const data = await response.json();
 
-        console.log(
-          "BANK RESPONSE:",
-          data
-        );
-
         if (!response.ok) {
           throw new Error(
             data?.error ||
@@ -212,19 +146,15 @@ export default function Home() {
           );
         }
 
-        const banks =
-          Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data)
-            ? data
-            : [];
+        const banks = Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+          ? data
+          : [];
 
         setInstitutions(banks);
       } catch (error) {
-        console.error(
-          "BANK FETCH ERROR:",
-          error
-        );
+        console.error("BANK FETCH ERROR:", error);
       } finally {
         setLoadingBanks(false);
       }
@@ -233,14 +163,10 @@ export default function Home() {
     fetchBanks();
   }, [authenticated]);
 
-  /* =======================================================
-     CLOSE BANK DROPDOWN
-  ======================================================= */
+  /* ---------------- OUTSIDE CLICKS ---------------- */
 
   useEffect(() => {
-    const handleClickOutside = (
-      event: MouseEvent
-    ) => {
+    const handleClick = (event: MouseEvent) => {
       if (
         bankDropdownRef.current &&
         !bankDropdownRef.current.contains(
@@ -249,29 +175,7 @@ export default function Home() {
       ) {
         setBankDropdownOpen(false);
       }
-    };
 
-    document.addEventListener(
-      "mousedown",
-      handleClickOutside
-    );
-
-    return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleClickOutside
-      );
-    };
-  }, []);
-
-  /* =======================================================
-     CLOSE CRYPTO DROPDOWN
-  ======================================================= */
-
-  useEffect(() => {
-    const handleClickOutside = (
-      event: MouseEvent
-    ) => {
       if (
         cryptoDropdownRef.current &&
         !cryptoDropdownRef.current.contains(
@@ -282,39 +186,26 @@ export default function Home() {
       }
     };
 
-    document.addEventListener(
-      "mousedown",
-      handleClickOutside
-    );
+    document.addEventListener("mousedown", handleClick);
 
     return () => {
       document.removeEventListener(
         "mousedown",
-        handleClickOutside
+        handleClick
       );
     };
   }, []);
 
-  /* =======================================================
-     BANK SEARCH
-  ======================================================= */
-
-  const filteredInstitutions =
-    institutions.filter((bank) =>
+  const filteredInstitutions = institutions.filter(
+    (bank) =>
       bank.name
         .toLowerCase()
-        .includes(
-          bankSearch.toLowerCase()
-        )
-    );
+        .includes(bankSearch.toLowerCase())
+  );
 
-  /* =======================================================
-     SELECT BANK
-  ======================================================= */
+  /* ---------------- BANK ---------------- */
 
-  const handleBankSelect = (
-    bank: Institution
-  ) => {
+  const handleBankSelect = (bank: Institution) => {
     setSelectedBank(bank);
     setBankDropdownOpen(false);
     setBankSearch("");
@@ -324,13 +215,9 @@ export default function Home() {
     setAccountError("");
   };
 
-  /* =======================================================
-     VERIFY ACCOUNT
-  ======================================================= */
+  /* ---------------- ACCOUNT ---------------- */
 
-  const verifyAccount = async (
-    value: string
-  ) => {
+  const verifyAccount = async (value: string) => {
     if (
       !selectedBank ||
       value.length !== 10
@@ -348,25 +235,16 @@ export default function Home() {
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            institution:
-              selectedBank.code,
-            accountIdentifier:
-              value,
+            institution: selectedBank.code,
+            accountIdentifier: value,
           }),
         }
       );
 
-      const data =
-        await response.json();
-
-      console.log(
-        "VERIFY ACCOUNT RESPONSE:",
-        data
-      );
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -376,22 +254,18 @@ export default function Home() {
         );
       }
 
-      const verifiedName =
-        data?.data;
+      const verifiedName = data?.data;
 
       if (
         !verifiedName ||
-        typeof verifiedName !==
-          "string"
+        typeof verifiedName !== "string"
       ) {
         throw new Error(
           "Account name could not be retrieved."
         );
       }
 
-      setAccountName(
-        verifiedName
-      );
+      setAccountName(verifiedName);
     } catch (error) {
       console.error(
         "ACCOUNT VERIFICATION ERROR:",
@@ -410,17 +284,12 @@ export default function Home() {
     }
   };
 
-  /* =======================================================
-     ACCOUNT NUMBER
-  ======================================================= */
-
   const handleAccountNumberChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const value =
-      event.target.value
-        .replace(/\D/g, "")
-        .slice(0, 10);
+    const value = event.target.value
+      .replace(/\D/g, "")
+      .slice(0, 10);
 
     setAccountNumber(value);
     setAccountName("");
@@ -430,10 +299,6 @@ export default function Home() {
       verifyAccount(value);
     }
   };
-
-  /* =======================================================
-     NEXT
-  ======================================================= */
 
   const handleNext = () => {
     if (
@@ -447,9 +312,7 @@ export default function Home() {
     setStep(2);
   };
 
-  /* =======================================================
-     SELECT CRYPTO
-  ======================================================= */
+  /* ---------------- CRYPTO ---------------- */
 
   const handleCryptoSelect = (
     crypto: CryptoOption
@@ -463,18 +326,13 @@ export default function Home() {
     setTransactionError("");
   };
 
-  /* =======================================================
-     AMOUNT
-  ======================================================= */
-
   const handleAmountChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const value =
-      event.target.value.replace(
-        /[^0-9.]/g,
-        ""
-      );
+    const value = event.target.value.replace(
+      /[^0-9.]/g,
+      ""
+    );
 
     setAmount(value);
     setCryptoAmount("");
@@ -483,9 +341,7 @@ export default function Home() {
     setTransactionError("");
   };
 
-  /* =======================================================
-     QUOTE
-  ======================================================= */
+  /* ---------------- QUOTE ---------------- */
 
   useEffect(() => {
     if (
@@ -510,25 +366,16 @@ export default function Home() {
           {
             method: "POST",
             headers: {
-              "Content-Type":
-                "application/json",
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              token:
-                selectedCrypto.symbol,
-              nairaAmount:
-                Number(amount),
+              token: selectedCrypto.symbol,
+              nairaAmount: Number(amount),
             }),
           }
         );
 
-        const data =
-          await response.json();
-
-        console.log(
-          "QUOTE RESPONSE:",
-          data
-        );
+        const data = await response.json();
 
         if (!response.ok) {
           throw new Error(
@@ -538,10 +385,7 @@ export default function Home() {
           );
         }
 
-        const value =
-          Number(
-            data?.cryptoAmount
-          );
+        const value = Number(data?.cryptoAmount);
 
         if (
           !Number.isFinite(value) ||
@@ -553,16 +397,11 @@ export default function Home() {
         }
 
         if (!cancelled) {
-          setCryptoAmount(
-            value.toFixed(6)
-          );
+          setCryptoAmount(value.toFixed(6));
         }
       } catch (error) {
         if (!cancelled) {
-          console.error(
-            "QUOTE ERROR:",
-            error
-          );
+          console.error("QUOTE ERROR:", error);
 
           setQuoteError(
             error instanceof Error
@@ -577,340 +416,224 @@ export default function Home() {
       }
     };
 
-    const timeout =
-      setTimeout(
-        getQuote,
-        500
-      );
+    const timeout = setTimeout(getQuote, 500);
 
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [
-    amount,
-    selectedCrypto,
-  ]);
+  }, [amount, selectedCrypto]);
 
-  /* =======================================================
-     CREATE PAYCREST ORDER + SEND USDT
-  ======================================================= */
+  /* ---------------- PAYMENT ---------------- */
 
-  const handleCreateTransaction =
-    async () => {
-      console.log(
-        "========== PAY BUTTON CLICKED =========="
+  const handleCreateTransaction = async () => {
+    if (!wallet?.address) {
+      setTransactionError(
+        "Please connect your wallet first."
+      );
+      return;
+    }
+
+    if (
+      !selectedCrypto ||
+      selectedCrypto.symbol !== "USDT"
+    ) {
+      setTransactionError(
+        "Please select USDT."
+      );
+      return;
+    }
+
+    if (
+      selectedCrypto.network !== "base"
+    ) {
+      setTransactionError(
+        "USDT payments currently use Base."
+      );
+      return;
+    }
+
+    if (
+      !selectedBank ||
+      !accountName ||
+      !accountNumber ||
+      !cryptoAmount
+    ) {
+      setTransactionError(
+        "Some payment information is missing."
+      );
+      return;
+    }
+
+    setCreatingTransaction(true);
+    setTransactionError("");
+    setTransaction(null);
+
+    try {
+      /* 1. CREATE PAYCREST ORDER */
+
+      const response = await fetch(
+        "/api/transaction",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: cryptoAmount,
+            crypto: selectedCrypto.symbol,
+            network: selectedCrypto.network,
+            walletAddress: wallet.address,
+            institution: selectedBank.code,
+            accountNumber,
+            accountName,
+            reference: `biyaport-${Date.now()}`,
+          }),
+        }
       );
 
-      if (!wallet?.address) {
-        setTransactionError(
-          "Please connect your wallet first."
+      const data = await response.json();
+
+      console.log(
+        "TRANSACTION API RESPONSE:",
+        data
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to create Paycrest order."
         );
-        return;
       }
 
-      if (
-        !selectedCrypto ||
-        selectedCrypto.symbol !==
-          "USDT"
-      ) {
-        setTransactionError(
-          "Please select USDT."
+      /* 2. RECEIVE ADDRESS */
+
+      const receiveAddress =
+        data?.receiveAddress ||
+        data?.providerAccount
+          ?.receiveAddress;
+
+      if (!receiveAddress) {
+        throw new Error(
+          "Paycrest did not return a receive address."
         );
-        return;
       }
 
-      if (
-        selectedCrypto.network !==
-        "base"
-      ) {
-        setTransactionError(
-          "USDT payments currently use Base."
+      /* 3. NETWORK */
+
+      const providerNetwork = String(
+        data?.providerNetwork ||
+          data?.providerAccount?.network ||
+          selectedCrypto.network
+      ).toLowerCase();
+
+      if (providerNetwork !== "base") {
+        throw new Error(
+          `Paycrest returned an unexpected network: ${providerNetwork}`
         );
-        return;
       }
 
-      if (
-        !selectedBank ||
-        !accountName ||
-        !accountNumber ||
-        !cryptoAmount
-      ) {
-        setTransactionError(
-          "Some payment information is missing."
+      /* 4. PAYMENT AMOUNT */
+
+      const orderAmount = String(
+        data?.amount ?? cryptoAmount
+      );
+
+      const senderFee = String(
+        data?.senderFee ?? "0"
+      );
+
+      const transactionFee = String(
+        data?.transactionFee ?? "0"
+      );
+
+      const amountUnits = parseUnits(
+        orderAmount,
+        USDT_DECIMALS
+      );
+
+      const senderFeeUnits = parseUnits(
+        senderFee,
+        USDT_DECIMALS
+      );
+
+      const transactionFeeUnits =
+        parseUnits(
+          transactionFee,
+          USDT_DECIMALS
         );
-        return;
+
+      const totalUnits =
+        amountUnits +
+        senderFeeUnits +
+        transactionFeeUnits;
+
+      /* 5. SWITCH TO BASE */
+
+      if (wallet.switchChain) {
+        await wallet.switchChain(
+          BASE_CHAIN_ID
+        );
       }
 
-      setCreatingTransaction(true);
-      setTransactionError("");
-      setTransaction(null);
+      /* 6. ENCODE USDT TRANSFER */
 
-      try {
-        /* -----------------------------------------------
-           1. CREATE PAYCREST ORDER
-        ------------------------------------------------ */
-
-        const response =
-          await fetch(
-            "/api/transaction",
-            {
-              method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body: JSON.stringify({
-                amount:
-                  cryptoAmount,
-
-                crypto:
-                  selectedCrypto.symbol,
-
-                network:
-                  selectedCrypto.network,
-
-                walletAddress:
-                  wallet.address,
-
-                institution:
-                  selectedBank.code,
-
-                accountNumber,
-
-                accountName,
-
-                reference:
-                  `biyaport-${Date.now()}`,
-              }),
-            }
-          );
-
-        const data =
-          await response.json();
-
-        console.log(
-          "TRANSACTION API RESPONSE:",
-          data
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              "Unable to create Paycrest order."
-          );
-        }
-
-        /* -----------------------------------------------
-           2. RECEIVE ADDRESS
-        ------------------------------------------------ */
-
-        const receiveAddress =
-          data?.receiveAddress ||
-          data?.providerAccount
-            ?.receiveAddress;
-
-        if (!receiveAddress) {
-          throw new Error(
-            "Paycrest did not return a receive address."
-          );
-        }
-
-        /* -----------------------------------------------
-           3. NETWORK
-        ------------------------------------------------ */
-
-        const providerNetwork =
-          String(
-            data?.providerNetwork ||
-              data?.providerAccount
-                ?.network ||
-              selectedCrypto.network
-          ).toLowerCase();
-
-        if (
-          providerNetwork !==
-          "base"
-        ) {
-          throw new Error(
-            `Paycrest returned an unexpected network: ${providerNetwork}`
-          );
-        }
-
-        /* -----------------------------------------------
-           4. PAYCREST TOTAL
-           
-           Paycrest order payment:
-           amount + senderFee + transactionFee
-        ------------------------------------------------ */
-
-        const orderAmount =
-          String(
-            data?.amount ??
-              cryptoAmount
-          );
-
-        const senderFee =
-          String(
-            data?.senderFee ??
-              "0"
-          );
-
-        const transactionFee =
-          String(
-            data?.transactionFee ??
-              "0"
-          );
-
-        const amountUnits =
-          parseUnits(
-            orderAmount,
-            USDT_DECIMALS
-          );
-
-        const senderFeeUnits =
-          parseUnits(
-            senderFee,
-            USDT_DECIMALS
-          );
-
-        const transactionFeeUnits =
-          parseUnits(
-            transactionFee,
-            USDT_DECIMALS
-          );
-
-        const totalUnits =
-          amountUnits +
-          senderFeeUnits +
-          transactionFeeUnits;
-
-        console.log(
-          "ORDER AMOUNT:",
-          orderAmount
-        );
-
-        console.log(
-          "SENDER FEE:",
-          senderFee
-        );
-
-        console.log(
-          "TRANSACTION FEE:",
-          transactionFee
-        );
-
-        console.log(
-          "TOTAL USDT:",
-          totalUnits.toString()
-        );
-
-        /* -----------------------------------------------
-           5. SWITCH WALLET TO BASE
-        ------------------------------------------------ */
-
-        if (
-          wallet.switchChain
-        ) {
-          await wallet.switchChain(
-            BASE_CHAIN_ID
-          );
-        }
-
-        /* -----------------------------------------------
-           6. ENCODE USDT TRANSFER
-        ------------------------------------------------ */
-
-        const transferData =
-          encodeFunctionData({
-            abi: erc20Abi,
-
-            functionName:
-              "transfer",
-
-            args: [
-              receiveAddress as `0x${string}`,
-              totalUnits,
-            ],
-          });
-
-        console.log(
-          "USDT CONTRACT:",
-          BASE_USDT_ADDRESS
-        );
-
-        console.log(
-          "PAYCREST ADDRESS:",
-          receiveAddress
-        );
-
-        /* -----------------------------------------------
-           7. PRIVY WALLET POPUP
-        ------------------------------------------------ */
-
-        console.log(
-          "OPENING PRIVY WALLET..."
-        );
-
-        const result =
-          await sendTransaction(
-            {
-              to: BASE_USDT_ADDRESS,
-
-              data: transferData,
-
-              value: 0n,
-
-              chainId:
-                BASE_CHAIN_ID,
-            },
-            {
-              address:
-                wallet.address,
-            }
-          );
-
-        console.log(
-          "TRANSACTION HASH:",
-          result.hash
-        );
-
-        /* -----------------------------------------------
-           8. SUCCESS
-        ------------------------------------------------ */
-
-        setTransaction({
-          ...data,
-
-          transactionHash:
-            result.hash,
-
-          paymentStatus:
-            "submitted",
+      const transferData =
+        encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [
+            receiveAddress as `0x${string}`,
+            totalUnits,
+          ],
         });
-      } catch (error) {
-        console.error(
-          "PAYMENT ERROR:",
-          error
-        );
 
-        setTransactionError(
-          error instanceof Error
-            ? error.message
-            : "Payment failed. Please try again."
-        );
-      } finally {
-        setCreatingTransaction(
-          false
-        );
-      }
-    };
+      /* 7. TRIGGER PRIVY WALLET */
 
-  /* =======================================================
-     PAY BUTTON
-  ======================================================= */
+      const result = await sendTransaction(
+        {
+          to: BASE_USDT_ADDRESS,
+          data: transferData,
+
+          // FIXED:
+          // BigInt literal 0n causes Vercel's
+          // TypeScript target error.
+          value: BigInt(0),
+
+          chainId: BASE_CHAIN_ID,
+        },
+        {
+          address: wallet.address,
+        }
+      );
+
+      console.log(
+        "TRANSACTION HASH:",
+        result.hash
+      );
+
+      /* 8. SUCCESS */
+
+      setTransaction({
+        ...data,
+        transactionHash: result.hash,
+        paymentStatus: "submitted",
+      });
+    } catch (error) {
+      console.error(
+        "PAYMENT ERROR:",
+        error
+      );
+
+      setTransactionError(
+        error instanceof Error
+          ? error.message
+          : "Payment failed. Please try again."
+      );
+    } finally {
+      setCreatingTransaction(false);
+    }
+  };
 
   const showPayButton =
     !!selectedCrypto &&
@@ -920,9 +643,7 @@ export default function Home() {
     !loadingQuote &&
     !quoteError;
 
-  /* =======================================================
-     RENDER
-  ======================================================= */
+  /* ---------------- UI ---------------- */
 
   return (
     <main className="relative h-screen overflow-hidden bg-[#050511] text-foreground">
@@ -957,8 +678,6 @@ export default function Home() {
 
       <div className="relative z-10 flex h-full flex-col">
 
-        {/* HEADER */}
-
         <header className="mx-4 mt-4 flex shrink-0 items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511] p-3 sm:mx-6 sm:mt-6">
 
           <Image
@@ -974,15 +693,11 @@ export default function Home() {
 
         </header>
 
-        {/* CONTENT */}
-
         <section className="flex min-h-0 flex-1 items-center justify-center px-4">
 
           <div className="flex w-full max-w-[590px] flex-col items-center">
 
             <div className="w-full rounded-[16px] border border-border bg-card p-5">
-
-              {/* TITLE */}
 
               <div className="mb-6 flex items-center justify-between">
 
@@ -991,7 +706,6 @@ export default function Home() {
                 </h1>
 
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] bg-input sm:h-12 sm:w-12">
-
                   <Image
                     src="/send-money.png"
                     alt=""
@@ -999,22 +713,15 @@ export default function Home() {
                     height={24}
                     className="h-6 w-6 object-contain"
                   />
-
                 </div>
 
               </div>
 
-              {/* STEP 1 */}
-
               {step === 1 && (
                 <>
 
-                  {/* BANK */}
-
                   <div
-                    ref={
-                      bankDropdownRef
-                    }
+                    ref={bankDropdownRef}
                     className="relative"
                   >
 
@@ -1026,8 +733,7 @@ export default function Home() {
                       }
                       onClick={() =>
                         setBankDropdownOpen(
-                          (open) =>
-                            !open
+                          (open) => !open
                         )
                       }
                       className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:cursor-not-allowed disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
@@ -1071,16 +777,10 @@ export default function Home() {
 
                             <input
                               type="text"
-                              value={
-                                bankSearch
-                              }
-                              onChange={(
-                                event
-                              ) =>
+                              value={bankSearch}
+                              onChange={(event) =>
                                 setBankSearch(
-                                  event
-                                    .target
-                                    .value
+                                  event.target.value
                                 )
                               }
                               placeholder="Search bank"
@@ -1096,14 +796,9 @@ export default function Home() {
                           {filteredInstitutions.length >
                           0 ? (
                             filteredInstitutions.map(
-                              (
-                                bank
-                              ) => (
-
+                              (bank) => (
                                 <button
-                                  key={
-                                    bank.code
-                                  }
+                                  key={bank.code}
                                   type="button"
                                   onClick={() =>
                                     handleBankSelect(
@@ -1114,9 +809,7 @@ export default function Home() {
                                 >
 
                                   <span>
-                                    {
-                                      bank.name
-                                    }
+                                    {bank.name}
                                   </span>
 
                                   {selectedBank?.code ===
@@ -1125,7 +818,6 @@ export default function Home() {
                                   )}
 
                                 </button>
-
                               )
                             )
                           ) : (
@@ -1141,23 +833,17 @@ export default function Home() {
 
                   </div>
 
-                  {/* ACCOUNT NUMBER */}
-
                   <div className="mt-3">
 
                     <input
                       type="text"
                       inputMode="numeric"
                       placeholder="Enter Account number"
-                      value={
-                        accountNumber
-                      }
+                      value={accountNumber}
                       onChange={
                         handleAccountNumberChange
                       }
-                      disabled={
-                        !selectedBank
-                      }
+                      disabled={!selectedBank}
                       className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
                     />
 
@@ -1171,17 +857,13 @@ export default function Home() {
                     {accountName &&
                       !verifyingAccount && (
                         <div className="mt-2 px-1 text-[14px] text-muted-foreground">
-                          {
-                            accountName
-                          }
+                          {accountName}
                         </div>
                       )}
 
                     {accountError && (
                       <div className="mt-2 px-1 text-[13px] text-destructive">
-                        {
-                          accountError
-                        }
+                        {accountError}
                       </div>
                     )}
 
@@ -1193,9 +875,7 @@ export default function Home() {
                     !verifyingAccount && (
                       <button
                         type="button"
-                        onClick={
-                          handleNext
-                        }
+                        onClick={handleNext}
                         className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground hover:opacity-90 sm:h-[56px] sm:text-[16px]"
                       >
                         Next
@@ -1205,12 +885,8 @@ export default function Home() {
                 </>
               )}
 
-              {/* STEP 2 */}
-
               {step === 2 && (
                 <>
-
-                  {/* RECIPIENT */}
 
                   <div className="rounded-[10px] bg-input px-5 py-4">
 
@@ -1219,27 +895,21 @@ export default function Home() {
                       <p>
                         Name:{" "}
                         <span className="font-semibold">
-                          {
-                            accountName
-                          }
+                          {accountName}
                         </span>
                       </p>
 
                       <p>
                         Account no:{" "}
                         <span className="font-semibold">
-                          {
-                            accountNumber
-                          }
+                          {accountNumber}
                         </span>
                       </p>
 
                       <p>
                         Bank Name:{" "}
                         <span className="font-semibold">
-                          {
-                            selectedBank?.name
-                          }
+                          {selectedBank?.name}
                         </span>
                       </p>
 
@@ -1247,12 +917,8 @@ export default function Home() {
 
                   </div>
 
-                  {/* CRYPTO */}
-
                   <div
-                    ref={
-                      cryptoDropdownRef
-                    }
+                    ref={cryptoDropdownRef}
                     className="relative mt-5"
                   >
 
@@ -1260,8 +926,7 @@ export default function Home() {
                       type="button"
                       onClick={() =>
                         setCryptoDropdownOpen(
-                          (open) =>
-                            !open
+                          (open) => !open
                         )
                       }
                       className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
@@ -1295,14 +960,9 @@ export default function Home() {
                         <div className="p-1.5">
 
                           {CRYPTO_OPTIONS.map(
-                            (
-                              crypto
-                            ) => (
-
+                            (crypto) => (
                               <button
-                                key={
-                                  crypto.symbol
-                                }
+                                key={crypto.symbol}
                                 type="button"
                                 onClick={() =>
                                   handleCryptoSelect(
@@ -1315,15 +975,11 @@ export default function Home() {
                                 <div>
 
                                   <div className="font-medium">
-                                    {
-                                      crypto.symbol
-                                    }
+                                    {crypto.symbol}
                                   </div>
 
                                   <div className="text-[12px] text-muted-foreground">
-                                    {
-                                      crypto.name
-                                    }
+                                    {crypto.name}
                                   </div>
 
                                 </div>
@@ -1334,7 +990,6 @@ export default function Home() {
                                 )}
 
                               </button>
-
                             )
                           )}
 
@@ -1345,8 +1000,6 @@ export default function Home() {
 
                   </div>
 
-                  {/* NAIRA */}
-
                   <div className="mt-3">
 
                     <input
@@ -1354,9 +1007,7 @@ export default function Home() {
                       inputMode="decimal"
                       placeholder="Enter Amount (₦)"
                       value={amount}
-                      onChange={
-                        handleAmountChange
-                      }
+                      onChange={handleAmountChange}
                       className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground focus:border-primary sm:h-[56px] sm:px-5 sm:text-[16px]"
                     />
 
@@ -1369,15 +1020,11 @@ export default function Home() {
 
                     {quoteError && (
                       <div className="mt-2 px-1 text-[13px] text-destructive">
-                        {
-                          quoteError
-                        }
+                        {quoteError}
                       </div>
                     )}
 
                   </div>
-
-                  {/* PAY */}
 
                   {showPayButton && (
                     <button
@@ -1403,29 +1050,21 @@ export default function Home() {
                     </button>
                   )}
 
-                  {/* ERROR */}
-
                   {transactionError && (
                     <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
-                      {
-                        transactionError
-                      }
+                      {transactionError}
                     </div>
                   )}
-
-                  {/* SUCCESS */}
 
                   {transaction?.transactionHash && (
                     <div className="mt-4 rounded-[10px] border border-border bg-input p-4">
 
                       <div className="flex items-center gap-2">
-
                         <Check className="h-4 w-4 text-primary" />
 
                         <p className="font-medium">
                           Payment submitted
                         </p>
-
                       </div>
 
                       <p className="mt-3 text-[12px] text-muted-foreground">
@@ -1433,9 +1072,7 @@ export default function Home() {
                       </p>
 
                       <p className="mt-1 break-all text-[12px]">
-                        {
-                          transaction.transactionHash
-                        }
+                        {transaction.transactionHash}
                       </p>
 
                       <p className="mt-3 text-[12px] text-muted-foreground">
@@ -1443,9 +1080,7 @@ export default function Home() {
                       </p>
 
                       <p className="mt-1 break-all text-[12px]">
-                        {
-                          transaction.orderId
-                        }
+                        {transaction.orderId}
                       </p>
 
                     </div>

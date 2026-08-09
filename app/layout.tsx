@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import "./globals.css";
+import { Providers } from "@/components/providers";
 
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",
@@ -8,8 +9,8 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "BiyaPort",
-  description: "The fastest way to send crypto to Nigerian bank accounts.",
+  title: "Biyaport",
+  description: "Send crypto to Nigerian bank accounts.",
 };
 
 export default function RootLayout({
@@ -18,9 +19,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${dmSans.variable} h-full antialiased`}>
-      <body className="min-h-screen bg-background font-sans text-foreground">
-        {children}
+    <html
+      lang="en"
+      className={`${dmSans.variable} h-full antialiased`}
+    >
+      <body className="h-full">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

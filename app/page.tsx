@@ -9,20 +9,24 @@ import {
   Search,
   Send,
 } from "lucide-react";
+
 import {
   usePrivy,
   useSendTransaction,
   useWallets,
 } from "@privy-io/react-auth";
+
 import {
   encodeFunctionData,
   erc20Abi,
   parseUnits,
 } from "viem";
+
 import {
   createPublicClient,
   http,
 } from "viem";
+
 import { base } from "viem/chains";
 
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
@@ -98,7 +102,8 @@ export default function Home() {
   const [verifyingAccount, setVerifyingAccount] =
     useState(false);
 
-  const [accountError, setAccountError] = useState("");
+  const [accountError, setAccountError] =
+    useState("");
 
   const [amount, setAmount] = useState("");
 
@@ -108,23 +113,29 @@ export default function Home() {
   const [cryptoDropdownOpen, setCryptoDropdownOpen] =
     useState(false);
 
-  const [cryptoAmount, setCryptoAmount] = useState("");
+  const [cryptoAmount, setCryptoAmount] =
+    useState("");
 
-  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [loadingQuote, setLoadingQuote] =
+    useState(false);
 
-  const [quoteError, setQuoteError] = useState("");
+  const [quoteError, setQuoteError] =
+    useState("");
 
   const [paymentState, setPaymentState] =
     useState<PaymentState>("form");
 
-  const [paymentError, setPaymentError] = useState("");
+  const [paymentError, setPaymentError] =
+    useState("");
 
   const [transactionHash, setTransactionHash] =
     useState("");
 
-  const [orderId, setOrderId] = useState("");
+  const [orderId, setOrderId] =
+    useState("");
 
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] =
+    useState(60);
 
   const bankDropdownRef =
     useRef<HTMLDivElement | null>(null);
@@ -192,19 +203,26 @@ export default function Home() {
    */
 
   useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node;
+    const handleClick = (
+      event: MouseEvent
+    ) => {
+      const target =
+        event.target as Node;
 
       if (
         bankDropdownRef.current &&
-        !bankDropdownRef.current.contains(target)
+        !bankDropdownRef.current.contains(
+          target
+        )
       ) {
         setBankDropdownOpen(false);
       }
 
       if (
         cryptoDropdownRef.current &&
-        !cryptoDropdownRef.current.contains(target)
+        !cryptoDropdownRef.current.contains(
+          target
+        )
       ) {
         setCryptoDropdownOpen(false);
       }
@@ -230,24 +248,33 @@ export default function Home() {
    */
 
   useEffect(() => {
-    if (paymentState !== "processing") {
+    if (
+      paymentState !== "processing"
+    ) {
       return;
     }
 
     setCountdown(60);
 
-    const interval = setInterval(() => {
-      setCountdown((current) => {
-        if (current <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
+    const interval =
+      setInterval(() => {
+        setCountdown(
+          (current) => {
+            if (current <= 1) {
+              clearInterval(
+                interval
+              );
 
-        return current - 1;
-      });
-    }, 1000);
+              return 0;
+            }
 
-    return () => clearInterval(interval);
+            return current - 1;
+          }
+        );
+      }, 1000);
+
+    return () =>
+      clearInterval(interval);
   }, [paymentState]);
 
   /*
@@ -260,7 +287,9 @@ export default function Home() {
     institutions.filter((bank) =>
       bank.name
         .toLowerCase()
-        .includes(bankSearch.toLowerCase())
+        .includes(
+          bankSearch.toLowerCase()
+        )
     );
 
   const handleBankSelect = (
@@ -313,7 +342,8 @@ export default function Home() {
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -323,18 +353,22 @@ export default function Home() {
         );
       }
 
-      const verifiedName = data?.data;
+      const verifiedName =
+        data?.data;
 
       if (
         !verifiedName ||
-        typeof verifiedName !== "string"
+        typeof verifiedName !==
+          "string"
       ) {
         throw new Error(
           "Account name could not be retrieved."
         );
       }
 
-      setAccountName(verifiedName);
+      setAccountName(
+        verifiedName
+      );
     } catch (error) {
       console.error(
         "ACCOUNT VERIFICATION ERROR:",
@@ -349,25 +383,29 @@ export default function Home() {
           : "Unable to verify account."
       );
     } finally {
-      setVerifyingAccount(false);
+      setVerifyingAccount(
+        false
+      );
     }
   };
 
-  const handleAccountNumberChange = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = event.target.value
-      .replace(/\D/g, "")
-      .slice(0, 10);
+  const handleAccountNumberChange =
+    (
+      event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+      const value =
+        event.target.value
+          .replace(/\D/g, "")
+          .slice(0, 10);
 
-    setAccountNumber(value);
-    setAccountName("");
-    setAccountError("");
+      setAccountNumber(value);
+      setAccountName("");
+      setAccountError("");
 
-    if (value.length === 10) {
-      verifyAccount(value);
-    }
-  };
+      if (value.length === 10) {
+        verifyAccount(value);
+      }
+    };
 
   const handleNext = () => {
     if (
@@ -437,22 +475,23 @@ export default function Home() {
       setCryptoAmount("");
 
       try {
-        const response = await fetch(
-          "/api/quote",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              token:
-                selectedCrypto.symbol,
-              nairaAmount:
-                Number(amount),
-            }),
-          }
-        );
+        const response =
+          await fetch(
+            "/api/quote",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                token:
+                  selectedCrypto.symbol,
+                nairaAmount:
+                  Number(amount),
+              }),
+            }
+          );
 
         const data =
           await response.json();
@@ -498,21 +537,27 @@ export default function Home() {
         }
       } finally {
         if (!cancelled) {
-          setLoadingQuote(false);
+          setLoadingQuote(
+            false
+          );
         }
       }
     };
 
-    const timeout = setTimeout(
-      getQuote,
-      500
-    );
+    const timeout =
+      setTimeout(
+        getQuote,
+        500
+      );
 
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [amount, selectedCrypto]);
+  }, [
+    amount,
+    selectedCrypto,
+  ]);
 
   /*
    * ----------------------------------------------------
@@ -525,16 +570,19 @@ export default function Home() {
       setPaymentError(
         "Please connect your wallet first."
       );
+
       return;
     }
 
     if (
       !selectedCrypto ||
-      selectedCrypto.symbol !== "USDT"
+      selectedCrypto.symbol !==
+        "USDT"
     ) {
       setPaymentError(
         "Please select USDT."
       );
+
       return;
     }
 
@@ -547,43 +595,50 @@ export default function Home() {
       setPaymentError(
         "Some payment information is missing."
       );
+
       return;
     }
 
     setPaymentError("");
-    setPaymentState("processing");
+    setPaymentState(
+      "processing"
+    );
     setCountdown(60);
 
     try {
       /*
+       * ------------------------------------------------
        * CREATE PAYCREST ORDER
+       * ------------------------------------------------
        */
 
-      const response = await fetch(
-        "/api/transaction",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            amount: cryptoAmount,
-            crypto:
-              selectedCrypto.symbol,
-            network:
-              selectedCrypto.network,
-            walletAddress:
-              wallet.address,
-            institution:
-              selectedBank.code,
-            accountNumber,
-            accountName,
-            reference:
-              `biyaport-${Date.now()}`,
-          }),
-        }
-      );
+      const response =
+        await fetch(
+          "/api/transaction",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              amount:
+                cryptoAmount,
+              crypto:
+                selectedCrypto.symbol,
+              network:
+                selectedCrypto.network,
+              walletAddress:
+                wallet.address,
+              institution:
+                selectedBank.code,
+              accountNumber,
+              accountName,
+              reference:
+                `biyaport-${Date.now()}`,
+            }),
+          }
+        );
 
       const data =
         await response.json();
@@ -605,16 +660,20 @@ export default function Home() {
       );
 
       /*
-       * GET PAYCREST RECEIVE ADDRESS
+       * ------------------------------------------------
+       * GET RECEIVE ADDRESS
+       * ------------------------------------------------
        */
 
       const receiveAddress =
         data?.receiveAddress ||
         data?.providerAccount
           ?.receiveAddress ||
-        data?.providerAccount?.address ||
+        data?.providerAccount
+          ?.address ||
         data?.providerAccount ||
-        data?.source?.receiveAddress;
+        data?.source
+          ?.receiveAddress;
 
       if (!receiveAddress) {
         throw new Error(
@@ -623,31 +682,41 @@ export default function Home() {
       }
 
       /*
+       * ------------------------------------------------
        * SWITCH TO BASE
+       * ------------------------------------------------
        */
 
-      if (wallet.switchChain) {
+      if (
+        wallet.switchChain
+      ) {
         await wallet.switchChain(
           BASE_CHAIN_ID
         );
       }
 
       /*
-       * CALCULATE TOTAL USDT
+       * ------------------------------------------------
+       * CALCULATE PAYMENT AMOUNT
+       * ------------------------------------------------
        */
 
-      const orderAmount = String(
-        data?.amount ??
-          cryptoAmount
-      );
+      const orderAmount =
+        String(
+          data?.amount ??
+            cryptoAmount
+        );
 
-      const senderFee = String(
-        data?.senderFee ?? "0"
-      );
+      const senderFee =
+        String(
+          data?.senderFee ??
+            "0"
+        );
 
       const transactionFee =
         String(
-          data?.transactionFee ?? "0"
+          data?.transactionFee ??
+            "0"
         );
 
       const amountUnits =
@@ -674,13 +743,16 @@ export default function Home() {
         transactionFeeUnits;
 
       /*
-       * CREATE ERC20 TRANSFER DATA
+       * ------------------------------------------------
+       * CREATE ERC20 TRANSFER
+       * ------------------------------------------------
        */
 
       const transferData =
         encodeFunctionData({
           abi: erc20Abi,
-          functionName: "transfer",
+          functionName:
+            "transfer",
           args: [
             receiveAddress as `0x${string}`,
             totalUnits,
@@ -688,15 +760,22 @@ export default function Home() {
         });
 
       /*
+       * ------------------------------------------------
        * TRIGGER PRIVY WALLET
+       * ------------------------------------------------
        */
 
       const result =
         await sendTransaction(
           {
-            to: BASE_USDT_ADDRESS,
-            data: transferData,
+            to:
+              BASE_USDT_ADDRESS,
+
+            data:
+              transferData,
+
             value: BigInt(0),
+
             chainId:
               BASE_CHAIN_ID,
           },
@@ -721,10 +800,14 @@ export default function Home() {
         hash
       );
 
-      setTransactionHash(hash);
+      setTransactionHash(
+        hash
+      );
 
       /*
-       * WAIT FOR BASE CONFIRMATION
+       * ------------------------------------------------
+       * WAIT FOR CONFIRMATION
+       * ------------------------------------------------
        */
 
       await publicClient.waitForTransactionReceipt(
@@ -736,17 +819,23 @@ export default function Home() {
       );
 
       /*
-       * PAYMENT SUCCESS
+       * ------------------------------------------------
+       * SUCCESS
+       * ------------------------------------------------
        */
 
-      setPaymentState("success");
+      setPaymentState(
+        "success"
+      );
     } catch (error) {
       console.error(
         "PAYMENT ERROR:",
         error
       );
 
-      setPaymentState("error");
+      setPaymentState(
+        "error"
+      );
 
       setPaymentError(
         error instanceof Error
@@ -763,15 +852,16 @@ export default function Home() {
    */
 
   if (
-    paymentState === "processing"
+    paymentState ===
+    "processing"
   ) {
     return (
       <PaymentShell>
-        <div className="w-full max-w-[590px] py-6">
+        <div className="flex w-full max-w-[590px] items-start justify-center py-8 sm:py-12">
           <div className="w-full rounded-[16px] border border-border bg-card p-6 text-center sm:p-8">
 
+            {/* ROTATING TELEGRAM RING */}
             <div className="relative mx-auto h-[104px] w-[104px]">
-
               <div
                 className="absolute inset-0 rounded-full"
                 style={{
@@ -805,29 +895,31 @@ export default function Home() {
                 ? "1:00"
                 : `0:${String(
                     countdown
-                  ).padStart(2, "0")}`}
+                  ).padStart(
+                    2,
+                    "0"
+                  )}`}
             </div>
 
+            {/* PROGRESS BAR */}
             <div className="mx-auto mt-8 flex w-full max-w-[310px] items-center">
-
               <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
 
-              <div className="relative h-[3px] flex-1 overflow-hidden bg-[#090d24]">
-                <div
-                  className="absolute inset-y-0 left-0 bg-[#1557E8]"
-                  style={{
-                    width: "0%",
-                  }}
-                />
-              </div>
+              <div className="h-[3px] flex-1 bg-[#090d24]" />
 
               <div className="h-3 w-3 shrink-0 rounded-full bg-[#080b1c]" />
 
               <div className="h-[3px] flex-1 bg-[#090d24]" />
 
               <div className="h-3 w-3 shrink-0 rounded-full bg-[#080b1c]" />
-
             </div>
+
+            {orderId && (
+              <p className="mt-8 break-all text-xs text-muted-foreground">
+                Order ID:{" "}
+                {orderId}
+              </p>
+            )}
 
           </div>
         </div>
@@ -854,11 +946,12 @@ export default function Home() {
    */
 
   if (
-    paymentState === "success"
+    paymentState ===
+    "success"
   ) {
     return (
       <PaymentShell>
-        <div className="w-full max-w-[590px] py-6">
+        <div className="flex w-full max-w-[590px] items-start justify-center py-8 sm:py-12">
           <div className="w-full rounded-[16px] border border-border bg-card p-6 text-center sm:p-8">
 
             <div className="mx-auto flex h-[84px] w-[84px] items-center justify-center rounded-full border-2 border-[#1557E8]">
@@ -889,8 +982,8 @@ export default function Home() {
               1:00
             </div>
 
+            {/* COMPLETED PROGRESS */}
             <div className="mx-auto mt-8 flex w-full max-w-[310px] items-center">
-
               <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
 
               <div className="h-[3px] flex-1 bg-[#1557E8]" />
@@ -900,7 +993,6 @@ export default function Home() {
               <div className="h-[3px] flex-1 bg-[#1557E8]" />
 
               <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
-
             </div>
 
             <button
@@ -924,27 +1016,42 @@ export default function Home() {
             <button
               type="button"
               onClick={() => {
-                setPaymentState("form");
+                setPaymentState(
+                  "form"
+                );
+
                 setStep(1);
 
                 setAmount("");
                 setCryptoAmount("");
-                setSelectedCrypto(null);
+                setSelectedCrypto(
+                  null
+                );
 
-                setTransactionHash("");
+                setTransactionHash(
+                  ""
+                );
+
                 setOrderId("");
 
                 setPaymentError("");
 
-                setAccountNumber("");
-                setAccountName("");
-                setSelectedBank(null);
+                setAccountNumber(
+                  ""
+                );
+
+                setAccountName(
+                  ""
+                );
+
+                setSelectedBank(
+                  null
+                );
               }}
               className="mt-6 text-[15px] text-muted-foreground underline underline-offset-4 transition hover:text-white"
             >
               Back Home
             </button>
-
           </div>
         </div>
       </PaymentShell>
@@ -972,420 +1079,426 @@ export default function Home() {
    */
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-[#050511] text-foreground">
-
+    <main className="relative min-h-screen overflow-hidden bg-background">
       <Background />
 
       <div className="relative z-10 flex min-h-screen flex-col">
 
-        <header className="mx-4 mt-4 flex shrink-0 items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511] p-3 sm:mx-6 sm:mt-6">
+        {/* FIXED NAV */}
+        <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
+          <div className="flex h-[60px] items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511] p-3 backdrop-blur-md sm:h-[68px] sm:px-4">
+            <Image
+              src="/biyaport_logo.svg"
+              alt="Biyaport"
+              width={160}
+              height={44}
+              className="h-[36px] w-auto object-contain sm:h-[44px]"
+              priority
+            />
 
-          <Image
-            src="/biyaport_logo.svg"
-            alt="Biyaport"
-            width={160}
-            height={44}
-            className="h-[36px] w-auto object-contain sm:h-[44px]"
-            priority
-          />
-
-          <ConnectWalletButton />
-
+            <ConnectWalletButton />
+          </div>
         </header>
 
-        <section className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-10">
+        {/* SCROLLABLE MAIN CONTENT */}
+        <div className="relative z-10 min-h-screen overflow-y-auto">
+          <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[100px] sm:px-6 sm:pt-[125px]">
 
-          <div className="flex w-full max-w-[590px] flex-col items-center">
+            <div className="flex w-full max-w-[590px] flex-col items-center">
 
-            <div className="w-full rounded-[16px] border border-border bg-card p-5">
+              <div className="w-full rounded-[16px] border border-border bg-card p-5">
 
-              <div className="mb-6 flex items-center justify-between">
+                <div className="mb-6 flex items-center justify-between">
+                  <h1 className="text-[20px] font-semibold tracking-[-0.02em] sm:text-[22px]">
+                    Quick Send
+                  </h1>
 
-                <h1 className="text-[20px] font-semibold tracking-[-0.02em] sm:text-[22px]">
-                  Quick Send
-                </h1>
-
-                <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-input sm:h-12 sm:w-12">
-
-                  <Image
-                    src="/send-money.png"
-                    alt=""
-                    width={24}
-                    height={24}
-                    className="h-6 w-6 object-contain"
-                  />
-
+                  <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-input sm:h-12 sm:w-12">
+                    <Image
+                      src="/send-money.png"
+                      alt=""
+                      width={24}
+                      height={24}
+                      className="h-6 w-6 object-contain"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {step === 1 && (
-                <>
-                  <div
-                    ref={bankDropdownRef}
-                    className="relative"
-                  >
-
-                    <button
-                      type="button"
-                      disabled={
-                        !authenticated ||
-                        loadingBanks
+                {/* STEP 1 */}
+                {step === 1 && (
+                  <>
+                    <div
+                      ref={
+                        bankDropdownRef
                       }
-                      onClick={() =>
-                        setBankDropdownOpen(
-                          (open) => !open
-                        )
-                      }
-                      className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
+                      className="relative"
                     >
-
-                      <span
-                        className={
-                          selectedBank
-                            ? "text-foreground"
-                            : "text-muted-foreground"
+                      <button
+                        type="button"
+                        disabled={
+                          !authenticated ||
+                          loadingBanks
                         }
+                        onClick={() =>
+                          setBankDropdownOpen(
+                            (open) =>
+                              !open
+                          )
+                        }
+                        className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
                       >
-                        {loadingBanks
-                          ? "Loading banks..."
-                          : selectedBank?.name ||
-                            "Select Bank"}
-                      </span>
+                        <span
+                          className={
+                            selectedBank
+                              ? "text-foreground"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {loadingBanks
+                            ? "Loading banks..."
+                            : selectedBank?.name ||
+                              "Select Bank"}
+                        </span>
 
-                      {loadingBanks ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                      ) : (
+                        {loadingBanks ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <ChevronDown
+                            className={`h-5 w-5 text-muted-foreground transition-transform ${
+                              bankDropdownOpen
+                                ? "rotate-180"
+                                : ""
+                            }`}
+                          />
+                        )}
+                      </button>
+
+                      {bankDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+
+                          <div className="border-b border-border p-3">
+                            <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
+                              <Search className="h-4 w-4 text-muted-foreground" />
+
+                              <input
+                                type="text"
+                                value={
+                                  bankSearch
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  setBankSearch(
+                                    event
+                                      .target
+                                      .value
+                                  )
+                                }
+                                placeholder="Search bank"
+                                className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="max-h-[280px] overflow-y-auto p-1.5">
+                            {filteredInstitutions.length >
+                            0 ? (
+                              filteredInstitutions.map(
+                                (
+                                  bank
+                                ) => (
+                                  <button
+                                    key={
+                                      bank.code
+                                    }
+                                    type="button"
+                                    onClick={() =>
+                                      handleBankSelect(
+                                        bank
+                                      )
+                                    }
+                                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
+                                  >
+                                    <span>
+                                      {
+                                        bank.name
+                                      }
+                                    </span>
+
+                                    {selectedBank?.code ===
+                                      bank.code && (
+                                      <Check className="h-4 w-4 text-primary" />
+                                    )}
+                                  </button>
+                                )
+                              )
+                            ) : (
+                              <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
+                                No banks found.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Enter Account number"
+                        value={
+                          accountNumber
+                        }
+                        onChange={
+                          handleAccountNumberChange
+                        }
+                        disabled={
+                          !selectedBank
+                        }
+                        className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
+                      />
+
+                      {verifyingAccount && (
+                        <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Verifying account...
+                        </div>
+                      )}
+
+                      {accountName &&
+                        !verifyingAccount && (
+                          <div className="mt-2 px-1 text-[14px] text-muted-foreground">
+                            {
+                              accountName
+                            }
+                          </div>
+                        )}
+
+                      {accountError && (
+                        <div className="mt-2 px-1 text-[13px] text-destructive">
+                          {
+                            accountError
+                          }
+                        </div>
+                      )}
+                    </div>
+
+                    <QuickSendWalletButton />
+
+                    {accountName &&
+                      !verifyingAccount && (
+                        <button
+                          type="button"
+                          onClick={
+                            handleNext
+                          }
+                          className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground hover:opacity-90 sm:h-[56px]"
+                        >
+                          Next
+                        </button>
+                      )}
+                  </>
+                )}
+
+                {/* STEP 2 */}
+                {step === 2 && (
+                  <>
+                    <div className="rounded-[10px] bg-input px-5 py-4">
+                      <div className="space-y-2 text-[15px] leading-[22px]">
+                        <p>
+                          Name:{" "}
+                          <span className="font-semibold">
+                            {
+                              accountName
+                            }
+                          </span>
+                        </p>
+
+                        <p>
+                          Account no:{" "}
+                          <span className="font-semibold">
+                            {
+                              accountNumber
+                            }
+                          </span>
+                        </p>
+
+                        <p>
+                          Bank Name:{" "}
+                          <span className="font-semibold">
+                            {
+                              selectedBank?.name
+                            }
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                      ref={
+                        cryptoDropdownRef
+                      }
+                      className="relative mt-5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCryptoDropdownOpen(
+                            (open) =>
+                              !open
+                          )
+                        }
+                        className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
+                      >
+                        <span
+                          className={
+                            selectedCrypto
+                              ? "text-foreground"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {selectedCrypto
+                            ? `${selectedCrypto.symbol} · ${selectedCrypto.name}`
+                            : "Select Crypto to pay"}
+                        </span>
+
                         <ChevronDown
                           className={`h-5 w-5 text-muted-foreground transition-transform ${
-                            bankDropdownOpen
+                            cryptoDropdownOpen
                               ? "rotate-180"
                               : ""
                           }`}
                         />
-                      )}
+                      </button>
 
-                    </button>
-
-                    {bankDropdownOpen && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-
-                        <div className="border-b border-border p-3">
-
-                          <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
-
-                            <Search className="h-4 w-4 text-muted-foreground" />
-
-                            <input
-                              type="text"
-                              value={bankSearch}
-                              onChange={(event) =>
-                                setBankSearch(
-                                  event.target.value
-                                )
-                              }
-                              placeholder="Search bank"
-                              className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
-                            />
-
-                          </div>
-
-                        </div>
-
-                        <div className="max-h-[280px] overflow-y-auto p-1.5">
-
-                          {filteredInstitutions.length >
-                          0 ? (
-                            filteredInstitutions.map(
-                              (bank) => (
+                      {cryptoDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                          <div className="p-1.5">
+                            {CRYPTO_OPTIONS.map(
+                              (
+                                crypto
+                              ) => (
                                 <button
                                   key={
-                                    bank.code
+                                    crypto.symbol
                                   }
                                   type="button"
                                   onClick={() =>
-                                    handleBankSelect(
-                                      bank
+                                    handleCryptoSelect(
+                                      crypto
                                     )
                                   }
                                   className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
                                 >
+                                  <div>
+                                    <div className="font-medium">
+                                      {
+                                        crypto.symbol
+                                      }
+                                    </div>
 
-                                  <span>
-                                    {bank.name}
-                                  </span>
+                                    <div className="text-[12px] text-muted-foreground">
+                                      {
+                                        crypto.name
+                                      }
+                                    </div>
+                                  </div>
 
-                                  {selectedBank?.code ===
-                                    bank.code && (
+                                  {selectedCrypto?.symbol ===
+                                    crypto.symbol && (
                                     <Check className="h-4 w-4 text-primary" />
                                   )}
-
                                 </button>
                               )
-                            )
-                          ) : (
-                            <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
-                              No banks found.
-                            </div>
-                          )}
-
-                        </div>
-
-                      </div>
-                    )}
-
-                  </div>
-
-                  <div className="mt-3">
-
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="Enter Account number"
-                      value={accountNumber}
-                      onChange={
-                        handleAccountNumberChange
-                      }
-                      disabled={!selectedBank}
-                      className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
-                    />
-
-                    {verifyingAccount && (
-                      <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
-                        Verifying account...
-
-                      </div>
-                    )}
-
-                    {accountName &&
-                      !verifyingAccount && (
-                        <div className="mt-2 px-1 text-[14px] text-muted-foreground">
-                          {accountName}
+                            )}
+                          </div>
                         </div>
                       )}
-
-                    {accountError && (
-                      <div className="mt-2 px-1 text-[13px] text-destructive">
-                        {accountError}
-                      </div>
-                    )}
-
-                  </div>
-
-                  <QuickSendWalletButton />
-
-                  {accountName &&
-                    !verifyingAccount && (
-                    <button
-                      type="button"
-                      onClick={handleNext}
-                      className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground hover:opacity-90 sm:h-[56px]"
-                    >
-                      Next
-                    </button>
-                  )}
-
-                </>
-              )}
-
-              {step === 2 && (
-                <>
-                  <div className="rounded-[10px] bg-input px-5 py-4">
-
-                    <div className="space-y-2 text-[15px] leading-[22px]">
-
-                      <p>
-                        Name:{" "}
-                        <span className="font-semibold">
-                          {accountName}
-                        </span>
-                      </p>
-
-                      <p>
-                        Account no:{" "}
-                        <span className="font-semibold">
-                          {accountNumber}
-                        </span>
-                      </p>
-
-                      <p>
-                        Bank Name:{" "}
-                        <span className="font-semibold">
-                          {selectedBank?.name}
-                        </span>
-                      </p>
-
                     </div>
 
-                  </div>
-
-                  <div
-                    ref={cryptoDropdownRef}
-                    className="relative mt-5"
-                  >
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCryptoDropdownOpen(
-                          (open) => !open
-                        )
-                      }
-                      className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
-                    >
-
-                      <span
-                        className={
-                          selectedCrypto
-                            ? "text-foreground"
-                            : "text-muted-foreground"
+                    <div className="mt-3">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Enter Amount (₦)"
+                        value={amount}
+                        onChange={
+                          handleAmountChange
                         }
-                      >
-                        {selectedCrypto
-                          ? `${selectedCrypto.symbol} · ${selectedCrypto.name}`
-                          : "Select Crypto to pay"}
-                      </span>
-
-                      <ChevronDown
-                        className={`h-5 w-5 text-muted-foreground transition-transform ${
-                          cryptoDropdownOpen
-                            ? "rotate-180"
-                            : ""
-                        }`}
+                        className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px]"
                       />
 
-                    </button>
-
-                    {cryptoDropdownOpen && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-
-                        <div className="p-1.5">
-
-                          {CRYPTO_OPTIONS.map(
-                            (crypto) => (
-                              <button
-                                key={
-                                  crypto.symbol
-                                }
-                                type="button"
-                                onClick={() =>
-                                  handleCryptoSelect(
-                                    crypto
-                                  )
-                                }
-                                className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
-                              >
-
-                                <div>
-
-                                  <div className="font-medium">
-                                    {
-                                      crypto.symbol
-                                    }
-                                  </div>
-
-                                  <div className="text-[12px] text-muted-foreground">
-                                    {
-                                      crypto.name
-                                    }
-                                  </div>
-
-                                </div>
-
-                                {selectedCrypto?.symbol ===
-                                  crypto.symbol && (
-                                  <Check className="h-4 w-4 text-primary" />
-                                )}
-
-                              </button>
-                            )
-                          )}
-
-                        </div>
-
-                      </div>
-                    )}
-
-                  </div>
-
-                  <div className="mt-3">
-
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="Enter Amount (₦)"
-                      value={amount}
-                      onChange={
-                        handleAmountChange
-                      }
-                      className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px]"
-                    />
-
-                    {loadingQuote && (
-                      <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
-                        Calculating crypto amount...
-
-                      </div>
-                    )}
-
-                    {cryptoAmount &&
-                      !loadingQuote &&
-                      !quoteError && (
-                        <div className="mt-2 px-1 text-[13px] text-muted-foreground">
-                          You will pay approximately{" "}
-                          <span className="font-medium text-foreground">
-                            {cryptoAmount}{" "}
-                            {
-                              selectedCrypto?.symbol
-                            }
-                          </span>
+                      {loadingQuote && (
+                        <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Calculating crypto amount...
                         </div>
                       )}
 
-                    {quoteError && (
-                      <div className="mt-2 px-1 text-[13px] text-destructive">
-                        {quoteError}
-                      </div>
+                      {cryptoAmount &&
+                        !loadingQuote &&
+                        !quoteError && (
+                          <div className="mt-2 px-1 text-[13px] text-muted-foreground">
+                            You will pay approximately{" "}
+                            <span className="font-medium text-foreground">
+                              {
+                                cryptoAmount
+                              }{" "}
+                              {
+                                selectedCrypto?.symbol
+                              }
+                            </span>
+                          </div>
+                        )}
+
+                      {quoteError && (
+                        <div className="mt-2 px-1 text-[13px] text-destructive">
+                          {
+                            quoteError
+                          }
+                        </div>
+                      )}
+                    </div>
+
+                    {showPayButton && (
+                      <button
+                        type="button"
+                        onClick={
+                          handlePay
+                        }
+                        className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90 sm:h-[56px] sm:text-[16px]"
+                      >
+                        Pay{" "}
+                        {
+                          cryptoAmount
+                        }{" "}
+                        {
+                          selectedCrypto?.symbol
+                        }
+                      </button>
                     )}
 
-                  </div>
+                    {paymentError && (
+                      <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+                        {
+                          paymentError
+                        }
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
 
-                  {showPayButton && (
-                    <button
-                      type="button"
-                      onClick={handlePay}
-                      className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90 sm:h-[56px] sm:text-[16px]"
-                    >
-                      Pay {cryptoAmount}{" "}
-                      {selectedCrypto?.symbol}
-                    </button>
-                  )}
-
-                  {paymentError && (
-                    <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
-                      {paymentError}
-                    </div>
-                  )}
-
-                </>
-              )}
+              <p className="mt-6 w-full px-2 text-center text-[14px] leading-[20px] text-muted-foreground sm:mt-8 sm:px-0 sm:text-[16px] sm:leading-[22px]">
+                The fastest way to send crypto to
+                Nigerian bank accounts. No wallet needed
+                for recipients.
+              </p>
 
             </div>
-
-            <p className="mt-6 w-full px-2 text-center text-[14px] leading-[20px] text-muted-foreground sm:mt-8 sm:px-0 sm:text-[16px] sm:leading-[22px]">
-              The fastest way to send crypto to
-              Nigerian bank accounts. No wallet needed
-              for recipients.
-            </p>
-
-          </div>
-
-        </section>
+          </section>
+        </div>
       </div>
     </main>
   );
@@ -1403,13 +1516,13 @@ function PaymentShell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-[#050511] text-foreground">
+    <main className="relative min-h-screen overflow-hidden bg-background">
 
       <Background />
 
-      <div className="relative z-10 flex min-h-screen flex-col">
-
-        <header className="mx-4 mt-4 flex shrink-0 items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511] p-3 sm:mx-6 sm:mt-6">
+      {/* FIXED NAV */}
+      <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
+        <div className="flex h-[60px] items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511] p-3 backdrop-blur-md sm:h-[68px] sm:px-4">
 
           <Image
             src="/biyaport_logo.svg"
@@ -1420,9 +1533,15 @@ function PaymentShell({
             priority
           />
 
-        </header>
+          <ConnectWalletButton />
 
-        <section className="flex flex-1 items-start justify-center px-4 py-8 sm:items-center sm:py-10">
+        </div>
+      </header>
+
+      {/* SCROLLABLE CONTENT */}
+      <div className="relative z-10 h-screen overflow-y-auto">
+
+        <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[100px] sm:px-6 sm:pt-[125px]">
 
           {children}
 

@@ -789,6 +789,19 @@ export default function Home() {
        * --------------------------------------------
        */
 
+      // Estimate gas for this exact USDT transfer before submitting it.
+      // This prevents the wallet/RPC from attaching an invalid oversized gas limit.
+      const gasEstimate = await publicClient.estimateGas({
+        account: wallet.address as `0x${string}`,
+        to: BASE_USDT_ADDRESS,
+        data: transferData,
+      });
+
+      console.log(
+        "USDT GAS ESTIMATE:",
+        gasEstimate.toString()
+      );
+
       const result =
         await sendTransaction(
           {
@@ -796,6 +809,7 @@ export default function Home() {
             data: transferData,
             chainId:
               BASE_CHAIN_ID,
+            gas: gasEstimate,
           },
           {
             address:

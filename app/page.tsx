@@ -968,6 +968,10 @@ export default function Home() {
        *
        * value:
        *   0 ETH
+       *
+       * NOTE:
+       * BigInt literal 0n was replaced with
+       * BigInt(0) for Vercel/TypeScript compatibility.
        */
 
       const result =
@@ -977,7 +981,7 @@ export default function Home() {
 
             data: transferData,
 
-            value: 0n,
+            value: BigInt(0),
 
             chainId:
               BASE_CHAIN_ID,

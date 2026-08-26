@@ -29,6 +29,12 @@ import { base } from "viem/chains";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
 import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
 
+/*
+ * ====================================================
+ * CONSTANTS
+ * ====================================================
+ */
+
 const BASE_CHAIN_ID = 8453;
 
 const BASE_USDT_ADDRESS =
@@ -36,13 +42,25 @@ const BASE_USDT_ADDRESS =
 
 const USDT_DECIMALS = 6;
 
-// Paycrest sender fee configured in your dashboard
-const SENDER_FEE_PERCENT = 5;
+/*
+ * Public Base client.
+ *
+ * This is ONLY used to wait for the transaction
+ * after the wallet has approved/submitted it.
+ *
+ * It is NOT used to check the user's balance.
+ */
 
 const publicClient = createPublicClient({
   chain: base,
   transport: http(),
 });
+
+/*
+ * ====================================================
+ * TYPES
+ * ====================================================
+ */
 
 type Institution = {
   name: string;
@@ -61,6 +79,12 @@ type PaymentState =
   | "success"
   | "error";
 
+/*
+ * ====================================================
+ * CRYPTO OPTIONS
+ * ====================================================
+ */
+
 const CRYPTO_OPTIONS: CryptoOption[] = [
   {
     symbol: "USDT",
@@ -69,6 +93,12 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
   },
 ];
 
+/*
+ * ====================================================
+ * HOME
+ * ====================================================
+ */
+
 export default function Home() {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -76,9 +106,17 @@ export default function Home() {
 
   const wallet = wallets[0];
 
+  /*
+   * ------------------------------------------------
+   * FORM STATE
+   * ------------------------------------------------
+   */
+
   const [step, setStep] = useState(1);
 
-  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [institutions, setInstitutions] = useState<
+    Institution[]
+  >([]);
 
   const [selectedBank, setSelectedBank] =
     useState<Institution | null>(null);
@@ -99,6 +137,12 @@ export default function Home() {
 
   const [accountError, setAccountError] = useState("");
 
+  /*
+   * ------------------------------------------------
+   * PAYMENT INPUT
+   * ------------------------------------------------
+   */
+
   const [amount, setAmount] = useState("");
 
   const [selectedCrypto, setSelectedCrypto] =
@@ -113,16 +157,29 @@ export default function Home() {
 
   const [quoteError, setQuoteError] = useState("");
 
+  /*
+   * ------------------------------------------------
+   * PAYMENT STATE
+   * ------------------------------------------------
+   */
+
   const [paymentState, setPaymentState] =
     useState<PaymentState>("form");
 
   const [paymentError, setPaymentError] = useState("");
 
-  const [transactionHash, setTransactionHash] = useState("");
+  const [transactionHash, setTransactionHash] =
+    useState("");
 
   const [orderId, setOrderId] = useState("");
 
   const [countdown, setCountdown] = useState(60);
+
+  /*
+   * ------------------------------------------------
+   * REFS
+   * ------------------------------------------------
+   */
 
   const bankDropdownRef =
     useRef<HTMLDivElement | null>(null);
@@ -131,9 +188,9 @@ export default function Home() {
     useRef<HTMLDivElement | null>(null);
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * LOAD BANKS
-   * ------------------------------------------------
+   * ====================================================
    */
 
   useEffect(() => {
@@ -184,9 +241,9 @@ export default function Home() {
   }, [authenticated]);
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * CLOSE DROPDOWNS
-   * ------------------------------------------------
+   * ====================================================
    */
 
   useEffect(() => {
@@ -222,9 +279,9 @@ export default function Home() {
   }, []);
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * PROCESSING COUNTDOWN
-   * ------------------------------------------------
+   * ====================================================
    */
 
   useEffect(() => {
@@ -249,9 +306,9 @@ export default function Home() {
   }, [paymentState]);
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * BANK SEARCH
-   * ------------------------------------------------
+   * ====================================================
    */
 
   const filteredInstitutions =
@@ -274,9 +331,9 @@ export default function Home() {
   };
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * VERIFY ACCOUNT
-   * ------------------------------------------------
+   * ====================================================
    */
 
   const verifyAccount = async (
@@ -352,6 +409,12 @@ export default function Home() {
     }
   };
 
+  /*
+   * ====================================================
+   * ACCOUNT NUMBER
+   * ====================================================
+   */
+
   const handleAccountNumberChange = (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -369,6 +432,12 @@ export default function Home() {
     }
   };
 
+  /*
+   * ====================================================
+   * NEXT
+   * ====================================================
+   */
+
   const handleNext = () => {
     if (
       !selectedBank ||
@@ -382,9 +451,9 @@ export default function Home() {
   };
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * CRYPTO
-   * ------------------------------------------------
+   * ====================================================
    */
 
   const handleCryptoSelect = (
@@ -397,6 +466,12 @@ export default function Home() {
     setQuoteError("");
     setPaymentError("");
   };
+
+  /*
+   * ====================================================
+   * NAIRA AMOUNT
+   * ====================================================
+   */
 
   const handleAmountChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -414,9 +489,9 @@ export default function Home() {
   };
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * CRYPTO QUOTE
-   * ------------------------------------------------
+   * ====================================================
    */
 
   useEffect(() => {
@@ -515,36 +590,50 @@ export default function Home() {
   }, [amount, selectedCrypto]);
 
   /*
-   * ------------------------------------------------
-   * TOTAL USER PAYMENT
-   * ------------------------------------------------
+   * ====================================================
+   * DISPLAY PAYMENT AMOUNT
+   * ====================================================
    *
-   * The button shows ONLY:
+   * This is only an estimate for the button.
    *
-   * crypto amount + 5% sender fee
-   *
-   * No fee breakdown is shown to the user.
+   * The ACTUAL amount sent is determined later
+   * from Paycrest's order response.
    */
 
-  const totalPayAmount =
+  const estimatedPayAmount =
     cryptoAmount &&
     Number.isFinite(Number(cryptoAmount))
-      ? Number(cryptoAmount) *
-        (1 + SENDER_FEE_PERCENT / 100)
+      ? Number(cryptoAmount) * 1.05
       : 0;
 
-  const totalPayAmountFormatted =
-    totalPayAmount > 0
-      ? totalPayAmount.toFixed(6)
+  const estimatedPayAmountFormatted =
+    estimatedPayAmount > 0
+      ? estimatedPayAmount.toFixed(6)
       : "";
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * PAYMENT
-   * ------------------------------------------------
+   * ====================================================
    */
 
   const handlePay = async () => {
+    /*
+     * ------------------------------------------------
+     * BASIC APP VALIDATION ONLY
+     * ------------------------------------------------
+     *
+     * We intentionally DO NOT check:
+     *
+     * - USDT balance
+     * - ETH balance
+     * - gas balance
+     * - token balance
+     *
+     * The wallet/RPC should determine whether
+     * the transaction can actually be submitted.
+     */
+
     if (!wallet?.address) {
       setPaymentError(
         "Please connect your wallet first."
@@ -580,9 +669,9 @@ export default function Home() {
 
     try {
       /*
-       * --------------------------------------------
+       * ================================================
        * 1. CREATE PAYCREST ORDER
-       * --------------------------------------------
+       * ================================================
        */
 
       const response = await fetch(
@@ -627,9 +716,9 @@ export default function Home() {
       }
 
       /*
-       * --------------------------------------------
+       * ================================================
        * 2. SAVE ORDER ID
-       * --------------------------------------------
+       * ================================================
        */
 
       setOrderId(
@@ -637,9 +726,9 @@ export default function Home() {
       );
 
       /*
-       * --------------------------------------------
-       * 3. RECEIVE ADDRESS
-       * --------------------------------------------
+       * ================================================
+       * 3. GET PAYCREST RECEIVE ADDRESS
+       * ================================================
        */
 
       const receiveAddress =
@@ -654,9 +743,42 @@ export default function Home() {
       }
 
       /*
-       * --------------------------------------------
+       * Make sure the address looks like an
+       * Ethereum/Base address.
+       */
+
+      if (
+        !/^0x[a-fA-F0-9]{40}$/.test(
+          receiveAddress
+        )
+      ) {
+        throw new Error(
+          "Paycrest returned an invalid receiving address."
+        );
+      }
+
+      /*
+       * ================================================
        * 4. PAYCREST IS AUTHORITATIVE
-       * --------------------------------------------
+       * ================================================
+       *
+       * DO NOT calculate the final payment using:
+       *
+       * cryptoAmount * 1.05
+       *
+       * Paycrest has already calculated the exact
+       * sender fee.
+       *
+       * Example:
+       *
+       * amount       = 0.726728
+       * senderFee    = 0.036300
+       * transactionFee = 0
+       *
+       * actual wallet transfer:
+       *
+       * 0.726728 + 0.036300 + 0
+       * = 0.763028 USDT
        */
 
       const orderAmount = Number(
@@ -672,9 +794,7 @@ export default function Home() {
       );
 
       if (
-        !Number.isFinite(
-          orderAmount
-        ) ||
+        !Number.isFinite(orderAmount) ||
         orderAmount <= 0
       ) {
         throw new Error(
@@ -683,9 +803,7 @@ export default function Home() {
       }
 
       if (
-        !Number.isFinite(
-          senderFee
-        ) ||
+        !Number.isFinite(senderFee) ||
         senderFee < 0
       ) {
         throw new Error(
@@ -694,9 +812,7 @@ export default function Home() {
       }
 
       if (
-        !Number.isFinite(
-          transactionFee
-        ) ||
+        !Number.isFinite(transactionFee) ||
         transactionFee < 0
       ) {
         throw new Error(
@@ -705,8 +821,7 @@ export default function Home() {
       }
 
       /*
-       * This is the REAL amount that must
-       * leave the user's wallet.
+       * FINAL AMOUNT TO SEND
        */
 
       const totalCryptoAmount =
@@ -714,35 +829,63 @@ export default function Home() {
         senderFee +
         transactionFee;
 
+      /*
+       * ================================================
+       * DEBUG
+       * ================================================
+       */
+
       console.log(
-        "PAYCREST AMOUNT:",
+        "----------------------------------------"
+      );
+
+      console.log(
+        "BIYAPORT USDT PAYMENT"
+      );
+
+      console.log(
+        "Wallet:",
+        wallet.address
+      );
+
+      console.log(
+        "USDT contract:",
+        BASE_USDT_ADDRESS
+      );
+
+      console.log(
+        "Paycrest receive address:",
+        receiveAddress
+      );
+
+      console.log(
+        "Paycrest order amount:",
         orderAmount
       );
 
       console.log(
-        "PAYCREST SENDER FEE:",
+        "Paycrest sender fee:",
         senderFee
       );
 
       console.log(
-        "PAYCREST TRANSACTION FEE:",
+        "Paycrest transaction fee:",
         transactionFee
       );
 
       console.log(
-        "TOTAL CRYPTO TO SEND:",
+        "TOTAL USDT TO SEND:",
         totalCryptoAmount
       );
 
       console.log(
-        "PAYCREST RECEIVE ADDRESS:",
-        receiveAddress
+        "----------------------------------------"
       );
 
       /*
-       * --------------------------------------------
-       * 5. SWITCH TO BASE
-       * --------------------------------------------
+       * ================================================
+       * 5. SWITCH WALLET TO BASE
+       * ================================================
        */
 
       if (wallet.switchChain) {
@@ -752,9 +895,17 @@ export default function Home() {
       }
 
       /*
-       * --------------------------------------------
-       * 6. CONVERT USDT TO 6 DECIMAL UNITS
-       * --------------------------------------------
+       * ================================================
+       * 6. CONVERT USDT AMOUNT TO TOKEN UNITS
+       * ================================================
+       *
+       * USDT on Base uses 6 decimals.
+       *
+       * 0.763028 USDT
+       *
+       * becomes:
+       *
+       * 763028
        */
 
       const totalUnits = parseUnits(
@@ -763,14 +914,26 @@ export default function Home() {
       );
 
       console.log(
-        "USDT TRANSFER UNITS:",
+        "USDT TOKEN UNITS:",
         totalUnits.toString()
       );
 
       /*
-       * --------------------------------------------
-       * 7. ERC20 TRANSFER DATA
-       * --------------------------------------------
+       * ================================================
+       * 7. ENCODE ERC-20 TRANSFER
+       * ================================================
+       *
+       * This creates:
+       *
+       * USDT.transfer(
+       *   PaycrestAddress,
+       *   763028
+       * )
+       *
+       * The transaction is sent TO THE USDT CONTRACT.
+       *
+       * It is NOT sent directly to the Paycrest
+       * address as native ETH.
        */
 
       const transferData =
@@ -783,33 +946,41 @@ export default function Home() {
           ],
         });
 
-      /*
-       * --------------------------------------------
-       * 8. TRIGGER PRIVY WALLET
-       * --------------------------------------------
-       */
-
-      // Estimate gas for this exact USDT transfer before submitting it.
-      // This prevents the wallet/RPC from attaching an invalid oversized gas limit.
-      const gasEstimate = await publicClient.estimateGas({
-        account: wallet.address as `0x${string}`,
-        to: BASE_USDT_ADDRESS,
-        data: transferData,
-      });
-
       console.log(
-        "USDT GAS ESTIMATE:",
-        gasEstimate.toString()
+        "ENCODED TRANSFER DATA:",
+        transferData
       );
+
+      /*
+       * ================================================
+       * 8. OPEN WALLET CONFIRMATION
+       * ================================================
+       *
+       * NO BALANCE CHECKS HERE.
+       *
+       * The wallet gets the transaction directly.
+       *
+       * to:
+       *   USDT contract
+       *
+       * data:
+       *   transfer(Paycrest, amount)
+       *
+       * value:
+       *   0 ETH
+       */
 
       const result =
         await sendTransaction(
           {
             to: BASE_USDT_ADDRESS,
+
             data: transferData,
+
+            value: 0n,
+
             chainId:
               BASE_CHAIN_ID,
-            gas: gasEstimate,
           },
           {
             address:
@@ -818,12 +989,12 @@ export default function Home() {
         );
 
       /*
-       * --------------------------------------------
+       * ================================================
        * 9. TRANSACTION HASH
-       * --------------------------------------------
+       * ================================================
        */
 
-      const hash = result.hash;
+      const hash = result?.hash;
 
       if (!hash) {
         throw new Error(
@@ -839,9 +1010,9 @@ export default function Home() {
       setTransactionHash(hash);
 
       /*
-       * --------------------------------------------
-       * 10. WAIT FOR CONFIRMATION
-       * --------------------------------------------
+       * ================================================
+       * 10. WAIT FOR BASE CONFIRMATION
+       * ================================================
        */
 
       await publicClient.waitForTransactionReceipt(
@@ -852,9 +1023,9 @@ export default function Home() {
       );
 
       /*
-       * --------------------------------------------
+       * ================================================
        * 11. SUCCESS
-       * --------------------------------------------
+       * ================================================
        */
 
       setPaymentState("success");
@@ -875,9 +1046,9 @@ export default function Home() {
   };
 
   /*
-   * ------------------------------------------------
-   * PAY BUTTON CONDITION
-   * ------------------------------------------------
+   * ====================================================
+   * PAY BUTTON
+   * ====================================================
    */
 
   const showPayButton =
@@ -889,9 +1060,9 @@ export default function Home() {
     !quoteError;
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * PROCESSING SCREEN
-   * ------------------------------------------------
+   * ====================================================
    */
 
   if (
@@ -901,7 +1072,7 @@ export default function Home() {
       <PaymentShell>
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
-            <div className="mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
+            <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
               <div
                 className="absolute h-[96px] w-[96px] rounded-full"
                 style={{
@@ -988,9 +1159,9 @@ export default function Home() {
   }
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * SUCCESS SCREEN
-   * ------------------------------------------------
+   * ====================================================
    */
 
   if (
@@ -1087,9 +1258,9 @@ export default function Home() {
   }
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * ERROR SCREEN
-   * ------------------------------------------------
+   * ====================================================
    */
 
   if (
@@ -1129,9 +1300,9 @@ export default function Home() {
   }
 
   /*
-   * ------------------------------------------------
+   * ====================================================
    * MAIN FORM
-   * ------------------------------------------------
+   * ====================================================
    */
 
   return (
@@ -1460,7 +1631,9 @@ export default function Home() {
                         <div className="mt-2 px-1 text-[13px] text-muted-foreground">
                           You will pay approximately{" "}
                           <span className="font-medium text-foreground">
-                            {totalPayAmountFormatted}{" "}
+                            {
+                              estimatedPayAmountFormatted
+                            }{" "}
                             {
                               selectedCrypto?.symbol
                             }
@@ -1481,8 +1654,13 @@ export default function Home() {
                       onClick={handlePay}
                       className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90 sm:h-[56px] sm:text-[16px]"
                     >
-                      Pay {totalPayAmountFormatted}{" "}
-                      {selectedCrypto?.symbol}
+                      Pay{" "}
+                      {
+                        estimatedPayAmountFormatted
+                      }{" "}
+                      {
+                        selectedCrypto?.symbol
+                      }
                     </button>
                   )}
 
@@ -1548,7 +1726,7 @@ function PaymentShell({
 
 /*
  * ====================================================
- * FIXED BACKGROUND
+ * BACKGROUND
  * ====================================================
  */
 

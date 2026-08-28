@@ -26,6 +26,8 @@ import {
 
 import { base } from "viem/chains";
 
+import QRCode from "qrcode";
+
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
 import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
 
@@ -42,13 +44,13 @@ const BASE_USDT_ADDRESS =
 
 const USDT_DECIMALS = 6;
 
+const BASESCAN_TX_URL =
+  "https://basescan.org/tx/";
+
 /*
  * Public Base client.
  *
- * This is ONLY used to wait for the transaction
- * after the wallet has approved/submitted it.
- *
- * It is NOT used to check the user's balance.
+ * Used ONLY to wait for transaction confirmation.
  */
 
 const publicClient = createPublicClient({
@@ -78,6 +80,8 @@ type PaymentState =
   | "processing"
   | "success"
   | "error";
+
+type PaymentStage = 1 | 2 | 3;
 
 /*
  * ====================================================
@@ -166,6 +170,9 @@ export default function Home() {
   const [paymentState, setPaymentState] =
     useState<PaymentState>("form");
 
+  const [paymentStage, setPaymentStage] =
+    useState<PaymentStage>(1);
+
   const [paymentError, setPaymentError] = useState("");
 
   const [transactionHash, setTransactionHash] =
@@ -174,6 +181,18 @@ export default function Home() {
   const [orderId, setOrderId] = useState("");
 
   const [countdown, setCountdown] = useState(60);
+
+  /*
+   * ------------------------------------------------
+   * RECEIPT DATA
+   * ------------------------------------------------
+   */
+
+  const [receiptCryptoAmount, setReceiptCryptoAmount] =
+    useState("");
+
+  const [receiptDateTime, setReceiptDateTime] =
+    useState("");
 
   /*
    * ------------------------------------------------
@@ -593,11 +612,6 @@ export default function Home() {
    * ====================================================
    * DISPLAY PAYMENT AMOUNT
    * ====================================================
-   *
-   * This is only an estimate for the button.
-   *
-   * The ACTUAL amount sent is determined later
-   * from Paycrest's order response.
    */
 
   const estimatedPayAmount =
@@ -613,27 +627,33 @@ export default function Home() {
 
   /*
    * ====================================================
+   * RESET PAYMENT
+   * ====================================================
+   */
+
+  const resetPayment = () => {
+    setPaymentState("form");
+    setPaymentStage(1);
+    setPaymentError("");
+
+    setTransactionHash("");
+    setOrderId("");
+
+    setReceiptCryptoAmount("");
+    setReceiptDateTime("");
+
+    setCountdown(60);
+
+    setStep(1);
+  };
+
+  /*
+   * ====================================================
    * PAYMENT
    * ====================================================
    */
 
   const handlePay = async () => {
-    /*
-     * ------------------------------------------------
-     * BASIC APP VALIDATION ONLY
-     * ------------------------------------------------
-     *
-     * We intentionally DO NOT check:
-     *
-     * - USDT balance
-     * - ETH balance
-     * - gas balance
-     * - token balance
-     *
-     * The wallet/RPC should determine whether
-     * the transaction can actually be submitted.
-     */
-
     if (!wallet?.address) {
       setPaymentError(
         "Please connect your wallet first."
@@ -664,7 +684,9 @@ export default function Home() {
     }
 
     setPaymentError("");
+
     setPaymentState("processing");
+    setPaymentStage(1);
     setCountdown(60);
 
     try {
@@ -742,11 +764,6 @@ export default function Home() {
         );
       }
 
-      /*
-       * Make sure the address looks like an
-       * Ethereum/Base address.
-       */
-
       if (
         !/^0x[a-fA-F0-9]{40}$/.test(
           receiveAddress
@@ -761,24 +778,6 @@ export default function Home() {
        * ================================================
        * 4. PAYCREST IS AUTHORITATIVE
        * ================================================
-       *
-       * DO NOT calculate the final payment using:
-       *
-       * cryptoAmount * 1.05
-       *
-       * Paycrest has already calculated the exact
-       * sender fee.
-       *
-       * Example:
-       *
-       * amount       = 0.726728
-       * senderFee    = 0.036300
-       * transactionFee = 0
-       *
-       * actual wallet transfer:
-       *
-       * 0.726728 + 0.036300 + 0
-       * = 0.763028 USDT
        */
 
       const orderAmount = Number(
@@ -820,20 +819,10 @@ export default function Home() {
         );
       }
 
-      /*
-       * FINAL AMOUNT TO SEND
-       */
-
       const totalCryptoAmount =
         orderAmount +
         senderFee +
         transactionFee;
-
-      /*
-       * ================================================
-       * DEBUG
-       * ================================================
-       */
 
       console.log(
         "----------------------------------------"
@@ -896,16 +885,8 @@ export default function Home() {
 
       /*
        * ================================================
-       * 6. CONVERT USDT AMOUNT TO TOKEN UNITS
+       * 6. CONVERT USDT AMOUNT
        * ================================================
-       *
-       * USDT on Base uses 6 decimals.
-       *
-       * 0.763028 USDT
-       *
-       * becomes:
-       *
-       * 763028
        */
 
       const totalUnits = parseUnits(
@@ -922,18 +903,6 @@ export default function Home() {
        * ================================================
        * 7. ENCODE ERC-20 TRANSFER
        * ================================================
-       *
-       * This creates:
-       *
-       * USDT.transfer(
-       *   PaycrestAddress,
-       *   763028
-       * )
-       *
-       * The transaction is sent TO THE USDT CONTRACT.
-       *
-       * It is NOT sent directly to the Paycrest
-       * address as native ETH.
        */
 
       const transferData =
@@ -952,26 +921,15 @@ export default function Home() {
       );
 
       /*
+       * STAGE 2
+       */
+
+      setPaymentStage(2);
+
+      /*
        * ================================================
        * 8. OPEN WALLET CONFIRMATION
        * ================================================
-       *
-       * NO BALANCE CHECKS HERE.
-       *
-       * The wallet gets the transaction directly.
-       *
-       * to:
-       *   USDT contract
-       *
-       * data:
-       *   transfer(Paycrest, amount)
-       *
-       * value:
-       *   0 ETH
-       *
-       * NOTE:
-       * BigInt literal 0n was replaced with
-       * BigInt(0) for Vercel/TypeScript compatibility.
        */
 
       const result =
@@ -1012,6 +970,26 @@ export default function Home() {
       );
 
       setTransactionHash(hash);
+
+      /*
+       * STAGE 3
+       */
+
+      setPaymentStage(3);
+
+      /*
+       * ================================================
+       * SAVE RECEIPT DATA
+       * ================================================
+       */
+
+      setReceiptCryptoAmount(
+        totalCryptoAmount.toFixed(6)
+      );
+
+      setReceiptDateTime(
+        formatReceiptDate(new Date())
+      );
 
       /*
        * ================================================
@@ -1072,10 +1050,20 @@ export default function Home() {
   if (
     paymentState === "processing"
   ) {
+    const progressPercentage =
+      paymentStage === 1
+        ? 0
+        : paymentStage === 2
+        ? 50
+        : 100;
+
     return (
       <PaymentShell>
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
+
+            {/* PROCESSING ICON */}
+
             <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
               <div
                 className="absolute h-[96px] w-[96px] rounded-full"
@@ -1102,8 +1090,17 @@ export default function Home() {
             </h1>
 
             <p className="mt-3 text-[16px] text-muted-foreground">
-              Confirming your transaction and receiving crypto
+              {paymentStage === 1 &&
+                "Transaction initiated"}
+
+              {paymentStage === 2 &&
+                "Waiting for wallet signature"}
+
+              {paymentStage === 3 &&
+                "Transaction signed and approved"}
             </p>
+
+            {/* COUNTDOWN */}
 
             <div className="mt-7 inline-flex rounded-[7px] bg-[#07091b] px-4 py-2 text-[16px] font-medium text-[#1557E8]">
               {countdown >= 60
@@ -1113,37 +1110,47 @@ export default function Home() {
                   ).padStart(2, "0")}`}
             </div>
 
-            <div className="mx-auto mt-8 flex w-full max-w-[310px] items-center">
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
+            {/* FLUID PROGRESS */}
 
-              <div className="relative h-[3px] flex-1 overflow-hidden bg-[#090d24]">
+            <div className="relative mx-auto mt-8 w-full max-w-[310px]">
+
+              <div className="relative h-[3px] w-full rounded-full bg-[#090d24]">
+
                 <div
-                  className="absolute inset-y-0 left-0 bg-[#1557E8]"
+                  className="absolute left-0 top-0 h-[3px] rounded-full bg-[#1557E8] transition-all duration-700 ease-in-out"
                   style={{
-                    width: "50%",
+                    width: `${progressPercentage}%`,
                   }}
                 />
+
               </div>
 
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
+              {/* DOT 1 */}
 
-              <div className="h-[3px] flex-1 bg-[#090d24]" />
+              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8] transition-all duration-500" />
 
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#080b1c]" />
+              {/* DOT 2 */}
+
+              <div
+                className={`absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
+                  paymentStage >= 2
+                    ? "bg-[#1557E8]"
+                    : "bg-[#080b1c]"
+                }`}
+              />
+
+              {/* DOT 3 */}
+
+              <div
+                className={`absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
+                  paymentStage >= 3
+                    ? "bg-[#1557E8]"
+                    : "bg-[#080b1c]"
+                }`}
+              />
+
             </div>
 
-            {orderId && (
-              <p className="mt-7 break-all text-[12px] text-muted-foreground">
-                Order: {orderId}
-              </p>
-            )}
-
-            {transactionHash && (
-              <p className="mt-2 break-all text-[12px] text-muted-foreground">
-                Transaction:{" "}
-                {transactionHash}
-              </p>
-            )}
           </div>
         </div>
 
@@ -1175,17 +1182,31 @@ export default function Home() {
       <PaymentShell>
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
-            <div className="mx-auto flex h-[90px] w-[90px] items-center justify-center rounded-full bg-[#1557E8]/10">
-              <Check className="h-10 w-10 text-[#1557E8]" />
+
+            {/* SUCCESS ICON */}
+
+            <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full border-[3px] border-[#1557E8]">
+
+              <div className="flex h-[62px] w-[62px] items-center justify-center rounded-full bg-[#1557E8]">
+                <Check
+                  className="h-8 w-8 text-white"
+                  strokeWidth={2.2}
+                />
+              </div>
+
             </div>
+
+            {/* TITLE */}
 
             <h1 className="mt-7 text-[25px] font-semibold tracking-[-0.03em]">
               Transfer Successful
             </h1>
 
-            <p className="mx-auto mt-3 max-w-[460px] text-[16px] leading-[24px] text-muted-foreground">
+            {/* DESCRIPTION */}
+
+            <p className="mx-auto mt-3 max-w-[500px] text-[16px] leading-[24px] text-muted-foreground">
               You have successfully sent{" "}
-              <span className="text-foreground">
+              <span className="font-medium text-foreground">
                 ₦
                 {Number(
                   amount
@@ -1197,64 +1218,67 @@ export default function Home() {
               </span>
             </p>
 
-            <div className="mx-auto mt-8 flex w-full max-w-[310px] items-center">
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
+            {/* SUCCESS PROGRESS */}
 
-              <div className="h-[3px] flex-1 bg-[#1557E8]" />
+            <div className="relative mx-auto mt-8 w-full max-w-[310px]">
 
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
+              <div className="h-[3px] w-full rounded-full bg-[#1557E8]" />
 
-              <div className="h-[3px] flex-1 bg-[#1557E8]" />
+              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
 
-              <div className="h-3 w-3 shrink-0 rounded-full bg-[#1557E8]" />
+              <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
+
+              <div className="absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
+
             </div>
 
+            {/* SUCCESS TIMER */}
+
+            <div className="mx-auto mt-7 inline-flex rounded-[7px] bg-[#07091b] px-4 py-2 text-[16px] font-medium text-[#1557E8]">
+              1:00
+            </div>
+
+            {/* DOWNLOAD RECEIPT */}
+
             <button
               type="button"
-              onClick={() => {
-                if (!transactionHash) {
-                  return;
-                }
-
-                window.open(
-                  `https://basescan.org/tx/${transactionHash}`,
-                  "_blank",
-                  "noopener,noreferrer"
-                );
-              }}
-              className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-[#1557E8] text-[16px] font-medium text-white transition hover:opacity-90"
+              onClick={() =>
+                generateReceipt({
+                  amount,
+                  cryptoAmount:
+                    receiptCryptoAmount ||
+                    cryptoAmount,
+                  cryptoSymbol:
+                    selectedCrypto?.symbol ||
+                    "USDT",
+                  bankName:
+                    selectedBank?.name ||
+                    "",
+                  accountName,
+                  accountNumber,
+                  dateTime:
+                    receiptDateTime ||
+                    formatReceiptDate(
+                      new Date()
+                    ),
+                  transactionHash,
+                })
+              }
+              className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-[#1557E8] text-[16px] font-medium text-white transition hover:opacity-90 active:scale-[0.99]"
             >
-              View in Explorer
+              Download receipt
             </button>
 
+            {/* BACK HOME */}
+
             <button
               type="button"
-              onClick={() => {
-                setPaymentState("form");
-                setStep(1);
-
-                setAmount("");
-                setCryptoAmount("");
-                setSelectedCrypto(null);
-
-                setTransactionHash("");
-                setOrderId("");
-
-                setPaymentError("");
-                setQuoteError("");
-
-                setAccountNumber("");
-                setAccountName("");
-                setSelectedBank(null);
-
-                setBankSearch("");
-                setCryptoDropdownOpen(false);
-                setBankDropdownOpen(false);
-              }}
+              onClick={resetPayment}
               className="mt-6 text-[15px] text-muted-foreground underline underline-offset-4 transition hover:text-white"
             >
               Back Home
             </button>
+
           </div>
         </div>
       </PaymentShell>
@@ -1274,6 +1298,7 @@ export default function Home() {
       <PaymentShell>
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
+
             <div className="mx-auto flex h-[80px] w-[80px] items-center justify-center rounded-full bg-destructive/10 text-3xl">
               !
             </div>
@@ -1291,12 +1316,14 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setPaymentState("form");
+                setPaymentStage(1);
                 setPaymentError("");
               }}
               className="mt-8 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[16px] font-medium text-primary-foreground transition hover:opacity-90"
             >
               Try Again
             </button>
+
           </div>
         </div>
       </PaymentShell>
@@ -1314,8 +1341,10 @@ export default function Home() {
       <Background />
 
       <div className="relative z-10 min-h-screen">
+
         <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
           <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
+
             <Image
               src="/biyaport_logo.svg"
               alt="Biyaport"
@@ -1326,13 +1355,18 @@ export default function Home() {
             />
 
             <ConnectWalletButton />
+
           </div>
         </header>
 
         <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
+
           <div className="flex w-full max-w-[590px] flex-col items-center">
+
             <div className="w-full rounded-[16px] border border-border bg-card p-5">
+
               <div className="mb-6 flex items-center justify-between">
+
                 <h1 className="text-[20px] font-semibold tracking-[-0.02em] sm:text-[22px]">
                   Quick Send
                 </h1>
@@ -1346,6 +1380,7 @@ export default function Home() {
                     className="h-6 w-6 object-contain"
                   />
                 </div>
+
               </div>
 
               {step === 1 && (
@@ -1395,8 +1430,10 @@ export default function Home() {
 
                     {bankDropdownOpen && (
                       <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+
                         <div className="border-b border-border p-3">
                           <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
+
                             <Search className="h-4 w-4 text-muted-foreground" />
 
                             <input
@@ -1410,10 +1447,12 @@ export default function Home() {
                               placeholder="Search bank"
                               className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
                             />
+
                           </div>
                         </div>
 
                         <div className="max-h-[280px] overflow-y-auto p-1.5">
+
                           {filteredInstitutions.length >
                           0 ? (
                             filteredInstitutions.map(
@@ -1448,12 +1487,15 @@ export default function Home() {
                               No banks found.
                             </div>
                           )}
+
                         </div>
+
                       </div>
                     )}
                   </div>
 
                   <div className="mt-3">
+
                     <input
                       type="text"
                       inputMode="numeric"
@@ -1470,8 +1512,11 @@ export default function Home() {
 
                     {verifyingAccount && (
                       <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
+
                         Verifying account...
+
                       </div>
                     )}
 
@@ -1487,6 +1532,7 @@ export default function Home() {
                         {accountError}
                       </div>
                     )}
+
                   </div>
 
                   <QuickSendWalletButton />
@@ -1507,7 +1553,9 @@ export default function Home() {
               {step === 2 && (
                 <>
                   <div className="rounded-[10px] bg-input px-5 py-4">
+
                     <div className="space-y-2 text-[15px] leading-[22px]">
+
                       <p>
                         Name:{" "}
                         <span className="font-semibold">
@@ -1530,13 +1578,16 @@ export default function Home() {
                           }
                         </span>
                       </p>
+
                     </div>
+
                   </div>
 
                   <div
                     ref={cryptoDropdownRef}
                     className="relative mt-5"
                   >
+
                     <button
                       type="button"
                       onClick={() =>
@@ -1546,6 +1597,7 @@ export default function Home() {
                       }
                       className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
                     >
+
                       <span
                         className={
                           selectedCrypto
@@ -1565,11 +1617,14 @@ export default function Home() {
                             : ""
                         }`}
                       />
+
                     </button>
 
                     {cryptoDropdownOpen && (
                       <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+
                         <div className="p-1.5">
+
                           {CRYPTO_OPTIONS.map(
                             (crypto) => (
                               <button
@@ -1584,7 +1639,9 @@ export default function Home() {
                                 }
                                 className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
                               >
+
                                 <div>
+
                                   <div className="font-medium">
                                     {
                                       crypto.symbol
@@ -1596,21 +1653,27 @@ export default function Home() {
                                       crypto.name
                                     }
                                   </div>
+
                                 </div>
 
                                 {selectedCrypto?.symbol ===
                                   crypto.symbol && (
                                   <Check className="h-4 w-4 text-primary" />
                                 )}
+
                               </button>
                             )
                           )}
+
                         </div>
+
                       </div>
                     )}
+
                   </div>
 
                   <div className="mt-3">
+
                     <input
                       type="text"
                       inputMode="decimal"
@@ -1624,8 +1687,11 @@ export default function Home() {
 
                     {loadingQuote && (
                       <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
+
                         Calculating crypto amount...
+
                       </div>
                     )}
 
@@ -1633,7 +1699,9 @@ export default function Home() {
                       !loadingQuote &&
                       !quoteError && (
                         <div className="mt-2 px-1 text-[13px] text-muted-foreground">
+
                           You will pay approximately{" "}
+
                           <span className="font-medium text-foreground">
                             {
                               estimatedPayAmountFormatted
@@ -1642,6 +1710,7 @@ export default function Home() {
                               selectedCrypto?.symbol
                             }
                           </span>
+
                         </div>
                       )}
 
@@ -1650,6 +1719,7 @@ export default function Home() {
                         {quoteError}
                       </div>
                     )}
+
                   </div>
 
                   {showPayButton && (
@@ -1673,8 +1743,10 @@ export default function Home() {
                       {paymentError}
                     </div>
                   )}
+
                 </>
               )}
+
             </div>
 
             <p className="mt-6 w-full px-2 text-center text-[14px] leading-[20px] text-muted-foreground sm:mt-8 sm:px-0 sm:text-[16px] sm:leading-[22px]">
@@ -1682,10 +1754,904 @@ export default function Home() {
               Nigerian bank accounts. No wallet needed
               for recipients.
             </p>
+
           </div>
+
         </section>
       </div>
     </main>
+  );
+}
+
+/*
+ * ====================================================
+ * RECEIPT DATE FORMAT
+ * ====================================================
+ */
+
+function formatReceiptDate(
+  date: Date
+) {
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const year = String(
+    date.getFullYear()
+  ).slice(-2);
+
+  let hours =
+    date.getHours();
+
+  const minutes = String(
+    date.getMinutes()
+  ).padStart(2, "0");
+
+  const ampm =
+    hours >= 12
+      ? "PM"
+      : "AM";
+
+  hours =
+    hours % 12 || 12;
+
+  return `${day}/${month}/${year} • ${hours}:${minutes}${ampm}`;
+}
+
+/*
+ * ====================================================
+ * GENERATE RECEIPT
+ * ====================================================
+ *
+ * Creates the receipt as a PNG directly in the browser.
+ *
+ * IMPORTANT:
+ * window.Image is used instead of Image because
+ * next/image is imported at the top of this file.
+ */
+
+async function generateReceipt({
+  amount,
+  cryptoAmount,
+  cryptoSymbol,
+  bankName,
+  accountName,
+  accountNumber,
+  dateTime,
+  transactionHash,
+}: {
+  amount: string;
+  cryptoAmount: string;
+  cryptoSymbol: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  dateTime: string;
+  transactionHash: string;
+}) {
+  if (!transactionHash) {
+    return;
+  }
+
+  try {
+    /*
+     * ================================================
+     * RECEIPT CANVAS
+     * ================================================
+     */
+
+    const width = 1024;
+    const height = 1450;
+
+    const canvas =
+      document.createElement("canvas");
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx =
+      canvas.getContext("2d");
+
+    if (!ctx) {
+      throw new Error(
+        "Unable to generate receipt."
+      );
+    }
+
+    /*
+     * ================================================
+     * PAGE BACKGROUND
+     * ================================================
+     *
+     * Matches the webpage background treatment:
+     *
+     * #050511 base
+     * + blue radial glow
+     * + subtle circular rings
+     */
+
+    ctx.fillStyle = "#050511";
+
+    ctx.fillRect(
+      0,
+      0,
+      width,
+      height
+    );
+
+    /*
+     * Radial blue glow
+     */
+
+    const backgroundGradient =
+      ctx.createRadialGradient(
+        width / 2,
+        -40,
+        0,
+        width / 2,
+        0,
+        760
+      );
+
+    backgroundGradient.addColorStop(
+      0,
+      "rgba(21,87,232,0.16)"
+    );
+
+    backgroundGradient.addColorStop(
+      0.28,
+      "rgba(21,87,232,0.07)"
+    );
+
+    backgroundGradient.addColorStop(
+      0.68,
+      "rgba(21,87,232,0)"
+    );
+
+    ctx.fillStyle =
+      backgroundGradient;
+
+    ctx.fillRect(
+      0,
+      0,
+      width,
+      height
+    );
+
+    /*
+     * First webpage-style ring
+     */
+
+    ctx.save();
+
+    ctx.strokeStyle =
+      "rgba(21,87,232,0.16)";
+
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+      width / 2,
+      -380,
+      500,
+      400,
+      0,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.stroke();
+
+    /*
+     * Second webpage-style ring
+     */
+
+    ctx.strokeStyle =
+      "rgba(21,87,232,0.14)";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+      width / 2,
+      -490,
+      650,
+      520,
+      0,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.stroke();
+
+    ctx.restore();
+
+    /*
+     * ================================================
+     * MAIN RECEIPT CONTAINER
+     * ================================================
+     */
+
+    const cardX = 68;
+    const cardY = 64;
+    const cardWidth = 888;
+    const cardHeight = 1240;
+    const radius = 52;
+
+    ctx.beginPath();
+
+    roundRect(
+      ctx,
+      cardX,
+      cardY,
+      cardWidth,
+      cardHeight,
+      radius
+    );
+
+    ctx.fillStyle = "#050511";
+    ctx.fill();
+
+    /*
+     * ================================================
+     * LOGO
+     * ================================================
+     */
+
+    try {
+      const logo =
+        await loadImage(
+          "/biyaport_logo.svg"
+        );
+
+      const logoWidth = 220;
+      const logoHeight = 61;
+
+      ctx.drawImage(
+        logo,
+        (width - logoWidth) / 2,
+        128,
+        logoWidth,
+        logoHeight
+      );
+    } catch {
+      ctx.fillStyle = "#ffffff";
+
+      ctx.font =
+        "600 32px Arial";
+
+      ctx.textAlign = "center";
+
+      ctx.fillText(
+        "BiyaPort",
+        width / 2,
+        170
+      );
+    }
+
+    /*
+     * ================================================
+     * DIVIDER
+     * ================================================
+     */
+
+    drawDashedLine(
+      ctx,
+      128,
+      238,
+      896,
+      238
+    );
+
+    /*
+     * ================================================
+     * NAIRA AMOUNT
+     * ================================================
+     */
+
+    const formattedNaira =
+      Number(
+        amount
+      ).toLocaleString(
+        "en-NG",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }
+      );
+
+    ctx.textAlign = "center";
+
+    ctx.font =
+      "700 82px Arial";
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.fillText(
+      `₦${formattedNaira}`,
+      width / 2,
+      370
+    );
+
+    /*
+     * ================================================
+     * SUCCESS TITLE
+     * ================================================
+     */
+
+    ctx.font =
+      "600 34px Arial";
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.fillText(
+      "Transaction Successful",
+      width / 2,
+      470
+    );
+
+    /*
+     * ================================================
+     * TRANSACTION DETAILS
+     * ================================================
+     */
+
+    const labelX = 116;
+    const valueX = 908;
+
+    let rowY = 575;
+
+    const rowGap = 84;
+
+    drawReceiptRow(
+      ctx,
+      "Amount in Crypto",
+      `${cryptoAmount} ${cryptoSymbol}`,
+      labelX,
+      valueX,
+      rowY
+    );
+
+    rowY += rowGap;
+
+    drawReceiptRow(
+      ctx,
+      "Bank Name",
+      bankName,
+      labelX,
+      valueX,
+      rowY
+    );
+
+    rowY += rowGap;
+
+    drawReceiptRow(
+      ctx,
+      "Account Name",
+      accountName,
+      labelX,
+      valueX,
+      rowY
+    );
+
+    rowY += rowGap;
+
+    drawReceiptRow(
+      ctx,
+      "Account Number",
+      accountNumber,
+      labelX,
+      valueX,
+      rowY
+    );
+
+    rowY += rowGap;
+
+    drawReceiptRow(
+      ctx,
+      "Date/Time",
+      dateTime,
+      labelX,
+      valueX,
+      rowY
+    );
+
+    rowY += rowGap;
+
+    drawReceiptRow(
+      ctx,
+      "Remark",
+      "BiyaPort transfer",
+      labelX,
+      valueX,
+      rowY
+    );
+
+    /*
+     * ================================================
+     * DIVIDER BEFORE BOTTOM CONTAINER
+     * ================================================
+     */
+
+    drawDashedLine(
+      ctx,
+      128,
+      1088,
+      896,
+      1088
+    );
+
+    /*
+     * ================================================
+     * BOTTOM VERIFICATION CONTAINER
+     * ================================================
+     *
+     * All three elements live inside this ONE container:
+     *
+     * 1. Biyaport icon
+     * 2. Verification text
+     * 3. QR code
+     */
+
+    const bottomContainerX = 128;
+    const bottomContainerY = 1118;
+    const bottomContainerWidth = 768;
+    const bottomContainerHeight = 150;
+    const bottomContainerRadius = 24;
+
+    ctx.beginPath();
+
+    roundRect(
+      ctx,
+      bottomContainerX,
+      bottomContainerY,
+      bottomContainerWidth,
+      bottomContainerHeight,
+      bottomContainerRadius
+    );
+
+    ctx.fillStyle = "#10101d";
+    ctx.fill();
+
+    ctx.strokeStyle =
+      "rgba(255,255,255,0.06)";
+
+    ctx.lineWidth = 1;
+
+    ctx.stroke();
+
+    /*
+     * ================================================
+     * Biyaport icon
+     * ================================================
+     */
+
+    try {
+      const icon =
+        await loadImage(
+          "/Biyaport-icon.svg"
+        );
+
+      const iconSize = 92;
+
+      ctx.drawImage(
+        icon,
+        156,
+        bottomContainerY +
+          (bottomContainerHeight -
+            iconSize) /
+            2,
+        iconSize,
+        iconSize
+      );
+    } catch {
+      /*
+       * Keep receipt generation functional even if
+       * the icon asset fails to load.
+       */
+
+      ctx.fillStyle =
+        "#1557E8";
+
+      ctx.beginPath();
+
+      ctx.arc(
+        202,
+        bottomContainerY +
+          bottomContainerHeight / 2,
+        40,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.fill();
+    }
+
+    /*
+     * ================================================
+     * VERIFICATION TEXT
+     * ================================================
+     */
+
+    ctx.textAlign = "left";
+
+    ctx.font =
+      "500 23px Arial";
+
+    ctx.fillStyle =
+      "#ffffff";
+
+    ctx.fillText(
+      "Scan code to verify this",
+      280,
+      bottomContainerY + 67
+    );
+
+    ctx.fillText(
+      "transaction on-chain",
+      280,
+      bottomContainerY + 101
+    );
+
+    /*
+     * ================================================
+     * QR CODE
+     * ================================================
+     */
+
+    const explorerUrl =
+      `${BASESCAN_TX_URL}${transactionHash}`;
+
+    const qrDataUrl =
+      await QRCode.toDataURL(
+        explorerUrl,
+        {
+          width: 120,
+          margin: 1,
+          errorCorrectionLevel:
+            "M",
+          color: {
+            dark: "#050511",
+            light: "#ffffff",
+          },
+        }
+      );
+
+    const qrImage =
+      await loadImage(
+        qrDataUrl
+      );
+
+    const qrContainerSize = 130;
+
+    const qrContainerX =
+      bottomContainerX +
+      bottomContainerWidth -
+      qrContainerSize -
+      10;
+
+    const qrContainerY =
+      bottomContainerY +
+      (bottomContainerHeight -
+        qrContainerSize) /
+        2;
+
+    /*
+     * QR white background
+     */
+
+    ctx.beginPath();
+
+    roundRect(
+      ctx,
+      qrContainerX,
+      qrContainerY,
+      qrContainerSize,
+      qrContainerSize,
+      16
+    );
+
+    ctx.fillStyle =
+      "#ffffff";
+
+    ctx.fill();
+
+    /*
+     * QR itself
+     */
+
+    ctx.drawImage(
+      qrImage,
+      qrContainerX + 5,
+      qrContainerY + 5,
+      120,
+      120
+    );
+
+    /*
+     * ================================================
+     * OUTSIDE-CONTAINER TAGLINE
+     * ================================================
+     *
+     * This is intentionally outside the #050511
+     * main receipt container.
+     */
+
+    ctx.textAlign = "center";
+
+    ctx.font =
+      "400 22px Arial";
+
+    ctx.fillStyle =
+      "#aaaab5";
+
+    ctx.fillText(
+      "Send crypto to Nigerian bank accounts, No wallet needed for recipients.",
+      width / 2,
+      1365
+    );
+
+    /*
+     * ================================================
+     * DOWNLOAD PNG
+     * ================================================
+     */
+
+    const blob =
+      await new Promise<Blob | null>(
+        (resolve) =>
+          canvas.toBlob(
+            resolve,
+            "image/png"
+          )
+      );
+
+    if (!blob) {
+      throw new Error(
+        "Unable to create receipt file."
+      );
+    }
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+    const anchor =
+      document.createElement(
+        "a"
+      );
+
+    anchor.href = url;
+
+    anchor.download =
+      `biyaport-receipt-${transactionHash.slice(
+        0,
+        10
+      )}.png`;
+
+    document.body.appendChild(
+      anchor
+    );
+
+    anchor.click();
+
+    anchor.remove();
+
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error(
+      "RECEIPT GENERATION ERROR:",
+      error
+    );
+  }
+}
+
+/*
+ * ====================================================
+ * RECEIPT ROW
+ * ====================================================
+ */
+
+function drawReceiptRow(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  value: string,
+  labelX: number,
+  valueX: number,
+  y: number
+) {
+  ctx.textAlign = "left";
+
+  ctx.font =
+    "400 25px Arial";
+
+  ctx.fillStyle = "#aaaab5";
+
+  ctx.fillText(
+    label,
+    labelX,
+    y
+  );
+
+  ctx.textAlign = "right";
+
+  ctx.font =
+    "600 25px Arial";
+
+  ctx.fillStyle = "#ffffff";
+
+  const maxWidth =
+    valueX - labelX - 300;
+
+  let displayValue = value;
+
+  while (
+    ctx.measureText(
+      displayValue
+    ).width > maxWidth &&
+    displayValue.length > 5
+  ) {
+    displayValue =
+      displayValue.slice(
+        0,
+        -1
+      );
+  }
+
+  if (
+    displayValue !== value
+  ) {
+    displayValue =
+      displayValue.slice(
+        0,
+        -3
+      ) + "...";
+  }
+
+  ctx.fillText(
+    displayValue,
+    valueX,
+    y
+  );
+}
+
+/*
+ * ====================================================
+ * DASHED LINE
+ * ====================================================
+ */
+
+function drawDashedLine(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+) {
+  ctx.save();
+
+  ctx.setLineDash([
+    8,
+    8,
+  ]);
+
+  ctx.strokeStyle =
+    "rgba(255,255,255,0.14)";
+
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    x1,
+    y1
+  );
+
+  ctx.lineTo(
+    x2,
+    y2
+  );
+
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/*
+ * ====================================================
+ * ROUNDED RECT
+ * ====================================================
+ */
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const r =
+    Math.min(
+      radius,
+      width / 2,
+      height / 2
+    );
+
+  ctx.moveTo(
+    x + r,
+    y
+  );
+
+  ctx.arcTo(
+    x + width,
+    y,
+    x + width,
+    y + height,
+    r
+  );
+
+  ctx.arcTo(
+    x + width,
+    y + height,
+    x,
+    y + height,
+    r
+  );
+
+  ctx.arcTo(
+    x,
+    y + height,
+    x,
+    y,
+    r
+  );
+
+  ctx.arcTo(
+    x,
+    y,
+    x + width,
+    y,
+    r
+  );
+
+  ctx.closePath();
+}
+
+/*
+ * ====================================================
+ * LOAD IMAGE
+ * ====================================================
+ *
+ * IMPORTANT:
+ *
+ * We intentionally use window.Image here.
+ *
+ * The file imports next/image as Image, so using
+ * `new Image()` would invoke Next's Image component
+ * instead of the browser's native HTMLImageElement.
+ */
+
+function loadImage(
+  src: string
+): Promise<HTMLImageElement> {
+  return new Promise(
+    (resolve, reject) => {
+      const image =
+        new window.Image();
+
+      image.onload = () =>
+        resolve(image);
+
+      image.onerror = reject;
+
+      image.src = src;
+    }
   );
 }
 
@@ -1702,11 +2668,15 @@ function PaymentShell({
 }) {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#050511]">
+
       <Background />
 
       <div className="relative z-10 min-h-screen">
+
         <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
+
           <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
+
             <Image
               src="/biyaport_logo.svg"
               alt="Biyaport"
@@ -1717,13 +2687,17 @@ function PaymentShell({
             />
 
             <ConnectWalletButton />
+
           </div>
+
         </header>
 
         <section className="min-h-screen overflow-y-auto px-4 pb-12 pt-[112px] sm:px-6 sm:pt-[128px]">
           {children}
         </section>
+
       </div>
+
     </main>
   );
 }

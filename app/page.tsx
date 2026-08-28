@@ -44,8 +44,9 @@ const BASE_USDT_ADDRESS =
 
 const USDT_DECIMALS = 6;
 
-const BASESCAN_TX_URL =
-  "https://basescan.org/tx/";
+const BASESCAN_TX_URL = "https://basescan.org/tx/";
+
+const RECEIPT_FONT = '"DM Sans", sans-serif';
 
 /*
  * Public Base client.
@@ -75,6 +76,8 @@ type CryptoOption = {
   network: string;
 };
 
+type CurrencyCode = "NGN" | "KES";
+
 type PaymentState =
   | "form"
   | "processing"
@@ -99,6 +102,29 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
 
 /*
  * ====================================================
+ * CURRENCIES
+ * ====================================================
+ */
+
+const CURRENCIES: {
+  code: CurrencyCode;
+  name: string;
+  flag: string;
+}[] = [
+  {
+    code: "NGN",
+    name: "Nigerian naira",
+    flag: "/nigeria-flag.svg",
+  },
+  {
+    code: "KES",
+    name: "Kenyan shillings",
+    flag: "/kenya-flag.svg",
+  },
+];
+
+/*
+ * ====================================================
  * HOME
  * ====================================================
  */
@@ -109,6 +135,27 @@ export default function Home() {
   const { sendTransaction } = useSendTransaction();
 
   const wallet = wallets[0];
+
+  /*
+   * ------------------------------------------------
+   * CURRENCY
+   * ------------------------------------------------
+   */
+
+  const [selectedCurrency, setSelectedCurrency] =
+    useState<CurrencyCode>("NGN");
+
+  const [currencyDropdownOpen, setCurrencyDropdownOpen] =
+    useState(false);
+
+  /*
+   * ------------------------------------------------
+   * BUY / SELL
+   * ------------------------------------------------
+   */
+
+  const [tradeMode, setTradeMode] =
+    useState<"buy" | "sell">("sell");
 
   /*
    * ------------------------------------------------
@@ -155,11 +202,24 @@ export default function Home() {
   const [cryptoDropdownOpen, setCryptoDropdownOpen] =
     useState(false);
 
+  const [cryptoSearch, setCryptoSearch] = useState("");
+
   const [cryptoAmount, setCryptoAmount] = useState("");
 
   const [loadingQuote, setLoadingQuote] = useState(false);
 
   const [quoteError, setQuoteError] = useState("");
+
+  /*
+   * ------------------------------------------------
+   * NETWORK
+   * ------------------------------------------------
+   *
+   * Base is the only supported network for now.
+   * The selector is intentionally non-functional.
+   */
+
+  const selectedNetwork = "Base";
 
   /*
    * ------------------------------------------------
@@ -205,6 +265,21 @@ export default function Home() {
 
   const cryptoDropdownRef =
     useRef<HTMLDivElement | null>(null);
+
+  const currencyDropdownRef =
+    useRef<HTMLDivElement | null>(null);
+
+  /*
+   * ====================================================
+   * CURRENT CURRENCY
+   * ====================================================
+   */
+
+  const currentCurrency =
+    CURRENCIES.find(
+      (currency) =>
+        currency.code === selectedCurrency
+    ) || CURRENCIES[0];
 
   /*
    * ====================================================
@@ -281,6 +356,13 @@ export default function Home() {
         !cryptoDropdownRef.current.contains(target)
       ) {
         setCryptoDropdownOpen(false);
+      }
+
+      if (
+        currencyDropdownRef.current &&
+        !currencyDropdownRef.current.contains(target)
+      ) {
+        setCurrencyDropdownOpen(false);
       }
     };
 
@@ -471,6 +553,27 @@ export default function Home() {
 
   /*
    * ====================================================
+   * CRYPTO SEARCH
+   * ====================================================
+   */
+
+  const filteredCryptoOptions =
+    CRYPTO_OPTIONS.filter(
+      (crypto) =>
+        crypto.symbol
+          .toLowerCase()
+          .includes(
+            cryptoSearch.toLowerCase()
+          ) ||
+        crypto.name
+          .toLowerCase()
+          .includes(
+            cryptoSearch.toLowerCase()
+          )
+    );
+
+  /*
+   * ====================================================
    * CRYPTO
    * ====================================================
    */
@@ -481,6 +584,7 @@ export default function Home() {
     setSelectedCrypto(crypto);
     setCryptoDropdownOpen(false);
 
+    setCryptoSearch("");
     setCryptoAmount("");
     setQuoteError("");
     setPaymentError("");
@@ -1062,8 +1166,6 @@ export default function Home() {
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
-            {/* PROCESSING ICON */}
-
             <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
               <div
                 className="absolute h-[96px] w-[96px] rounded-full"
@@ -1100,8 +1202,6 @@ export default function Home() {
                 "Transaction signed and approved"}
             </p>
 
-            {/* COUNTDOWN */}
-
             <div className="mt-7 inline-flex rounded-[7px] bg-[#07091b] px-4 py-2 text-[16px] font-medium text-[#1557E8]">
               {countdown >= 60
                 ? "1:00"
@@ -1110,26 +1210,17 @@ export default function Home() {
                   ).padStart(2, "0")}`}
             </div>
 
-            {/* FLUID PROGRESS */}
-
             <div className="relative mx-auto mt-8 w-full max-w-[310px]">
-
               <div className="relative h-[3px] w-full rounded-full bg-[#090d24]">
-
                 <div
                   className="absolute left-0 top-0 h-[3px] rounded-full bg-[#1557E8] transition-all duration-700 ease-in-out"
                   style={{
                     width: `${progressPercentage}%`,
                   }}
                 />
-
               </div>
 
-              {/* DOT 1 */}
-
-              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8] transition-all duration-500" />
-
-              {/* DOT 2 */}
+              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
 
               <div
                 className={`absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
@@ -1139,8 +1230,6 @@ export default function Home() {
                 }`}
               />
 
-              {/* DOT 3 */}
-
               <div
                 className={`absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
                   paymentStage >= 3
@@ -1148,9 +1237,7 @@ export default function Home() {
                     : "bg-[#080b1c]"
                 }`}
               />
-
             </div>
-
           </div>
         </div>
 
@@ -1183,26 +1270,18 @@ export default function Home() {
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
-            {/* SUCCESS ICON */}
-
             <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full border-[3px] border-[#1557E8]">
-
               <div className="flex h-[62px] w-[62px] items-center justify-center rounded-full bg-[#1557E8]">
                 <Check
                   className="h-8 w-8 text-white"
                   strokeWidth={2.2}
                 />
               </div>
-
             </div>
-
-            {/* TITLE */}
 
             <h1 className="mt-7 text-[25px] font-semibold tracking-[-0.03em]">
               Transfer Successful
             </h1>
-
-            {/* DESCRIPTION */}
 
             <p className="mx-auto mt-3 max-w-[500px] text-[16px] leading-[24px] text-muted-foreground">
               You have successfully sent{" "}
@@ -1218,10 +1297,7 @@ export default function Home() {
               </span>
             </p>
 
-            {/* SUCCESS PROGRESS */}
-
             <div className="relative mx-auto mt-8 w-full max-w-[310px]">
-
               <div className="h-[3px] w-full rounded-full bg-[#1557E8]" />
 
               <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
@@ -1229,16 +1305,11 @@ export default function Home() {
               <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
 
               <div className="absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
-
             </div>
-
-            {/* SUCCESS TIMER */}
 
             <div className="mx-auto mt-7 inline-flex rounded-[7px] bg-[#07091b] px-4 py-2 text-[16px] font-medium text-[#1557E8]">
               1:00
             </div>
-
-            {/* DOWNLOAD RECEIPT */}
 
             <button
               type="button"
@@ -1269,8 +1340,6 @@ export default function Home() {
               Download receipt
             </button>
 
-            {/* BACK HOME */}
-
             <button
               type="button"
               onClick={resetPayment}
@@ -1278,7 +1347,6 @@ export default function Home() {
             >
               Back Home
             </button>
-
           </div>
         </div>
       </PaymentShell>
@@ -1323,7 +1391,6 @@ export default function Home() {
             >
               Try Again
             </button>
-
           </div>
         </div>
       </PaymentShell>
@@ -1341,7 +1408,6 @@ export default function Home() {
       <Background />
 
       <div className="relative z-10 min-h-screen">
-
         <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
           <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
 
@@ -1355,32 +1421,140 @@ export default function Home() {
             />
 
             <ConnectWalletButton />
-
           </div>
         </header>
 
         <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
-
           <div className="flex w-full max-w-[590px] flex-col items-center">
 
             <div className="w-full rounded-[16px] border border-border bg-card p-5">
 
-              <div className="mb-6 flex items-center justify-between">
+              {/* =========================================
+                  HEADER
+                 ========================================= */}
 
+              <div className="mb-5 flex items-center justify-between">
                 <h1 className="text-[20px] font-semibold tracking-[-0.02em] sm:text-[22px]">
-                  Quick Send
+                  Quick Port
                 </h1>
 
-                <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-input sm:h-12 sm:w-12">
-                  <Image
-                    src="/send-money.png"
-                    alt=""
-                    width={24}
-                    height={24}
-                    className="h-6 w-6 object-contain"
-                  />
-                </div>
+                <div
+                  ref={currencyDropdownRef}
+                  className="relative"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCurrencyDropdownOpen(
+                        (open) => !open
+                      )
+                    }
+                    className="flex h-[44px] items-center gap-2 rounded-[10px] bg-input px-3.5 transition hover:bg-secondary sm:h-[48px] sm:px-4"
+                  >
+                    <Image
+                      src={currentCurrency.flag}
+                      alt=""
+                      width={20}
+                      height={20}
+                      className="h-5 w-5 rounded-full object-cover"
+                    />
 
+                    <span className="text-[14px] font-semibold">
+                      {currentCurrency.code}
+                    </span>
+
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        currencyDropdownOpen
+                          ? "rotate-180"
+                          : ""
+                      }`}
+                    />
+                  </button>
+
+                  {currencyDropdownOpen && (
+                    <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[220px] overflow-hidden rounded-[12px] border border-border bg-[#070812] p-1.5 shadow-2xl">
+
+                      {CURRENCIES.map(
+                        (currency) => (
+                          <button
+                            key={
+                              currency.code
+                            }
+                            type="button"
+                            onClick={() => {
+                              setSelectedCurrency(
+                                currency.code
+                              );
+
+                              setCurrencyDropdownOpen(
+                                false
+                              );
+                            }}
+                            className="flex w-full items-center gap-3 rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                          >
+                            <Image
+                              src={
+                                currency.flag
+                              }
+                              alt=""
+                              width={22}
+                              height={22}
+                              className="h-[22px] w-[22px] rounded-full object-cover"
+                            />
+
+                            <div className="flex flex-1 flex-col">
+                              <span className="text-[14px] font-medium">
+                                {
+                                  currency.code
+                                }
+                              </span>
+
+                              <span className="text-[12px] text-muted-foreground">
+                                {
+                                  currency.name
+                                }
+                              </span>
+                            </div>
+
+                            {selectedCurrency ===
+                              currency.code && (
+                              <Check className="h-4 w-4 text-primary" />
+                            )}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* =========================================
+                  BUY / SELL SWITCHER
+                 ========================================= */}
+
+              <div className="mb-5 flex h-[52px] rounded-[12px] bg-input p-1">
+                <button
+                  type="button"
+                  disabled
+                  className="flex flex-1 cursor-not-allowed items-center justify-center rounded-[9px] text-[14px] font-medium text-muted-foreground opacity-70 sm:text-[15px]"
+                >
+                  Buy Crypto
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTradeMode("sell")
+                  }
+                  className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition sm:text-[15px] ${
+                    tradeMode === "sell"
+                      ? "bg-[#050511] text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Sell Crypto
+                </button>
               </div>
 
               {step === 1 && (
@@ -1433,7 +1607,6 @@ export default function Home() {
 
                         <div className="border-b border-border p-3">
                           <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
-
                             <Search className="h-4 w-4 text-muted-foreground" />
 
                             <input
@@ -1447,12 +1620,10 @@ export default function Home() {
                               placeholder="Search bank"
                               className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
                             />
-
                           </div>
                         </div>
 
                         <div className="max-h-[280px] overflow-y-auto p-1.5">
-
                           {filteredInstitutions.length >
                           0 ? (
                             filteredInstitutions.map(
@@ -1487,15 +1658,12 @@ export default function Home() {
                               No banks found.
                             </div>
                           )}
-
                         </div>
-
                       </div>
                     )}
                   </div>
 
                   <div className="mt-3">
-
                     <input
                       type="text"
                       inputMode="numeric"
@@ -1512,11 +1680,8 @@ export default function Home() {
 
                     {verifyingAccount && (
                       <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
                         Verifying account...
-
                       </div>
                     )}
 
@@ -1532,7 +1697,6 @@ export default function Home() {
                         {accountError}
                       </div>
                     )}
-
                   </div>
 
                   <QuickSendWalletButton />
@@ -1553,9 +1717,7 @@ export default function Home() {
               {step === 2 && (
                 <>
                   <div className="rounded-[10px] bg-input px-5 py-4">
-
                     <div className="space-y-2 text-[15px] leading-[22px]">
-
                       <p>
                         Name:{" "}
                         <span className="font-semibold">
@@ -1578,16 +1740,13 @@ export default function Home() {
                           }
                         </span>
                       </p>
-
                     </div>
-
                   </div>
 
                   <div
                     ref={cryptoDropdownRef}
                     className="relative mt-5"
                   >
-
                     <button
                       type="button"
                       onClick={() =>
@@ -1597,83 +1756,148 @@ export default function Home() {
                       }
                       className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] sm:h-[56px] sm:px-5 sm:text-[16px]"
                     >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        {selectedCrypto ? (
+                          <Image
+                            src="/usdt-logo.svg"
+                            alt=""
+                            width={24}
+                            height={24}
+                            className="h-6 w-6 shrink-0 object-contain"
+                          />
+                        ) : null}
 
-                      <span
-                        className={
-                          selectedCrypto
-                            ? "text-foreground"
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {selectedCrypto
-                          ? `${selectedCrypto.symbol} · ${selectedCrypto.name}`
-                          : "Select Crypto to pay"}
-                      </span>
+                        <span
+                          className={
+                            selectedCrypto
+                              ? "truncate text-foreground"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {selectedCrypto
+                            ? `${selectedCrypto.symbol} · ${selectedCrypto.name}`
+                            : "Select Crypto to pay"}
+                        </span>
+                      </div>
 
                       <ChevronDown
-                        className={`h-5 w-5 text-muted-foreground transition-transform ${
+                        className={`ml-3 h-5 w-5 shrink-0 text-muted-foreground transition-transform ${
                           cryptoDropdownOpen
                             ? "rotate-180"
                             : ""
                         }`}
                       />
-
                     </button>
 
                     {cryptoDropdownOpen && (
                       <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
-                        <div className="p-1.5">
+                        <div className="border-b border-border p-3">
+                          <div className="flex items-center gap-2">
 
-                          {CRYPTO_OPTIONS.map(
-                            (crypto) => (
-                              <button
-                                key={
-                                  crypto.symbol
-                                }
-                                type="button"
-                                onClick={() =>
-                                  handleCryptoSelect(
-                                    crypto
+                            <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+                              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+
+                              <input
+                                type="text"
+                                value={cryptoSearch}
+                                onChange={(event) =>
+                                  setCryptoSearch(
+                                    event.target.value
                                   )
                                 }
-                                className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
-                              >
+                                onClick={(event) =>
+                                  event.stopPropagation()
+                                }
+                                placeholder="Search supported crypto"
+                                className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground"
+                                autoFocus
+                              />
+                            </div>
 
-                                <div>
+                            <button
+                              type="button"
+                              onClick={(event) =>
+                                event.stopPropagation()
+                              }
+                              className="flex h-11 shrink-0 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3 text-[14px] font-medium"
+                            >
+                              <Image
+                                src="/base-logo.svg"
+                                alt=""
+                                width={20}
+                                height={20}
+                                className="h-5 w-5 object-contain"
+                              />
 
-                                  <div className="font-medium">
-                                    {
-                                      crypto.symbol
-                                    }
-                                  </div>
+                              <span>
+                                {selectedNetwork}
+                              </span>
 
-                                  <div className="text-[12px] text-muted-foreground">
-                                    {
-                                      crypto.name
-                                    }
-                                  </div>
-
-                                </div>
-
-                                {selectedCrypto?.symbol ===
-                                  crypto.symbol && (
-                                  <Check className="h-4 w-4 text-primary" />
-                                )}
-
-                              </button>
-                            )
-                          )}
-
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            </button>
+                          </div>
                         </div>
 
+                        <div className="max-h-[220px] overflow-y-auto p-1.5">
+                          {filteredCryptoOptions.length >
+                          0 ? (
+                            filteredCryptoOptions.map(
+                              (crypto) => (
+                                <button
+                                  key={
+                                    crypto.symbol
+                                  }
+                                  type="button"
+                                  onClick={() =>
+                                    handleCryptoSelect(
+                                      crypto
+                                    )
+                                  }
+                                  className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <Image
+                                      src="/usdt-logo.svg"
+                                      alt=""
+                                      width={40}
+                                      height={40}
+                                      className="h-10 w-10 object-contain"
+                                    />
+
+                                    <div>
+                                      <div className="font-medium">
+                                        {
+                                          crypto.symbol
+                                        }
+                                      </div>
+
+                                      <div className="text-[12px] text-muted-foreground">
+                                        {
+                                          crypto.name
+                                        }
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {selectedCrypto?.symbol ===
+                                    crypto.symbol && (
+                                    <Check className="h-4 w-4 text-primary" />
+                                  )}
+                                </button>
+                              )
+                            )
+                          ) : (
+                            <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
+                              No supported crypto found.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
-
                   </div>
 
                   <div className="mt-3">
-
                     <input
                       type="text"
                       inputMode="decimal"
@@ -1687,11 +1911,8 @@ export default function Home() {
 
                     {loadingQuote && (
                       <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-
                         Calculating crypto amount...
-
                       </div>
                     )}
 
@@ -1699,9 +1920,7 @@ export default function Home() {
                       !loadingQuote &&
                       !quoteError && (
                         <div className="mt-2 px-1 text-[13px] text-muted-foreground">
-
                           You will pay approximately{" "}
-
                           <span className="font-medium text-foreground">
                             {
                               estimatedPayAmountFormatted
@@ -1710,7 +1929,6 @@ export default function Home() {
                               selectedCrypto?.symbol
                             }
                           </span>
-
                         </div>
                       )}
 
@@ -1719,7 +1937,6 @@ export default function Home() {
                         {quoteError}
                       </div>
                     )}
-
                   </div>
 
                   {showPayButton && (
@@ -1743,10 +1960,8 @@ export default function Home() {
                       {paymentError}
                     </div>
                   )}
-
                 </>
               )}
-
             </div>
 
             <p className="mt-6 w-full px-2 text-center text-[14px] leading-[20px] text-muted-foreground sm:mt-8 sm:px-0 sm:text-[16px] sm:leading-[22px]">
@@ -1754,9 +1969,7 @@ export default function Home() {
               Nigerian bank accounts. No wallet needed
               for recipients.
             </p>
-
           </div>
-
         </section>
       </div>
     </main>
@@ -1806,12 +2019,6 @@ function formatReceiptDate(
  * ====================================================
  * GENERATE RECEIPT
  * ====================================================
- *
- * Creates the receipt as a PNG directly in the browser.
- *
- * IMPORTANT:
- * window.Image is used instead of Image because
- * next/image is imported at the top of this file.
  */
 
 async function generateReceipt({
@@ -1840,6 +2047,37 @@ async function generateReceipt({
   try {
     /*
      * ================================================
+     * ENSURE DM SANS IS LOADED
+     * ================================================
+     *
+     * Canvas does not automatically inherit the page's
+     * CSS font. We explicitly wait for DM Sans here
+     * before drawing anything on the receipt.
+     */
+
+    await Promise.all([
+      document.fonts.load(
+        `400 25px ${RECEIPT_FONT}`
+      ),
+      document.fonts.load(
+        `500 23px ${RECEIPT_FONT}`
+      ),
+      document.fonts.load(
+        `600 25px ${RECEIPT_FONT}`
+      ),
+      document.fonts.load(
+        `600 34px ${RECEIPT_FONT}`
+      ),
+      document.fonts.load(
+        `700 82px ${RECEIPT_FONT}`
+      ),
+      document.fonts.load(
+        `400 22px ${RECEIPT_FONT}`
+      ),
+    ]);
+
+    /*
+     * ================================================
      * RECEIPT CANVAS
      * ================================================
      */
@@ -1866,12 +2104,6 @@ async function generateReceipt({
      * ================================================
      * PAGE BACKGROUND
      * ================================================
-     *
-     * Matches the webpage background treatment:
-     *
-     * #050511 base
-     * + blue radial glow
-     * + subtle circular rings
      */
 
     ctx.fillStyle = "#050511";
@@ -1993,7 +2225,7 @@ async function generateReceipt({
       radius
     );
 
-    ctx.fillStyle = "#050511";
+    ctx.fillStyle = "#0f0f1b";
     ctx.fill();
 
     /*
@@ -2009,7 +2241,7 @@ async function generateReceipt({
         );
 
       const logoWidth = 220;
-      const logoHeight = 61;
+      const logoHeight = 71;
 
       ctx.drawImage(
         logo,
@@ -2022,7 +2254,7 @@ async function generateReceipt({
       ctx.fillStyle = "#ffffff";
 
       ctx.font =
-        "600 32px Arial";
+        `600 32px ${RECEIPT_FONT}`;
 
       ctx.textAlign = "center";
 
@@ -2067,7 +2299,7 @@ async function generateReceipt({
     ctx.textAlign = "center";
 
     ctx.font =
-      "700 82px Arial";
+      `700 82px ${RECEIPT_FONT}`;
 
     ctx.fillStyle = "#ffffff";
 
@@ -2084,7 +2316,7 @@ async function generateReceipt({
      */
 
     ctx.font =
-      "600 34px Arial";
+      `600 34px ${RECEIPT_FONT}`;
 
     ctx.fillStyle = "#ffffff";
 
@@ -2189,12 +2421,6 @@ async function generateReceipt({
      * ================================================
      * BOTTOM VERIFICATION CONTAINER
      * ================================================
-     *
-     * All three elements live inside this ONE container:
-     *
-     * 1. Biyaport icon
-     * 2. Verification text
-     * 3. QR code
      */
 
     const bottomContainerX = 128;
@@ -2214,7 +2440,7 @@ async function generateReceipt({
       bottomContainerRadius
     );
 
-    ctx.fillStyle = "#10101d";
+    ctx.fillStyle = "#050511";
     ctx.fill();
 
     ctx.strokeStyle =
@@ -2226,7 +2452,7 @@ async function generateReceipt({
 
     /*
      * ================================================
-     * Biyaport icon
+     * BIYAPORT ICON
      * ================================================
      */
 
@@ -2249,11 +2475,6 @@ async function generateReceipt({
         iconSize
       );
     } catch {
-      /*
-       * Keep receipt generation functional even if
-       * the icon asset fails to load.
-       */
-
       ctx.fillStyle =
         "#1557E8";
 
@@ -2280,7 +2501,7 @@ async function generateReceipt({
     ctx.textAlign = "left";
 
     ctx.font =
-      "500 23px Arial";
+      `500 23px ${RECEIPT_FONT}`;
 
     ctx.fillStyle =
       "#ffffff";
@@ -2337,8 +2558,7 @@ async function generateReceipt({
     const qrContainerY =
       bottomContainerY +
       (bottomContainerHeight -
-        qrContainerSize) /
-        2;
+        qrContainerSize) / 2;
 
     /*
      * QR white background
@@ -2376,15 +2596,12 @@ async function generateReceipt({
      * ================================================
      * OUTSIDE-CONTAINER TAGLINE
      * ================================================
-     *
-     * This is intentionally outside the #050511
-     * main receipt container.
      */
 
     ctx.textAlign = "center";
 
     ctx.font =
-      "400 22px Arial";
+      `400 22px ${RECEIPT_FONT}`;
 
     ctx.fillStyle =
       "#aaaab5";
@@ -2468,7 +2685,7 @@ function drawReceiptRow(
   ctx.textAlign = "left";
 
   ctx.font =
-    "400 25px Arial";
+    `400 25px ${RECEIPT_FONT}`;
 
   ctx.fillStyle = "#aaaab5";
 
@@ -2481,7 +2698,7 @@ function drawReceiptRow(
   ctx.textAlign = "right";
 
   ctx.font =
-    "600 25px Arial";
+    `600 25px ${RECEIPT_FONT}`;
 
   ctx.fillStyle = "#ffffff";
 
@@ -2627,14 +2844,6 @@ function roundRect(
  * ====================================================
  * LOAD IMAGE
  * ====================================================
- *
- * IMPORTANT:
- *
- * We intentionally use window.Image here.
- *
- * The file imports next/image as Image, so using
- * `new Image()` would invoke Next's Image component
- * instead of the browser's native HTMLImageElement.
  */
 
 function loadImage(

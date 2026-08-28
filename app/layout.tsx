@@ -11,6 +11,9 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "Biyaport",
   description: "Send crypto to Nigerian bank accounts.",
+  icons: {
+    icon: "Biyaport-icon.svg"
+  }
 };
 
 export default function RootLayout({

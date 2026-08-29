@@ -21,6 +21,7 @@ import {
   encodeFunctionData,
   erc20Abi,
   parseUnits,
+  formatUnits,
   createPublicClient,
   http,
 } from "viem";
@@ -43,7 +44,8 @@ const BASE_CHAIN_ID = 8453;
 const BASE_USDT_ADDRESS =
   "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`;
 
-const USDT_DECIMALS = 6;
+const BASE_USDC_ADDRESS =
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
 
 const BASESCAN_TX_URL = "https://basescan.org/tx/";
 
@@ -52,7 +54,9 @@ const RECEIPT_FONT = '"DM Sans", sans-serif';
 /*
  * Public Base client.
  *
- * Used ONLY to wait for transaction confirmation.
+ * Used for:
+ * - Reading token balances
+ * - Waiting for transaction confirmation
  */
 
 const publicClient = createPublicClient({
@@ -75,6 +79,9 @@ type CryptoOption = {
   symbol: string;
   name: string;
   network: string;
+  address: `0x${string}`;
+  decimals: number;
+  logo: string;
 };
 
 type CurrencyCode = "NGN" | "KES";
@@ -98,6 +105,17 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     symbol: "USDT",
     name: "Tether USD",
     network: "base",
+    address: BASE_USDT_ADDRESS,
+    decimals: 6,
+    logo: "/usdt-logo.svg",
+  },
+  {
+    symbol: "USDC",
+    name: "USD Coin",
+    network: "base",
+    address: BASE_USDC_ADDRESS,
+    decimals: 6,
+    logo: "/usdc-logo.svg",
   },
 ];
 
@@ -213,6 +231,19 @@ export default function Home() {
 
   /*
    * ------------------------------------------------
+   * TOKEN BALANCES
+   * ------------------------------------------------
+   */
+
+  const [tokenBalances, setTokenBalances] = useState<
+    Record<string, string>
+  >({});
+
+  const [loadingBalances, setLoadingBalances] =
+    useState(false);
+
+  /*
+   * ------------------------------------------------
    * NETWORK
    * ------------------------------------------------
    */
@@ -278,6 +309,95 @@ export default function Home() {
       (currency) =>
         currency.code === selectedCurrency
     ) || CURRENCIES[0];
+
+  /*
+   * ====================================================
+   * LOAD TOKEN BALANCES
+   * ====================================================
+   */
+
+  useEffect(() => {
+    if (!authenticated || !wallet?.address) {
+      setTokenBalances({});
+      setLoadingBalances(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchTokenBalances = async () => {
+      setLoadingBalances(true);
+
+      try {
+        const balanceEntries =
+          await Promise.all(
+            CRYPTO_OPTIONS.map(
+              async (crypto) => {
+                try {
+                  const rawBalance =
+                    await publicClient.readContract({
+                      address: crypto.address,
+                      abi: erc20Abi,
+                      functionName: "balanceOf",
+                      args: [
+                        wallet.address as `0x${string}`,
+                      ],
+                    });
+
+                  const formattedBalance =
+                    formatUnits(
+                      rawBalance,
+                      crypto.decimals
+                    );
+
+                  return [
+                    crypto.symbol,
+                    formattedBalance,
+                  ] as const;
+                } catch (error) {
+                  console.error(
+                    `BALANCE FETCH ERROR (${crypto.symbol}):`,
+                    error
+                  );
+
+                  return [
+                    crypto.symbol,
+                    "0",
+                  ] as const;
+                }
+              }
+            )
+          );
+
+        if (!cancelled) {
+          setTokenBalances(
+            Object.fromEntries(
+              balanceEntries
+            )
+          );
+        }
+      } catch (error) {
+        console.error(
+          "TOKEN BALANCE FETCH ERROR:",
+          error
+        );
+
+        if (!cancelled) {
+          setTokenBalances({});
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBalances(false);
+        }
+      }
+    };
+
+    fetchTokenBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, wallet?.address]);
 
   /*
    * ====================================================
@@ -792,12 +912,9 @@ export default function Home() {
       return;
     }
 
-    if (
-      !selectedCrypto ||
-      selectedCrypto.symbol !== "USDT"
-    ) {
+    if (!selectedCrypto) {
       setPaymentError(
-        "Please select USDT."
+        "Please select a crypto to pay with."
       );
       return;
     }
@@ -810,6 +927,26 @@ export default function Home() {
     ) {
       setPaymentError(
         "Some payment information is missing."
+      );
+      return;
+    }
+
+    /*
+     * ================================================
+     * CHECK TOKEN BALANCE BEFORE CREATING ORDER
+     * ================================================
+     */
+
+    const walletBalance = Number(
+      tokenBalances[selectedCrypto.symbol] || "0"
+    );
+
+    if (
+      !Number.isFinite(walletBalance) ||
+      walletBalance < estimatedPayAmount
+    ) {
+      setPaymentError(
+        `Insufficient ${selectedCrypto.symbol} balance. You need approximately ${estimatedPayAmountFormatted} ${selectedCrypto.symbol}, but your wallet has ${walletBalance.toFixed(6)} ${selectedCrypto.symbol}.`
       );
       return;
     }
@@ -960,7 +1097,7 @@ export default function Home() {
       );
 
       console.log(
-        "BIYAPORT USDT PAYMENT"
+        `BIYAPORT ${selectedCrypto.symbol} PAYMENT`
       );
 
       console.log(
@@ -969,8 +1106,8 @@ export default function Home() {
       );
 
       console.log(
-        "USDT contract:",
-        BASE_USDT_ADDRESS
+        `${selectedCrypto.symbol} contract:`,
+        selectedCrypto.address
       );
 
       console.log(
@@ -994,7 +1131,7 @@ export default function Home() {
       );
 
       console.log(
-        "TOTAL USDT TO SEND:",
+        `TOTAL ${selectedCrypto.symbol} TO SEND:`,
         totalCryptoAmount
       );
 
@@ -1016,17 +1153,19 @@ export default function Home() {
 
       /*
        * ================================================
-       * 6. CONVERT USDT AMOUNT
+       * 6. CONVERT TOKEN AMOUNT
        * ================================================
        */
 
       const totalUnits = parseUnits(
-        totalCryptoAmount.toFixed(6),
-        USDT_DECIMALS
+        totalCryptoAmount.toFixed(
+          selectedCrypto.decimals
+        ),
+        selectedCrypto.decimals
       );
 
       console.log(
-        "USDT TOKEN UNITS:",
+        `${selectedCrypto.symbol} TOKEN UNITS:`,
         totalUnits.toString()
       );
 
@@ -1066,7 +1205,7 @@ export default function Home() {
       const result =
         await sendTransaction(
           {
-            to: BASE_USDT_ADDRESS,
+            to: selectedCrypto.address,
             data: transferData,
             value: BigInt(0),
             chainId:
@@ -1112,7 +1251,9 @@ export default function Home() {
        */
 
       setReceiptCryptoAmount(
-        totalCryptoAmount.toFixed(6)
+        totalCryptoAmount.toFixed(
+          selectedCrypto.decimals
+        )
       );
 
       setReceiptDateTime(
@@ -1786,7 +1927,9 @@ export default function Home() {
                       <div className="flex min-w-0 items-center gap-2.5">
                         {selectedCrypto ? (
                           <Image
-                            src="/usdt-logo.svg"
+                            src={
+                              selectedCrypto.logo
+                            }
                             alt=""
                             width={24}
                             height={24}
@@ -1866,53 +2009,88 @@ export default function Home() {
                           </div>
                         </div>
 
-                        <div className="max-h-[220px] overflow-y-auto p-1.5">
+                        <div className="max-h-[260px] overflow-y-auto p-1.5">
                           {filteredCryptoOptions.length >
                           0 ? (
                             filteredCryptoOptions.map(
-                              (crypto) => (
-                                <button
-                                  key={
+                              (crypto) => {
+                                const balance =
+                                  tokenBalances[
                                     crypto.symbol
-                                  }
-                                  type="button"
-                                  onClick={() =>
-                                    handleCryptoSelect(
-                                      crypto
-                                    )
-                                  }
-                                  className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <Image
-                                      src="/usdt-logo.svg"
-                                      alt=""
-                                      width={40}
-                                      height={40}
-                                      className="h-10 w-10 object-contain"
-                                    />
+                                  ];
 
-                                    <div>
-                                      <div className="font-medium">
-                                        {
-                                          crypto.symbol
+                                return (
+                                  <button
+                                    key={
+                                      crypto.symbol
+                                    }
+                                    type="button"
+                                    onClick={() =>
+                                      handleCryptoSelect(
+                                        crypto
+                                      )
+                                    }
+                                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                                  >
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <Image
+                                        src={
+                                          crypto.logo
                                         }
-                                      </div>
+                                        alt=""
+                                        width={40}
+                                        height={40}
+                                        className="h-10 w-10 shrink-0 object-contain"
+                                      />
 
-                                      <div className="text-[12px] text-muted-foreground">
-                                        {
-                                          crypto.name
-                                        }
+                                      <div className="min-w-0">
+                                        <div className="font-medium">
+                                          {
+                                            crypto.symbol
+                                          }
+                                        </div>
+
+                                        <div className="text-[12px] text-muted-foreground">
+                                          {
+                                            crypto.name
+                                          }
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
 
-                                  {selectedCrypto?.symbol ===
-                                    crypto.symbol && (
-                                    <Check className="h-4 w-4 text-primary" />
-                                  )}
-                                </button>
-                              )
+                                    <div className="ml-3 flex shrink-0 items-center gap-3">
+                                      <div className="text-right">
+                                        <div className="text-[14px] font-medium text-foreground">
+                                          {loadingBalances
+                                            ? "Loading..."
+                                            : balance
+                                            ? Number(
+                                                balance
+                                              ).toLocaleString(
+                                                "en-US",
+                                                {
+                                                  maximumFractionDigits:
+                                                    6,
+                                                }
+                                              )
+                                            : "0.00"}
+                                        </div>
+
+                                        <div className="text-[11px] text-muted-foreground">
+                                          {
+                                            crypto.symbol
+                                          }
+                                        </div>
+                                      </div>
+
+                                      {selectedCrypto?.symbol ===
+                                        crypto.symbol && (
+                                        <Check className="h-4 w-4 text-primary" />
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              }
                             )
                           ) : (
                             <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">

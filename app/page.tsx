@@ -8,6 +8,7 @@ import {
   Loader2,
   Search,
   Send,
+  ArrowLeft,
 } from "lucide-react";
 
 import {
@@ -214,9 +215,6 @@ export default function Home() {
    * ------------------------------------------------
    * NETWORK
    * ------------------------------------------------
-   *
-   * Base is the only supported network for now.
-   * The selector is intentionally non-functional.
    */
 
   const selectedNetwork = "Base";
@@ -553,6 +551,17 @@ export default function Home() {
 
   /*
    * ====================================================
+   * BACK TO ACCOUNT DETAILS
+   * ====================================================
+   */
+
+  const handleBack = () => {
+    setStep(1);
+    setPaymentError("");
+  };
+
+  /*
+   * ====================================================
    * CRYPTO SEARCH
    * ====================================================
    */
@@ -731,6 +740,20 @@ export default function Home() {
 
   /*
    * ====================================================
+   * PAY BUTTON STATE
+   * ====================================================
+   */
+
+  const showPayButton =
+    !!selectedCrypto &&
+    !!amount &&
+    Number(amount) > 0 &&
+    !!cryptoAmount &&
+    !loadingQuote &&
+    !quoteError;
+
+  /*
+   * ====================================================
    * RESET PAYMENT
    * ====================================================
    */
@@ -758,6 +781,10 @@ export default function Home() {
    */
 
   const handlePay = async () => {
+    if (!showPayButton) {
+      return;
+    }
+
     if (!wallet?.address) {
       setPaymentError(
         "Please connect your wallet first."
@@ -1040,11 +1067,8 @@ export default function Home() {
         await sendTransaction(
           {
             to: BASE_USDT_ADDRESS,
-
             data: transferData,
-
             value: BigInt(0),
-
             chainId:
               BASE_CHAIN_ID,
           },
@@ -1133,20 +1157,6 @@ export default function Home() {
 
   /*
    * ====================================================
-   * PAY BUTTON
-   * ====================================================
-   */
-
-  const showPayButton =
-    !!selectedCrypto &&
-    !!amount &&
-    Number(amount) > 0 &&
-    !!cryptoAmount &&
-    !loadingQuote &&
-    !quoteError;
-
-  /*
-   * ====================================================
    * PROCESSING SCREEN
    * ====================================================
    */
@@ -1223,19 +1233,19 @@ export default function Home() {
               <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
 
               <div
-                className={`absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
+                className={`absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 transition-colors duration-500 ${
                   paymentStage >= 2
                     ? "bg-[#1557E8]"
                     : "bg-[#080b1c]"
-                }`}
+                } rounded-full`}
               />
 
               <div
-                className={`absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-500 ${
+                className={`absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 transition-colors duration-500 ${
                   paymentStage >= 3
                     ? "bg-[#1557E8]"
                     : "bg-[#080b1c]"
-                }`}
+                } rounded-full`}
               />
             </div>
           </div>
@@ -1716,32 +1726,49 @@ export default function Home() {
 
               {step === 2 && (
                 <>
+                  {/* =========================================
+                      VERIFIED RECIPIENT DETAILS
+                     ========================================= */}
+
                   <div className="rounded-[10px] bg-input px-5 py-4">
-                    <div className="space-y-2 text-[15px] leading-[22px]">
-                      <p>
-                        Name:{" "}
-                        <span className="font-semibold">
+                    <div className="space-y-3 text-[15px] leading-[22px]">
+
+                      <div className="flex items-center justify-between gap-5">
+                        <span className="shrink-0 text-muted-foreground">
+                          Name
+                        </span>
+
+                        <span className="min-w-0 truncate text-right font-semibold text-foreground">
                           {accountName}
                         </span>
-                      </p>
+                      </div>
 
-                      <p>
-                        Account no:{" "}
-                        <span className="font-semibold">
+                      <div className="flex items-center justify-between gap-5">
+                        <span className="shrink-0 text-muted-foreground">
+                          Account no
+                        </span>
+
+                        <span className="shrink-0 text-right font-semibold text-foreground">
                           {accountNumber}
                         </span>
-                      </p>
+                      </div>
 
-                      <p>
-                        Bank Name:{" "}
-                        <span className="font-semibold">
-                          {
-                            selectedBank?.name
-                          }
+                      <div className="flex items-center justify-between gap-5">
+                        <span className="shrink-0 text-muted-foreground">
+                          Bank Name
                         </span>
-                      </p>
+
+                        <span className="min-w-0 truncate text-right font-semibold text-foreground">
+                          {selectedBank?.name}
+                        </span>
+                      </div>
+
                     </div>
                   </div>
+
+                  {/* =========================================
+                      CRYPTO SELECTOR
+                     ========================================= */}
 
                   <div
                     ref={cryptoDropdownRef}
@@ -1897,6 +1924,10 @@ export default function Home() {
                     )}
                   </div>
 
+                  {/* =========================================
+                      NAIRA AMOUNT
+                     ========================================= */}
+
                   <div className="mt-3">
                     <input
                       type="text"
@@ -1939,21 +1970,37 @@ export default function Home() {
                     )}
                   </div>
 
-                  {showPayButton && (
+                  {/* =========================================
+                      BACK + PAY BUTTONS
+                     ========================================= */}
+
+                  <div className="mt-4 flex w-full items-center gap-2">
+
+                    <button
+                      type="button"
+                      onClick={handleBack}
+                      className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium text-foreground transition hover:bg-secondary sm:h-[56px] sm:px-5 sm:text-[16px]"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back
+                    </button>
+
                     <button
                       type="button"
                       onClick={handlePay}
-                      className="mt-4 flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90 sm:h-[56px] sm:text-[16px]"
+                      disabled={!showPayButton}
+                      className={`flex h-[52px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:h-[56px] sm:text-[16px] ${
+                        showPayButton
+                          ? "bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.99]"
+                          : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
+                      }`}
                     >
-                      Pay{" "}
-                      {
-                        estimatedPayAmountFormatted
-                      }{" "}
-                      {
-                        selectedCrypto?.symbol
-                      }
+                      {showPayButton
+                        ? `Pay ${estimatedPayAmountFormatted} ${selectedCrypto?.symbol}`
+                        : "Pay"}
                     </button>
-                  )}
+
+                  </div>
 
                   {paymentError && (
                     <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
@@ -2045,16 +2092,6 @@ async function generateReceipt({
   }
 
   try {
-    /*
-     * ================================================
-     * ENSURE DM SANS IS LOADED
-     * ================================================
-     *
-     * Canvas does not automatically inherit the page's
-     * CSS font. We explicitly wait for DM Sans here
-     * before drawing anything on the receipt.
-     */
-
     await Promise.all([
       document.fonts.load(
         `400 25px ${RECEIPT_FONT}`
@@ -2076,12 +2113,6 @@ async function generateReceipt({
       ),
     ]);
 
-    /*
-     * ================================================
-     * RECEIPT CANVAS
-     * ================================================
-     */
-
     const width = 1024;
     const height = 1450;
 
@@ -2100,12 +2131,6 @@ async function generateReceipt({
       );
     }
 
-    /*
-     * ================================================
-     * PAGE BACKGROUND
-     * ================================================
-     */
-
     ctx.fillStyle = "#050511";
 
     ctx.fillRect(
@@ -2114,10 +2139,6 @@ async function generateReceipt({
       width,
       height
     );
-
-    /*
-     * Radial blue glow
-     */
 
     const backgroundGradient =
       ctx.createRadialGradient(
@@ -2154,10 +2175,6 @@ async function generateReceipt({
       height
     );
 
-    /*
-     * First webpage-style ring
-     */
-
     ctx.save();
 
     ctx.strokeStyle =
@@ -2179,10 +2196,6 @@ async function generateReceipt({
 
     ctx.stroke();
 
-    /*
-     * Second webpage-style ring
-     */
-
     ctx.strokeStyle =
       "rgba(21,87,232,0.14)";
 
@@ -2201,12 +2214,6 @@ async function generateReceipt({
     ctx.stroke();
 
     ctx.restore();
-
-    /*
-     * ================================================
-     * MAIN RECEIPT CONTAINER
-     * ================================================
-     */
 
     const cardX = 68;
     const cardY = 64;
@@ -2227,12 +2234,6 @@ async function generateReceipt({
 
     ctx.fillStyle = "#0f0f1b";
     ctx.fill();
-
-    /*
-     * ================================================
-     * LOGO
-     * ================================================
-     */
 
     try {
       const logo =
@@ -2265,12 +2266,6 @@ async function generateReceipt({
       );
     }
 
-    /*
-     * ================================================
-     * DIVIDER
-     * ================================================
-     */
-
     drawDashedLine(
       ctx,
       128,
@@ -2278,12 +2273,6 @@ async function generateReceipt({
       896,
       238
     );
-
-    /*
-     * ================================================
-     * NAIRA AMOUNT
-     * ================================================
-     */
 
     const formattedNaira =
       Number(
@@ -2309,12 +2298,6 @@ async function generateReceipt({
       370
     );
 
-    /*
-     * ================================================
-     * SUCCESS TITLE
-     * ================================================
-     */
-
     ctx.font =
       `600 34px ${RECEIPT_FONT}`;
 
@@ -2325,12 +2308,6 @@ async function generateReceipt({
       width / 2,
       470
     );
-
-    /*
-     * ================================================
-     * TRANSACTION DETAILS
-     * ================================================
-     */
 
     const labelX = 116;
     const valueX = 908;
@@ -2403,12 +2380,6 @@ async function generateReceipt({
       rowY
     );
 
-    /*
-     * ================================================
-     * DIVIDER BEFORE BOTTOM CONTAINER
-     * ================================================
-     */
-
     drawDashedLine(
       ctx,
       128,
@@ -2416,12 +2387,6 @@ async function generateReceipt({
       896,
       1088
     );
-
-    /*
-     * ================================================
-     * BOTTOM VERIFICATION CONTAINER
-     * ================================================
-     */
 
     const bottomContainerX = 128;
     const bottomContainerY = 1118;
@@ -2449,12 +2414,6 @@ async function generateReceipt({
     ctx.lineWidth = 1;
 
     ctx.stroke();
-
-    /*
-     * ================================================
-     * BIYAPORT ICON
-     * ================================================
-     */
 
     try {
       const icon =
@@ -2492,12 +2451,6 @@ async function generateReceipt({
       ctx.fill();
     }
 
-    /*
-     * ================================================
-     * VERIFICATION TEXT
-     * ================================================
-     */
-
     ctx.textAlign = "left";
 
     ctx.font =
@@ -2517,12 +2470,6 @@ async function generateReceipt({
       280,
       bottomContainerY + 101
     );
-
-    /*
-     * ================================================
-     * QR CODE
-     * ================================================
-     */
 
     const explorerUrl =
       `${BASESCAN_TX_URL}${transactionHash}`;
@@ -2560,10 +2507,6 @@ async function generateReceipt({
       (bottomContainerHeight -
         qrContainerSize) / 2;
 
-    /*
-     * QR white background
-     */
-
     ctx.beginPath();
 
     roundRect(
@@ -2580,10 +2523,6 @@ async function generateReceipt({
 
     ctx.fill();
 
-    /*
-     * QR itself
-     */
-
     ctx.drawImage(
       qrImage,
       qrContainerX + 5,
@@ -2591,12 +2530,6 @@ async function generateReceipt({
       120,
       120
     );
-
-    /*
-     * ================================================
-     * OUTSIDE-CONTAINER TAGLINE
-     * ================================================
-     */
 
     ctx.textAlign = "center";
 
@@ -2611,12 +2544,6 @@ async function generateReceipt({
       width / 2,
       1365
     );
-
-    /*
-     * ================================================
-     * DOWNLOAD PNG
-     * ================================================
-     */
 
     const blob =
       await new Promise<Blob | null>(

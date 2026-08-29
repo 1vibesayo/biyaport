@@ -20,8 +20,8 @@ import {
 import {
   encodeFunctionData,
   erc20Abi,
-  parseUnits,
   formatUnits,
+  parseUnits,
   createPublicClient,
   http,
 } from "viem";
@@ -47,6 +47,9 @@ const BASE_USDT_ADDRESS =
 const BASE_USDC_ADDRESS =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
 
+const USDT_DECIMALS = 6;
+const USDC_DECIMALS = 6;
+
 const BASESCAN_TX_URL = "https://basescan.org/tx/";
 
 const RECEIPT_FONT = '"DM Sans", sans-serif';
@@ -55,8 +58,8 @@ const RECEIPT_FONT = '"DM Sans", sans-serif';
  * Public Base client.
  *
  * Used for:
- * - Reading token balances
- * - Waiting for transaction confirmation
+ * - Token balances
+ * - Transaction confirmation
  */
 
 const publicClient = createPublicClient({
@@ -75,13 +78,20 @@ type Institution = {
   code: string;
 };
 
+type CryptoSymbol = "USDT" | "USDC";
+
 type CryptoOption = {
-  symbol: string;
+  symbol: CryptoSymbol;
   name: string;
   network: string;
   address: `0x${string}`;
   decimals: number;
   logo: string;
+};
+
+type TokenBalance = {
+  USDT: string;
+  USDC: string;
 };
 
 type CurrencyCode = "NGN" | "KES";
@@ -106,7 +116,7 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     name: "Tether USD",
     network: "base",
     address: BASE_USDT_ADDRESS,
-    decimals: 6,
+    decimals: USDT_DECIMALS,
     logo: "/usdt-logo.svg",
   },
   {
@@ -114,7 +124,7 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     name: "USD Coin",
     network: "base",
     address: BASE_USDC_ADDRESS,
-    decimals: 6,
+    decimals: USDC_DECIMALS,
     logo: "/usdc-logo.svg",
   },
 ];
@@ -235,9 +245,11 @@ export default function Home() {
    * ------------------------------------------------
    */
 
-  const [tokenBalances, setTokenBalances] = useState<
-    Record<string, string>
-  >({});
+  const [tokenBalances, setTokenBalances] =
+    useState<TokenBalance>({
+      USDT: "0.00",
+      USDC: "0.00",
+    });
 
   const [loadingBalances, setLoadingBalances] =
     useState(false);
@@ -312,95 +324,6 @@ export default function Home() {
 
   /*
    * ====================================================
-   * LOAD TOKEN BALANCES
-   * ====================================================
-   */
-
-  useEffect(() => {
-    if (!authenticated || !wallet?.address) {
-      setTokenBalances({});
-      setLoadingBalances(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchTokenBalances = async () => {
-      setLoadingBalances(true);
-
-      try {
-        const balanceEntries =
-          await Promise.all(
-            CRYPTO_OPTIONS.map(
-              async (crypto) => {
-                try {
-                  const rawBalance =
-                    await publicClient.readContract({
-                      address: crypto.address,
-                      abi: erc20Abi,
-                      functionName: "balanceOf",
-                      args: [
-                        wallet.address as `0x${string}`,
-                      ],
-                    });
-
-                  const formattedBalance =
-                    formatUnits(
-                      rawBalance,
-                      crypto.decimals
-                    );
-
-                  return [
-                    crypto.symbol,
-                    formattedBalance,
-                  ] as const;
-                } catch (error) {
-                  console.error(
-                    `BALANCE FETCH ERROR (${crypto.symbol}):`,
-                    error
-                  );
-
-                  return [
-                    crypto.symbol,
-                    "0",
-                  ] as const;
-                }
-              }
-            )
-          );
-
-        if (!cancelled) {
-          setTokenBalances(
-            Object.fromEntries(
-              balanceEntries
-            )
-          );
-        }
-      } catch (error) {
-        console.error(
-          "TOKEN BALANCE FETCH ERROR:",
-          error
-        );
-
-        if (!cancelled) {
-          setTokenBalances({});
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingBalances(false);
-        }
-      }
-    };
-
-    fetchTokenBalances();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated, wallet?.address]);
-
-  /*
-   * ====================================================
    * LOAD BANKS
    * ====================================================
    */
@@ -451,6 +374,170 @@ export default function Home() {
 
     fetchBanks();
   }, [authenticated]);
+
+  /*
+   * ====================================================
+   * TOKEN BALANCES
+   * ====================================================
+   */
+
+  const refreshTokenBalances = async () => {
+    if (!wallet?.address) {
+      setTokenBalances({
+        USDT: "0.00",
+        USDC: "0.00",
+      });
+
+      return;
+    }
+
+    setLoadingBalances(true);
+
+    try {
+      const [
+        usdtBalance,
+        usdcBalance,
+      ] = await Promise.all([
+        publicClient.readContract({
+          address: BASE_USDT_ADDRESS,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [
+            wallet.address as `0x${string}`,
+          ],
+        }),
+
+        publicClient.readContract({
+          address: BASE_USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [
+            wallet.address as `0x${string}`,
+          ],
+        }),
+      ]);
+
+      setTokenBalances({
+        USDT: Number(
+          formatUnits(
+            usdtBalance,
+            USDT_DECIMALS
+          )
+        ).toFixed(2),
+
+        USDC: Number(
+          formatUnits(
+            usdcBalance,
+            USDC_DECIMALS
+          )
+        ).toFixed(2),
+      });
+    } catch (error) {
+      console.error(
+        "TOKEN BALANCE ERROR:",
+        error
+      );
+
+      setTokenBalances({
+        USDT: "0.00",
+        USDC: "0.00",
+      });
+    } finally {
+      setLoadingBalances(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authenticated || !wallet?.address) {
+      setTokenBalances({
+        USDT: "0.00",
+        USDC: "0.00",
+      });
+
+      return;
+    }
+
+    refreshTokenBalances();
+  }, [
+    authenticated,
+    wallet?.address,
+  ]);
+
+  /*
+   * ====================================================
+   * RESET WHEN WALLET DISCONNECTS
+   * ====================================================
+   */
+
+  useEffect(() => {
+    if (authenticated && wallet?.address) {
+      return;
+    }
+
+    /*
+     * Modal 1
+     */
+    setStep(1);
+
+    /*
+     * Bank
+     */
+    setSelectedBank(null);
+    setBankDropdownOpen(false);
+    setBankSearch("");
+
+    /*
+     * Account
+     */
+    setAccountNumber("");
+    setAccountName("");
+    setAccountError("");
+    setVerifyingAccount(false);
+
+    /*
+     * Crypto
+     */
+    setSelectedCrypto(null);
+    setCryptoDropdownOpen(false);
+    setCryptoSearch("");
+
+    /*
+     * Amount / quote
+     */
+    setAmount("");
+    setCryptoAmount("");
+    setLoadingQuote(false);
+    setQuoteError("");
+
+    /*
+     * Payment
+     */
+    setPaymentState("form");
+    setPaymentStage(1);
+    setPaymentError("");
+
+    setTransactionHash("");
+    setOrderId("");
+
+    /*
+     * Receipt
+     */
+    setReceiptCryptoAmount("");
+    setReceiptDateTime("");
+
+    setCountdown(60);
+
+    /*
+     * Balances
+     */
+    setTokenBalances({
+      USDT: "0.00",
+      USDC: "0.00",
+    });
+  }, [
+    authenticated,
+    wallet?.address,
+  ]);
 
   /*
    * ====================================================
@@ -892,7 +979,26 @@ export default function Home() {
     setCountdown(60);
 
     setStep(1);
+
+    setSelectedBank(null);
+    setBankSearch("");
+
+    setAccountNumber("");
+    setAccountName("");
+    setAccountError("");
+
+    setSelectedCrypto(null);
+    setCryptoSearch("");
+    setCryptoAmount("");
+    setAmount("");
+    setQuoteError("");
   };
+
+  useEffect(() => {
+    if (!authenticated) {
+      resetPayment();
+    }
+  }, [authenticated]);
 
   /*
    * ====================================================
@@ -914,7 +1020,7 @@ export default function Home() {
 
     if (!selectedCrypto) {
       setPaymentError(
-        "Please select a crypto to pay with."
+        "Please select a cryptocurrency."
       );
       return;
     }
@@ -927,26 +1033,6 @@ export default function Home() {
     ) {
       setPaymentError(
         "Some payment information is missing."
-      );
-      return;
-    }
-
-    /*
-     * ================================================
-     * CHECK TOKEN BALANCE BEFORE CREATING ORDER
-     * ================================================
-     */
-
-    const walletBalance = Number(
-      tokenBalances[selectedCrypto.symbol] || "0"
-    );
-
-    if (
-      !Number.isFinite(walletBalance) ||
-      walletBalance < estimatedPayAmount
-    ) {
-      setPaymentError(
-        `Insufficient ${selectedCrypto.symbol} balance. You need approximately ${estimatedPayAmountFormatted} ${selectedCrypto.symbol}, but your wallet has ${walletBalance.toFixed(6)} ${selectedCrypto.symbol}.`
       );
       return;
     }
@@ -1275,7 +1361,15 @@ export default function Home() {
 
       /*
        * ================================================
-       * 11. SUCCESS
+       * 11. REFRESH BALANCES
+       * ================================================
+       */
+
+      await refreshTokenBalances();
+
+      /*
+       * ================================================
+       * 12. SUCCESS
        * ================================================
        */
 
@@ -2009,7 +2103,7 @@ export default function Home() {
                           </div>
                         </div>
 
-                        <div className="max-h-[260px] overflow-y-auto p-1.5">
+                        <div className="max-h-[220px] overflow-y-auto p-1.5">
                           {filteredCryptoOptions.length >
                           0 ? (
                             filteredCryptoOptions.map(
@@ -2058,36 +2152,24 @@ export default function Home() {
                                       </div>
                                     </div>
 
-                                    <div className="ml-3 flex shrink-0 items-center gap-3">
-                                      <div className="text-right">
-                                        <div className="text-[14px] font-medium text-foreground">
-                                          {loadingBalances
-                                            ? "Loading..."
-                                            : balance
-                                            ? Number(
-                                                balance
-                                              ).toLocaleString(
-                                                "en-US",
-                                                {
-                                                  maximumFractionDigits:
-                                                    6,
-                                                }
-                                              )
-                                            : "0.00"}
-                                        </div>
+                                    <div className="ml-3 flex shrink-0 flex-col items-end">
+                                      <span className="text-[14px] font-medium text-foreground">
+                                        {loadingBalances
+                                          ? "..."
+                                          : balance}
+                                      </span>
 
-                                        <div className="text-[11px] text-muted-foreground">
-                                          {
-                                            crypto.symbol
-                                          }
-                                        </div>
-                                      </div>
-
-                                      {selectedCrypto?.symbol ===
-                                        crypto.symbol && (
-                                        <Check className="h-4 w-4 text-primary" />
-                                      )}
+                                      <span className="text-[11px] text-muted-foreground">
+                                        {
+                                          crypto.symbol
+                                        }
+                                      </span>
                                     </div>
+
+                                    {selectedCrypto?.symbol ===
+                                      crypto.symbol && (
+                                      <Check className="ml-3 h-4 w-4 shrink-0 text-primary" />
+                                    )}
                                   </button>
                                 );
                               }

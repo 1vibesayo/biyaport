@@ -15,6 +15,12 @@ export async function POST(request: Request) {
       reference,
     } = body;
 
+    /*
+     * ------------------------------------------------
+     * REQUIRED FIELDS
+     * ------------------------------------------------
+     */
+
     if (
       !amount ||
       !crypto ||
@@ -33,6 +39,69 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+     * ------------------------------------------------
+     * SUPPORTED CRYPTOCURRENCIES
+     * ------------------------------------------------
+     *
+     * Biyaport currently supports:
+     *
+     * - USDT
+     * - USDC
+     *
+     * Both are currently intended for
+     * the Base network.
+     */
+
+    const supportedCryptos = ["USDT", "USDC"];
+
+    const normalizedCrypto = String(
+      crypto
+    ).toUpperCase();
+
+    if (
+      !supportedCryptos.includes(
+        normalizedCrypto
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Unsupported cryptocurrency. Biyaport currently supports USDT and USDC.",
+        },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * ------------------------------------------------
+     * NETWORK VALIDATION
+     * ------------------------------------------------
+     *
+     * USDT and USDC are currently supported
+     * on Base in the Biyaport flow.
+     */
+
+    const normalizedNetwork = String(
+      network
+    ).toLowerCase();
+
+    if (normalizedNetwork !== "base") {
+      return NextResponse.json(
+        {
+          error:
+            "Unsupported network. Biyaport currently supports USDT and USDC on Base.",
+        },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * ------------------------------------------------
+     * PAYCREST API KEY
+     * ------------------------------------------------
+     */
+
     const apiKey =
       process.env.PAYCREST_API_KEY;
 
@@ -50,13 +119,19 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+     * ------------------------------------------------
+     * PAYCREST ORDER PAYLOAD
+     * ------------------------------------------------
+     */
+
     const payload = {
       amount: String(amount),
 
       source: {
         type: "crypto",
-        currency: crypto,
-        network,
+        currency: normalizedCrypto,
+        network: normalizedNetwork,
         refundAddress: walletAddress,
       },
 
@@ -80,6 +155,12 @@ export async function POST(request: Request) {
       "PAYCREST ORDER REQUEST:",
       JSON.stringify(payload)
     );
+
+    /*
+     * ------------------------------------------------
+     * CREATE PAYCREST ORDER
+     * ------------------------------------------------
+     */
 
     const response = await fetch(
       "https://api.paycrest.io/v2/sender/orders",
@@ -107,6 +188,12 @@ export async function POST(request: Request) {
       JSON.stringify(data)
     );
 
+    /*
+     * ------------------------------------------------
+     * PAYCREST ERROR
+     * ------------------------------------------------
+     */
+
     if (!response.ok) {
       return NextResponse.json(
         {
@@ -123,6 +210,12 @@ export async function POST(request: Request) {
       );
     }
 
+    /*
+     * ------------------------------------------------
+     * NORMALIZE ORDER RESPONSE
+     * ------------------------------------------------
+     */
+
     const order = data?.data ?? data;
 
     const providerAccount =
@@ -132,6 +225,7 @@ export async function POST(request: Request) {
      * This is the address the user's crypto
      * should be sent to for this Paycrest order.
      */
+
     const receiveAddress =
       providerAccount?.receiveAddress ||
       providerAccount?.address ||
@@ -143,16 +237,26 @@ export async function POST(request: Request) {
 
     const providerNetwork =
       providerAccount?.network ||
-      network;
+      normalizedNetwork;
+
+    /*
+     * ------------------------------------------------
+     * RETURN RESPONSE TO CLIENT
+     * ------------------------------------------------
+     */
 
     return NextResponse.json({
       success: true,
 
-      orderId: order?.id ?? null,
+      orderId:
+        order?.id ?? null,
 
-      status: order?.status ?? null,
+      status:
+        order?.status ?? null,
 
-      amount: order?.amount ?? String(amount),
+      amount:
+        order?.amount ??
+        String(amount),
 
       senderFee:
         order?.senderFee ?? null,
@@ -169,17 +273,21 @@ export async function POST(request: Request) {
       providerNetwork,
 
       /*
-       * Keep these available to the client so
-       * page.tsx knows exactly what was used
-       * to create the order.
+       * Keep these available to page.tsx so
+       * the client knows exactly which asset
+       * and network were used.
        */
-      crypto,
 
-      network,
+      crypto:
+        normalizedCrypto,
+
+      network:
+        normalizedNetwork,
 
       walletAddress,
 
-      source: order?.source ?? null,
+      source:
+        order?.source ?? null,
 
       destination:
         order?.destination ?? null,

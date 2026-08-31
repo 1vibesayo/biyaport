@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const apiKey = process.env.PAYCREST_API_KEY;
+  const apiKey = process.env.PAYCREST_API_KEY?.trim();
 
   if (!apiKey) {
+    console.error(
+      "PAYCREST_API_KEY is missing."
+    );
+
     return NextResponse.json(
-      { error: "Paycrest API key is not configured." },
+      {
+        error:
+          "Paycrest API key is not configured.",
+      },
       { status: 500 }
     );
   }
@@ -15,28 +22,68 @@ export async function GET() {
       "https://api.paycrest.io/v2/institutions/NGN",
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          "API-Key": apiKey,
           "Content-Type": "application/json",
         },
         cache: "no-store",
       }
     );
 
-    const data = await response.json();
+    const responseText =
+      await response.text();
+
+    console.log(
+      "PAYCREST INSTITUTIONS STATUS:",
+      response.status
+    );
+
+    console.log(
+      "PAYCREST INSTITUTIONS RESPONSE:",
+      responseText
+    );
+
+    let data: any;
+
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = {
+        raw: responseText,
+      };
+    }
 
     if (!response.ok) {
+      console.error(
+        "PAYCREST INSTITUTIONS ERROR:",
+        data
+      );
+
       return NextResponse.json(
         {
-          error: data?.message || "Failed to fetch institutions.",
+          error:
+            data?.message ||
+            data?.error ||
+            "Failed to fetch institutions.",
+          details: data,
         },
-        { status: response.status }
+        {
+          status: response.status,
+        }
       );
     }
 
     return NextResponse.json(data);
-  } catch {
+  } catch (error) {
+    console.error(
+      "INSTITUTIONS FETCH ERROR:",
+      error
+    );
+
     return NextResponse.json(
-      { error: "Unable to connect to Paycrest." },
+      {
+        error:
+          "Unable to connect to Paycrest.",
+      },
       { status: 500 }
     );
   }

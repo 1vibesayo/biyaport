@@ -411,6 +411,9 @@ export default function Home() {
   const [onrampCryptoSearch, setOnrampCryptoSearch] =
     useState("");
 
+  const [onrampSenderFee, setOnrampSenderFee] =
+    useState("");
+
   /*
    * ====================================================
    * REFS
@@ -451,51 +454,46 @@ export default function Home() {
    */
 
   useEffect(() => {
-    if (!authenticated) {
-      setInstitutions([]);
-      return;
-    }
+  const fetchBanks = async () => {
+    setLoadingBanks(true);
 
-    const fetchBanks = async () => {
-      setLoadingBanks(true);
-
-      try {
-        const response = await fetch(
-          "/api/institutions",
-          {
-            cache: "no-store",
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              data?.message ||
-              "Failed to load banks."
-          );
+    try {
+      const response = await fetch(
+        "/api/institutions",
+        {
+          cache: "no-store",
         }
+      );
 
-        const banks = Array.isArray(data?.data)
-          ? data.data
-          : Array.isArray(data)
-          ? data
-          : [];
+      const data = await response.json();
 
-        setInstitutions(banks);
-      } catch (error) {
-        console.error(
-          "BANK FETCH ERROR:",
-          error
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Failed to load banks."
         );
-      } finally {
-        setLoadingBanks(false);
       }
-    };
 
-    fetchBanks();
-  }, [authenticated]);
+      const banks = Array.isArray(data?.data)
+        ? data.data
+        : Array.isArray(data)
+        ? data
+        : [];
+
+      setInstitutions(banks);
+    } catch (error) {
+      console.error(
+        "BANK FETCH ERROR:",
+        error
+      );
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  fetchBanks();
+}, []);
 
   /*
    * ====================================================
@@ -1199,128 +1197,145 @@ export default function Home() {
    */
 
   useEffect(() => {
-    if (
-      tradeMode !== "buy" ||
-      !selectedCrypto ||
-      !onrampCryptoAmount ||
-      Number(onrampCryptoAmount) <= 0
-    ) {
-      setOnrampLocalAmount("");
-      return;
-    }
+  if (
+    tradeMode !== "buy" ||
+    !selectedCrypto ||
+    !onrampCryptoAmount ||
+    Number(onrampCryptoAmount) <= 0
+  ) {
+    setOnrampLocalAmount("");
+    setOnrampSenderFee("");
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    const getOnrampQuote = async () => {
-      setOnrampQuoteLoading(true);
-      setOnrampQuoteError("");
+  const getOnrampQuote = async () => {
+    setOnrampQuoteLoading(true);
+    setOnrampQuoteError("");
 
-      try {
-        const response = await fetch(
-          "/api/onramp/quote",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              amount:
-                Number(
-                  onrampCryptoAmount
-                ),
-              crypto:
-                selectedCrypto.symbol,
-              network:
-                selectedCrypto.network,
-              currency:
-                selectedCurrency,
-            }),
-          }
-        );
-
-        const data =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              data?.message ||
-              "Unable to get onramp quote."
-          );
+    try {
+      const response = await fetch(
+        "/api/onramp/quote",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: Number(onrampCryptoAmount),
+            crypto: selectedCrypto.symbol,
+            network: selectedCrypto.network,
+            currency: selectedCurrency,
+          }),
         }
+      );
 
-        const localAmount = Number(
-          data?.localAmount ??
-            data?.fiatAmount ??
-            data?.amountToPay ??
-            data?.amount
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Unable to get onramp quote."
         );
+      }
+
+      /*
+       * Paycrest quote
+       *
+       * IMPORTANT:
+       * Keep this as the ORIGINAL Paycrest quote.
+       *
+       * Do NOT add the 5% here.
+       *
+       * Example:
+       * Paycrest quote = ₦1,385.78
+       * onrampLocalAmount = ₦1,385.78
+       */
+      const localAmount = Number(
+        data?.localAmount ??
+          data?.fiatAmount ??
+          data?.amountToPay ??
+          data?.amount
+      );
+
+      if (
+        !Number.isFinite(localAmount) ||
+        localAmount <= 0
+      ) {
+        throw new Error(
+          "Invalid local currency amount returned."
+        );
+      }
+
+      if (!cancelled) {
+        /*
+         * Store ONLY the Paycrest quote.
+         *
+         * Do NOT multiply by 1.05 here.
+         */
+        setOnrampLocalAmount(
+          localAmount.toFixed(2)
+        );
+
+        /*
+         * Sender fee is not used here.
+         *
+         * Paycrest will return the actual
+         * amountToTransfer when the order
+         * is created.
+         */
+        setOnrampSenderFee("");
 
         if (
-          !Number.isFinite(
-            localAmount
-          ) ||
-          localAmount <= 0
+          data?.rate !== undefined &&
+          data?.rate !== null
         ) {
-          throw new Error(
-            "Invalid local currency amount returned."
+          setOnrampRate(
+            String(data.rate)
           );
-        }
-
-        if (!cancelled) {
-          setOnrampLocalAmount(
-            localAmount.toFixed(2)
-          );
-
-          if (
-            data?.rate !== undefined &&
-            data?.rate !== null
-          ) {
-            setOnrampRate(
-              String(data.rate)
-            );
-          }
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error(
-            "ONRAMP QUOTE ERROR:",
-            error
-          );
-
-          setOnrampLocalAmount("");
-
-          setOnrampQuoteError(
-            error instanceof Error
-              ? error.message
-              : "Unable to get onramp quote."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setOnrampQuoteLoading(false);
         }
       }
-    };
+    } catch (error) {
+      if (!cancelled) {
+        console.error(
+          "ONRAMP QUOTE ERROR:",
+          error
+        );
 
-    const timeout = setTimeout(
-      getOnrampQuote,
-      500
-    );
+        setOnrampLocalAmount("");
+        setOnrampSenderFee("");
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-    };
-  }, [
-    onrampCryptoAmount,
-    selectedCrypto,
-    selectedCurrency,
-    tradeMode,
-  ]);
+        setOnrampQuoteError(
+          error instanceof Error
+            ? error.message
+            : "Unable to get onramp quote."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setOnrampQuoteLoading(false);
+      }
+    }
+  };
 
-  /*
+  const timeout = setTimeout(
+    getOnrampQuote,
+    500
+  );
+
+  return () => {
+    cancelled = true;
+    clearTimeout(timeout);
+  };
+}, [
+  onrampCryptoAmount,
+  selectedCrypto,
+  selectedCurrency,
+  tradeMode,
+]);
+/*
    * ====================================================
    * ONRAMP REFUND BANK SELECT
    * ====================================================
@@ -2969,7 +2984,7 @@ ONRAMP MODAL 1
                         onChange={
                           handleOnrampCryptoAmountChange
                         }
-                        className="min-w-0 flex-1 bg-transparent px-4 text-right text-[16px] outline-none placeholder:text-muted-foreground"
+                        className="min-w-0 flex-1 bg-transparent px-4 text-left text-[16px] outline-none placeholder:text-muted-foreground"
                       />
 
                     </div>
@@ -3081,34 +3096,38 @@ ONRAMP MODAL 1
 
                   {/* AMOUNT TO PAY */}
 
-                  {onrampCryptoAmount &&
-                    selectedCrypto &&
-                    !onrampQuoteError && (
-                      <div className="mt-3 px-1 text-[14px]">
-                        {onrampQuoteLoading ? (
-                          <div className="flex items-center gap-2 text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Calculating amount to pay...
-                          </div>
-                        ) : onrampLocalAmount ? (
-                          <span className="font-bold text-foreground">
-                            Amount to pay:{" "}
-                            {
-                              currentCurrency.symbol
-                            }
-                            {Number(
-                              onrampLocalAmount
-                            ).toLocaleString(
-                              "en-NG",
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              }
-                            )}
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
+{onrampCryptoAmount &&
+  selectedCrypto &&
+  !onrampQuoteError && (
+    <div className="mt-3 px-1 text-[14px]">
+      {onrampQuoteLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Calculating amount to pay...
+        </div>
+      ) : onrampLocalAmount ? (
+        <div className="flex items-center gap-1 text-[14px]">
+          <span className="font-normal text-foreground">
+            Amount to pay:
+          </span>
+
+          <span className="font-bold text-foreground">
+            {currentCurrency.symbol}
+            {(
+              Number(onrampLocalAmount) +
+              Number(onrampSenderFee || 0)
+            ).toLocaleString(
+              "en-NG",
+              {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }
+            )}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  )}
 
                   {onrampQuoteError && (
                     <div className="mt-3 px-1 text-[13px] text-destructive">
@@ -3174,291 +3193,259 @@ ONRAMP MODAL 1
               )}
 
                   {/* =========================================
-                      ONRAMP MODAL 2
-                     ========================================= */}
+    ONRAMP MODAL 2
+   ========================================= */}
 
-                  {onrampStep ===
-                    2 && (
-                    <>
+{onrampStep === 2 && (
+  <>
+    <div className="rounded-[10px] bg-input px-5 py-4">
+      <div className="space-y-4 text-[15px] leading-[22px]">
 
-                      <div className="rounded-[10px] bg-input px-5 py-4">
-                        <div className="space-y-4 text-[15px] leading-[22px]">
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Amount to send
+          </span>
 
-                          <div className="flex items-center justify-between gap-5">
-                            <span className="shrink-0 text-muted-foreground">
-                              Amount to send
-                            </span>
+          <span className="text-right font-semibold text-foreground">
+            {currentCurrency.symbol}
+            {Number(
+              onrampLocalAmount || 0
+            ).toLocaleString("en-NG", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        </div>
 
-                            <span className="text-right font-semibold text-foreground">
-                              {
-                                currentCurrency.symbol
-                              }
-                              {Number(
-                                onrampLocalAmount ||
-                                  0
-                              ).toLocaleString(
-                                "en-NG",
-                                {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                }
-                              )}
-                            </span>
-                          </div>
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Amount to receive
+          </span>
 
-                          <div className="flex items-center justify-between gap-5">
-                            <span className="shrink-0 text-muted-foreground">
-                              Amount to receive
-                            </span>
+          <span className="text-right font-semibold text-foreground">
+            {onrampCryptoAmount}{" "}
+            {selectedCrypto?.symbol}
 
-                            <span className="text-right font-semibold text-foreground">
-                              {onrampCryptoAmount}{" "}
-                              {
-                                selectedCrypto?.symbol
-                              }
-                              <span className="block text-[12px] font-normal text-muted-foreground">
-                                Base Network
-                              </span>
-                            </span>
-                          </div>
+            <span className="block text-[12px] font-normal text-muted-foreground">
+              Base Network
+            </span>
+          </span>
+        </div>
 
-                          <div className="flex items-center justify-between gap-5">
-                            <span className="shrink-0 text-muted-foreground">
-                              Recipient address
-                            </span>
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Recipient address
+          </span>
 
-                            <span className="max-w-[240px] truncate text-right font-semibold text-foreground">
-                              {shortenAddress(
-                                onrampWalletAddress
-                              )}
-                            </span>
-                          </div>
+          <span className="max-w-[240px] truncate text-right font-semibold text-foreground">
+            {shortenAddress(onrampWalletAddress)}
+          </span>
+        </div>
 
-                        </div>
-                      </div>
+      </div>
+    </div>
 
-                      <div className="mt-5 mb-3 text-[15px] font-bold">
-                        Refund bank account
-                      </div>
+    <div className="mt-5 mb-3 text-[15px] font-bold">
+      Refund bank account
+    </div>
 
-                      <div
-                        ref={
-                          onrampBankDropdownRef
-                        }
-                        className="relative"
-                      >
-                        <button
-                          type="button"
-                          disabled={
-                            !authenticated ||
-                            loadingBanks
-                          }
-                          onClick={() =>
-                            setOnrampBankDropdownOpen(
-                              (open) =>
-                                !open
-                            )
-                          }
-                          className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:px-5 sm:text-[16px]"
-                        >
-                          <span
-                            className={
-                              onrampRefundBank
-                                ? "text-foreground"
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {loadingBanks
-                              ? "Loading banks..."
-                              : onrampRefundBank?.name ||
-                                "Select Bank"}
-                          </span>
+    {/* BANK SELECTOR */}
+    <div
+      ref={onrampBankDropdownRef}
+      className="relative"
+    >
+      <button
+        type="button"
+        disabled={loadingBanks}
+        onClick={() =>
+          setOnrampBankDropdownOpen(
+            (open) => !open
+          )
+        }
+        className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:px-5 sm:text-[16px]"
+      >
+        <span
+          className={
+            onrampRefundBank
+              ? "text-foreground"
+              : "text-muted-foreground"
+          }
+        >
+          {loadingBanks
+            ? "Loading banks..."
+            : onrampRefundBank?.name ||
+              "Select Bank"}
+        </span>
 
-                          {loadingBanks ? (
-                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                          ) : (
-                            <ChevronDown
-                              className={`h-5 w-5 text-muted-foreground transition-transform ${
-                                onrampBankDropdownOpen
-                                  ? "rotate-180"
-                                  : ""
-                              }`}
-                            />
-                          )}
-                        </button>
+        {loadingBanks ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : (
+          <ChevronDown
+            className={`h-5 w-5 text-muted-foreground transition-transform ${
+              onrampBankDropdownOpen
+                ? "rotate-180"
+                : ""
+            }`}
+          />
+        )}
+      </button>
 
-                        {onrampBankDropdownOpen && (
-                          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+      {onrampBankDropdownOpen && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
-                            <div className="border-b border-border p-3">
-                              <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
-                                <Search className="h-4 w-4 text-muted-foreground" />
+          {/* BANK SEARCH */}
+          <div className="border-b border-border p-3">
+            <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
+              <Search className="h-4 w-4 text-muted-foreground" />
 
-                                <input
-                                  type="text"
-                                  value={
-                                    onrampBankSearch
-                                  }
-                                  onChange={(
-                                    event
-                                  ) =>
-                                    setOnrampBankSearch(
-                                      event
-                                        .target
-                                        .value
-                                    )
-                                  }
-                                  placeholder="Search bank"
-                                  className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
-                                />
-                              </div>
-                            </div>
+              <input
+                type="text"
+                value={onrampBankSearch}
+                onChange={(event) =>
+                  setOnrampBankSearch(
+                    event.target.value
+                  )
+                }
+                placeholder="Search bank"
+                className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
+              />
+            </div>
+          </div>
 
-                            <div className="max-h-[280px] overflow-y-auto p-1.5">
-                              {filteredOnrampInstitutions.length >
-                              0 ? (
-                                filteredOnrampInstitutions.map(
-                                  (
-                                    bank
-                                  ) => (
-                                    <button
-                                      key={
-                                        bank.code
-                                      }
-                                      type="button"
-                                      onClick={() =>
-                                        handleOnrampRefundBankSelect(
-                                          bank
-                                        )
-                                      }
-                                      className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
-                                    >
-                                      <span>
-                                        {
-                                          bank.name
-                                        }
-                                      </span>
+          {/* BANK LIST */}
+          <div className="max-h-[280px] overflow-y-auto p-1.5">
+            {filteredOnrampInstitutions.length >
+            0 ? (
+              filteredOnrampInstitutions.map(
+                (bank) => (
+                  <button
+                    key={bank.code}
+                    type="button"
+                    onClick={() =>
+                      handleOnrampRefundBankSelect(
+                        bank
+                      )
+                    }
+                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
+                  >
+                    <span>
+                      {bank.name}
+                    </span>
 
-                                      {onrampRefundBank?.code ===
-                                        bank.code && (
-                                        <Check className="h-4 w-4 text-primary" />
-                                      )}
-                                    </button>
-                                  )
-                                )
-                              ) : (
-                                <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
-                                  No banks found.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    {onrampRefundBank?.code ===
+                      bank.code && (
+                      <Check className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                )
+              )
+            ) : (
+              <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
+                {loadingBanks
+                  ? "Loading banks..."
+                  : "No banks found."}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
 
-                      <div className="mt-3">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="Enter Account number"
-                          value={
-                            onrampRefundAccountNumber
-                          }
-                          onChange={
-                            handleOnrampRefundAccountNumberChange
-                          }
-                          disabled={
-                            !onrampRefundBank
-                          }
-                          className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:px-5 sm:text-[16px]"
-                        />
+    {/* ACCOUNT NUMBER */}
+    <div className="mt-3">
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="Enter Account number"
+        value={
+          onrampRefundAccountNumber
+        }
+        onChange={
+          handleOnrampRefundAccountNumberChange
+        }
+        disabled={!onrampRefundBank}
+        className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:px-5 sm:text-[16px]"
+      />
 
-                        {onrampRefundVerifying && (
-                          <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Verifying account...
-                          </div>
-                        )}
+      {onrampRefundVerifying && (
+        <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Verifying account...
+        </div>
+      )}
 
-                        {onrampRefundAccountName &&
-                          !onrampRefundVerifying && (
-                            <div className="mt-2 px-1 text-[14px] text-muted-foreground">
-                              {
-                                onrampRefundAccountName
-                              }
-                            </div>
-                          )}
+      {onrampRefundAccountName &&
+        !onrampRefundVerifying && (
+          <div className="mt-2 px-1 text-[14px] text-muted-foreground">
+            {onrampRefundAccountName}
+          </div>
+        )}
 
-                        {onrampRefundError && (
-                          <div className="mt-2 px-1 text-[13px] text-destructive">
-                            {
-                              onrampRefundError
-                            }
-                          </div>
-                        )}
-                      </div>
+      {onrampRefundError && (
+        <div className="mt-2 px-1 text-[13px] text-destructive">
+          {onrampRefundError}
+        </div>
+      )}
+    </div>
 
-                      <div className="mt-4 flex w-full items-center gap-2">
+    {/* ACTION BUTTONS */}
+    <div className="mt-4 flex w-full items-center gap-2">
 
-                        <button
-                          type="button"
-                          onClick={
-                            handleOnrampBackToStepOne
-                          }
-                          className="flex h-[56px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium transition hover:bg-secondary sm:px-5 sm:text-[16px]"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </button>
+      <button
+        type="button"
+        onClick={
+          handleOnrampBackToStepOne
+        }
+        className="flex h-[56px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium transition hover:bg-secondary sm:px-5 sm:text-[16px]"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back
+      </button>
 
-                        <button
-                          type="button"
-                          onClick={
-                            handleCreateOnrampOrder
-                          }
-                          disabled={
-                            !onrampRefundBank ||
-                            onrampRefundAccountNumber.length !==
-                              10 ||
-                            !onrampRefundAccountName ||
-                            onrampRefundVerifying ||
-                            onrampState ===
-                              "creating"
-                          }
-                          className={`flex h-[56px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:text-[16px] ${
-                            onrampRefundBank &&
-                            onrampRefundAccountNumber.length ===
-                              10 &&
-                            onrampRefundAccountName &&
-                            !onrampRefundVerifying &&
-                            onrampState !==
-                              "creating"
-                              ? "bg-primary text-primary-foreground hover:opacity-90"
-                              : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
-                          }`}
-                        >
-                          {onrampState ===
-                          "creating" ? (
-                            <span className="flex items-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Creating...
-                            </span>
-                          ) : (
-                            "Continue"
-                          )}
-                        </button>
-                      </div>
+      <button
+        type="button"
+        onClick={
+          handleCreateOnrampOrder
+        }
+        disabled={
+          !onrampRefundBank ||
+          onrampRefundAccountNumber.length !==
+            10 ||
+          !onrampRefundAccountName ||
+          onrampRefundVerifying ||
+          onrampState === "creating"
+        }
+        className={`flex h-[56px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:text-[16px] ${
+          onrampRefundBank &&
+          onrampRefundAccountNumber.length ===
+            10 &&
+          onrampRefundAccountName &&
+          !onrampRefundVerifying &&
+          onrampState !== "creating"
+            ? "bg-primary text-primary-foreground hover:opacity-90"
+            : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
+        }`}
+      >
+        {onrampState === "creating" ? (
+          <span className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Creating...
+          </span>
+        ) : (
+          "Continue"
+        )}
+      </button>
 
-                      {onrampError && (
-                        <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
-                          {
-                            onrampError
-                          }
-                        </div>
-                      )}
-                    </>
-                  )}
+    </div>
 
+    {/* ERROR */}
+    {onrampError && (
+      <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+        {onrampError}
+      </div>
+    )}
+  </>
+)}
                   {/* =========================================
                       ONRAMP MODAL 3
                      ========================================= */}

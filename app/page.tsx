@@ -2933,7 +2933,7 @@ ONRAMP MODAL 1
                               !open
                           )
                         }
-                        className="flex h-full shrink-0 items-center gap-2 border-r border-border px-3.5 transition hover:bg-secondary"
+                        className="flex h-full shrink-0 items-center gap-2 border-r border-border px-3.5"
                       >
 
                         {selectedCrypto ? (
@@ -2955,12 +2955,12 @@ ONRAMP MODAL 1
                         <span
                           className={
                             selectedCrypto
-                              ? "text-[14px] font-semibold"
-                              : "text-[14px] text-muted-foreground"
+                              ? "text-[16px] font-semibold"
+                              : "text-[16px] text-muted-foreground"
                           }
                         >
                           {selectedCrypto?.symbol ||
-                            "Crypto"}
+                            "Select Crypto"}
                         </span>
 
                         <ChevronDown

@@ -27,7 +27,7 @@ import {
   http,
 } from "viem";
 
-import { base } from "viem/chains";
+import { base, bsc } from "viem/chains";
 
 import QRCode from "qrcode";
 
@@ -41,6 +41,7 @@ import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
  */
 
 const BASE_CHAIN_ID = 8453;
+const BSC_CHAIN_ID = 56;
 
 const BASE_USDT_ADDRESS =
   "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`;
@@ -48,18 +49,100 @@ const BASE_USDT_ADDRESS =
 const BASE_USDC_ADDRESS =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
 
+const BSC_USDT_ADDRESS =
+  "0x55d398326f99059fF775485246999027B3197955" as `0x${string}`;
+
+const BSC_USDC_ADDRESS =
+  "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" as `0x${string}`;
+
 const USDT_DECIMALS = 6;
 const USDC_DECIMALS = 6;
 
-const BASESCAN_TX_URL = "https://basescan.org/tx/";
+const BSC_USDT_DECIMALS = 18;
+const BSC_USDC_DECIMALS = 18;
+
+const BASESCAN_TX_URL =
+  "https://basescan.org/tx/";
+
+const BSCSCAN_TX_URL =
+  "https://bscscan.com/tx/";
 
 const RECEIPT_FONT = '"DM Sans", sans-serif';
 
-const publicClient = createPublicClient({
-  chain: base,
-  transport: http(),
-});
+type NetworkKey =
+  | "base"
+  | "bnb-smart-chain";
 
+type NetworkConfig = {
+  key: NetworkKey;
+  name: string;
+  shortName: string;
+  chainId: number;
+  chain: typeof base | typeof bsc;
+  explorerTx: string;
+  logo: string;
+};
+
+const NETWORKS: NetworkConfig[] = [
+  {
+    key: "base",
+    name: "Base",
+    shortName: "Base",
+    chainId: BASE_CHAIN_ID,
+    chain: base,
+    explorerTx: BASESCAN_TX_URL,
+    logo: "/base-logo.svg",
+  },
+  {
+    key: "bnb-smart-chain",
+    name: "BNB Smart Chain",
+    shortName: "BNB Chain",
+    chainId: BSC_CHAIN_ID,
+    chain: bsc,
+    explorerTx: BSCSCAN_TX_URL,
+    logo: "/bsc-logo.svg",
+  },
+];
+
+const getNetworkConfig = (
+  network: NetworkKey
+) =>
+  NETWORKS.find(
+    (item) => item.key === network
+  ) || NETWORKS[0];
+
+const getTokenConfig = (
+  network: NetworkKey,
+  symbol: "USDT" | "USDC"
+) => {
+  if (network === "base") {
+    return symbol === "USDT"
+      ? {
+          address: BASE_USDT_ADDRESS,
+          decimals: USDT_DECIMALS,
+        }
+      : {
+          address: BASE_USDC_ADDRESS,
+          decimals: USDC_DECIMALS,
+        };
+  }
+
+  return symbol === "USDT"
+    ? {
+        address: BSC_USDT_ADDRESS,
+        decimals: BSC_USDT_DECIMALS,
+      }
+    : {
+        address: BSC_USDC_ADDRESS,
+        decimals: BSC_USDC_DECIMALS,
+      };
+};
+
+const getPublicClient = (network: NetworkKey) =>
+  createPublicClient({
+    chain: getNetworkConfig(network).chain,
+    transport: http(),
+  });
 /*
  * ====================================================
  * TYPES
@@ -76,7 +159,7 @@ type CryptoSymbol = "USDT" | "USDC";
 type CryptoOption = {
   symbol: CryptoSymbol;
   name: string;
-  network: string;
+  network: NetworkKey;
   address: `0x${string}`;
   decimals: number;
   logo: string;
@@ -149,6 +232,22 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     network: "base",
     address: BASE_USDC_ADDRESS,
     decimals: USDC_DECIMALS,
+    logo: "/usdc-logo.svg",
+  },
+  {
+    symbol: "USDT",
+    name: "Tether USD",
+    network: "bnb-smart-chain",
+    address: BSC_USDT_ADDRESS,
+    decimals: BSC_USDT_DECIMALS,
+    logo: "/usdt-logo.svg",
+  },
+  {
+    symbol: "USDC",
+    name: "USD Coin",
+    network: "bnb-smart-chain",
+    address: BSC_USDC_ADDRESS,
+    decimals: BSC_USDC_DECIMALS,
     logo: "/usdc-logo.svg",
   },
 ];
@@ -295,7 +394,22 @@ export default function Home() {
    * ------------------------------------------------
    */
 
-  const selectedNetwork = "Base";
+  const [selectedNetwork, setSelectedNetwork] =
+    useState<NetworkKey>("base");
+
+  const handleNetworkChange = (network: NetworkKey) => {
+    setSelectedNetwork(network);
+    setSelectedCrypto(null);
+    setCryptoSearch("");
+    setCryptoAmount("");
+    setQuoteError("");
+    setPaymentError("");
+    setOnrampCryptoSearch("");
+    setOnrampCryptoAmount("");
+    setOnrampLocalAmount("");
+    setOnrampRate("");
+    setOnrampQuoteError("");
+  };
 
   /*
    * ------------------------------------------------
@@ -424,7 +538,8 @@ export default function Home() {
     useRef<HTMLDivElement | null>(null);
 
   const cryptoDropdownRef =
-    useRef<HTMLDivElement | null>(null);
+  useRef<HTMLDivElement | null>(null);
+
 
   const currencyDropdownRef =
     useRef<HTMLDivElement | null>(null);
@@ -514,12 +629,16 @@ export default function Home() {
     setLoadingBalances(true);
 
     try {
+      const client = getPublicClient(selectedNetwork);
+      const usdtConfig = getTokenConfig(selectedNetwork, "USDT");
+      const usdcConfig = getTokenConfig(selectedNetwork, "USDC");
+
       const [
         usdtBalance,
         usdcBalance,
       ] = await Promise.all([
-        publicClient.readContract({
-          address: BASE_USDT_ADDRESS,
+        client.readContract({
+          address: usdtConfig.address,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [
@@ -527,8 +646,8 @@ export default function Home() {
           ],
         }),
 
-        publicClient.readContract({
-          address: BASE_USDC_ADDRESS,
+        client.readContract({
+          address: usdcConfig.address,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [
@@ -541,14 +660,14 @@ export default function Home() {
         USDT: Number(
           formatUnits(
             usdtBalance,
-            USDT_DECIMALS
+            usdtConfig.decimals
           )
         ).toFixed(2),
 
         USDC: Number(
           formatUnits(
             usdcBalance,
-            USDC_DECIMALS
+            usdcConfig.decimals
           )
         ).toFixed(2),
       });
@@ -581,6 +700,7 @@ export default function Home() {
   }, [
     authenticated,
     wallet?.address,
+    selectedNetwork,
   ]);
 
   /*
@@ -943,8 +1063,10 @@ export default function Home() {
    */
 
   const filteredCryptoOptions =
-    CRYPTO_OPTIONS.filter(
-      (crypto) =>
+  CRYPTO_OPTIONS.filter(
+    (crypto) =>
+      crypto.network === selectedNetwork &&
+      (
         crypto.symbol
           .toLowerCase()
           .includes(
@@ -955,11 +1077,14 @@ export default function Home() {
           .includes(
             cryptoSearch.toLowerCase()
           )
-    );
+      )
+  );
 
   const filteredOnrampCryptoOptions =
-    CRYPTO_OPTIONS.filter(
-      (crypto) =>
+  CRYPTO_OPTIONS.filter(
+    (crypto) =>
+      crypto.network === selectedNetwork &&
+      (
         crypto.symbol
           .toLowerCase()
           .includes(
@@ -970,7 +1095,8 @@ export default function Home() {
           .includes(
             onrampCryptoSearch.toLowerCase()
           )
-    );
+      )
+  );
 
   /*
    * ====================================================
@@ -980,7 +1106,8 @@ export default function Home() {
 
   const handleCryptoSelect = (
     crypto: CryptoOption
-  ) => {
+    ) => {
+    setSelectedNetwork(crypto.network);
     setSelectedCrypto(crypto);
     setCryptoDropdownOpen(false);
 
@@ -1047,6 +1174,10 @@ export default function Home() {
             body: JSON.stringify({
               token:
                 selectedCrypto.symbol,
+              network:
+                selectedCrypto.network,
+              currency:
+                selectedCurrency,
               nairaAmount:
                 Number(amount),
             }),
@@ -1151,6 +1282,7 @@ export default function Home() {
   const handleOnrampCryptoSelect = (
     crypto: CryptoOption
   ) => {
+    setSelectedNetwork(crypto.network);
     setSelectedCrypto(crypto);
     setOnrampCryptoDropdownOpen(false);
     setOnrampCryptoSearch("");
@@ -1485,7 +1617,7 @@ export default function Home() {
 
     if (!validAddress) {
       setOnrampQuoteError(
-        "Please enter a valid Base wallet address."
+        `Please enter a valid ${getNetworkConfig(selectedNetwork).name} wallet address.`
       );
       return;
     }
@@ -2356,9 +2488,13 @@ useEffect(() => {
         senderFee +
         transactionFee;
 
+      const networkConfig = getNetworkConfig(
+        selectedCrypto.network
+      );
+
       if (wallet.switchChain) {
         await wallet.switchChain(
-          BASE_CHAIN_ID
+          networkConfig.chainId
         );
       }
 
@@ -2391,7 +2527,7 @@ useEffect(() => {
               transferData,
             value: BigInt(0),
             chainId:
-              BASE_CHAIN_ID,
+              networkConfig.chainId,
           },
           {
             address:
@@ -2426,12 +2562,12 @@ useEffect(() => {
         )
       );
 
-      await publicClient.waitForTransactionReceipt(
-        {
-          hash,
-          confirmations: 1,
-        }
-      );
+      await getPublicClient(
+        selectedCrypto.network
+      ).waitForTransactionReceipt({
+        hash,
+        confirmations: 1,
+      });
 
       await refreshTokenBalances();
 
@@ -2646,6 +2782,9 @@ useEffect(() => {
                       new Date()
                     ),
                   transactionHash,
+                  network:
+                    selectedCrypto?.network ||
+                    "base",
                 })
               }
               className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-[#1557E8] text-[16px] font-medium text-white transition hover:opacity-90 active:scale-[0.99]"
@@ -2866,6 +3005,8 @@ useEffect(() => {
         type="button"
         onClick={() => {
           setTradeMode("buy");
+          setSelectedCrypto(null);
+          setOnrampStep(1);
           setPaymentState("form");
           setPaymentError("");
         }}
@@ -2882,6 +3023,8 @@ useEffect(() => {
         type="button"
         onClick={() => {
           setTradeMode("sell");
+          setSelectedCrypto(null);
+          setOnrampStep(1);
           setOnrampState("idle");
           setPaymentError("");
         }}
@@ -2993,31 +3136,40 @@ ONRAMP MODAL 1
                       <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                         <div className="border-b border-border p-3">
-                          <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+  <div className="flex items-center gap-2">
 
-                            <Search className="h-4 w-4 text-muted-foreground" />
+    {/* SEARCH */}
 
-                            <input
-                              type="text"
-                              value={
-                                onrampCryptoSearch
-                              }
-                              onChange={(
-                                event
-                              ) =>
-                                setOnrampCryptoSearch(
-                                  event
-                                    .target
-                                    .value
-                                )
-                              }
-                              placeholder="Search supported crypto"
-                              className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground"
-                              autoFocus
-                            />
+    <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
 
-                          </div>
-                        </div>
+      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+
+      <input
+        type="text"
+        value={onrampCryptoSearch}
+        onChange={(event) =>
+          setOnrampCryptoSearch(
+            event.target.value
+          )
+        }
+        placeholder="Search supported crypto"
+        className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground"
+        autoFocus
+      />
+
+    </div>
+
+    {/* NETWORK SELECTOR */}
+
+    <div className="shrink-0">
+      <NetworkSelector
+        value={selectedNetwork}
+        onChange={handleNetworkChange}
+      />
+    </div>
+
+  </div>
+</div>
 
                         <div className="max-h-[220px] overflow-y-auto p-1.5">
 
@@ -3028,9 +3180,7 @@ ONRAMP MODAL 1
                                 crypto
                               ) => (
                                 <button
-                                  key={
-                                    crypto.symbol
-                                  }
+                                  key={`${crypto.network}-${crypto.symbol}`}
                                   type="button"
                                   onClick={() =>
                                     handleOnrampCryptoSelect(
@@ -3074,8 +3224,9 @@ ONRAMP MODAL 1
 
                                   </div>
 
-                                  {selectedCrypto?.symbol ===
-                                    crypto.symbol && (
+                                  {selectedCrypto?.network ===
+                                    crypto.network &&
+                                    selectedCrypto?.symbol === crypto.symbol && (
                                     <Check className="h-4 w-4 text-primary" />
                                   )}
 
@@ -3103,12 +3254,12 @@ ONRAMP MODAL 1
       {onrampQuoteLoading ? (
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Calculating amount to pay...
+          Calculating ...
         </div>
       ) : onrampLocalAmount ? (
         <div className="flex items-center gap-1 text-[14px]">
           <span className="font-normal text-foreground">
-            Amount to pay:
+            Amount:
           </span>
 
           <span className="font-bold text-foreground">
@@ -3198,40 +3349,14 @@ ONRAMP MODAL 1
 
 {onrampStep === 2 && (
   <>
+    {/* =========================================
+        ORDER SUMMARY
+       ========================================= */}
+
     <div className="rounded-[10px] bg-input px-5 py-4">
       <div className="space-y-4 text-[15px] leading-[22px]">
 
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Amount to send
-          </span>
-
-          <span className="text-right font-semibold text-foreground">
-            {currentCurrency.symbol}
-            {Number(
-              onrampLocalAmount || 0
-            ).toLocaleString("en-NG", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Amount to receive
-          </span>
-
-          <span className="text-right font-semibold text-foreground">
-            {onrampCryptoAmount}{" "}
-            {selectedCrypto?.symbol}
-
-            <span className="block text-[12px] font-normal text-muted-foreground">
-              Base Network
-            </span>
-          </span>
-        </div>
-
+        {/* RECIPIENT ADDRESS */}
         <div className="flex items-center justify-between gap-5">
           <span className="shrink-0 text-muted-foreground">
             Recipient address
@@ -3242,8 +3367,64 @@ ONRAMP MODAL 1
           </span>
         </div>
 
+        {/* AMOUNT TO RECEIVE */}
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Amount to receive
+          </span>
+
+          <span className="text-right font-semibold text-foreground">
+            {onrampCryptoAmount}{" "}
+            {selectedCrypto?.symbol}
+
+            <span className="block text-[12px] font-normal text-muted-foreground">
+              {selectedCrypto
+                ? getNetworkConfig(selectedCrypto.network).name
+                : "Network"}
+            </span>
+          </span>
+        </div>
+
+        {/* TRANSACTION FEE */}
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Transaction fee
+          </span>
+
+          <span className="text-right font-semibold text-foreground">
+            {currentCurrency.symbol}
+            {(
+              Number(onrampLocalAmount || 0) * 0.05
+            ).toLocaleString("en-NG", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        </div>
+
+        {/* AMOUNT TO PAY */}
+        <div className="flex items-center justify-between gap-5">
+          <span className="shrink-0 text-muted-foreground">
+            Amount to pay
+          </span>
+
+          <span className="text-right font-semibold text-foreground">
+            {currentCurrency.symbol}
+            {(
+              Number(onrampLocalAmount || 0) * 1.05
+            ).toLocaleString("en-NG", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+        </div>
+
       </div>
     </div>
+
+    {/* =========================================
+        REFUND BANK ACCOUNT
+       ========================================= */}
 
     <div className="mt-5 mb-3 text-[15px] font-bold">
       Refund bank account
@@ -3290,10 +3471,11 @@ ONRAMP MODAL 1
         )}
       </button>
 
+      {/* BANK DROPDOWN */}
       {onrampBankDropdownOpen && (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
-          {/* BANK SEARCH */}
+          {/* SEARCH */}
           <div className="border-b border-border p-3">
             <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
               <Search className="h-4 w-4 text-muted-foreground" />
@@ -3347,11 +3529,15 @@ ONRAMP MODAL 1
               </div>
             )}
           </div>
+
         </div>
       )}
     </div>
 
-    {/* ACCOUNT NUMBER */}
+    {/* =========================================
+        ACCOUNT NUMBER
+       ========================================= */}
+
     <div className="mt-3">
       <input
         type="text"
@@ -3367,6 +3553,7 @@ ONRAMP MODAL 1
         className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:px-5 sm:text-[16px]"
       />
 
+      {/* VERIFYING */}
       {onrampRefundVerifying && (
         <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -3374,6 +3561,7 @@ ONRAMP MODAL 1
         </div>
       )}
 
+      {/* VERIFIED ACCOUNT NAME */}
       {onrampRefundAccountName &&
         !onrampRefundVerifying && (
           <div className="mt-2 px-1 text-[14px] text-muted-foreground">
@@ -3381,6 +3569,7 @@ ONRAMP MODAL 1
           </div>
         )}
 
+      {/* ACCOUNT ERROR */}
       {onrampRefundError && (
         <div className="mt-2 px-1 text-[13px] text-destructive">
           {onrampRefundError}
@@ -3388,9 +3577,13 @@ ONRAMP MODAL 1
       )}
     </div>
 
-    {/* ACTION BUTTONS */}
+    {/* =========================================
+        ACTION BUTTONS
+       ========================================= */}
+
     <div className="mt-4 flex w-full items-center gap-2">
 
+      {/* BACK */}
       <button
         type="button"
         onClick={
@@ -3402,6 +3595,7 @@ ONRAMP MODAL 1
         Back
       </button>
 
+      {/* CONTINUE */}
       <button
         type="button"
         onClick={
@@ -3438,7 +3632,7 @@ ONRAMP MODAL 1
 
     </div>
 
-    {/* ERROR */}
+    {/* ONRAMP ERROR */}
     {onrampError && (
       <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
         {onrampError}
@@ -4005,35 +4199,10 @@ ONRAMP MODAL 1
                                   />
                                 </div>
 
-                                <button
-                                  type="button"
-                                  onClick={(
-                                    event
-                                  ) =>
-                                    event.stopPropagation()
-                                  }
-                                  className="flex h-11 shrink-0 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3 text-[14px] font-medium"
-                                >
-                                  <Image
-                                    src="/base-logo.svg"
-                                    alt=""
-                                    width={
-                                      20
-                                    }
-                                    height={
-                                      20
-                                    }
-                                    className="h-5 w-5 object-contain"
-                                  />
-
-                                  <span>
-                                    {
-                                      selectedNetwork
-                                    }
-                                  </span>
-
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                </button>
+                                <NetworkSelector
+                                  value={selectedNetwork}
+                                  onChange={handleNetworkChange}
+                                />
                               </div>
                             </div>
 
@@ -4051,9 +4220,7 @@ ONRAMP MODAL 1
 
                                     return (
                                       <button
-                                        key={
-                                          crypto.symbol
-                                        }
+                                        key={`${crypto.network}-${crypto.symbol}`}
                                         type="button"
                                         onClick={() =>
                                           handleCryptoSelect(
@@ -4106,8 +4273,9 @@ ONRAMP MODAL 1
                                           </span>
                                         </div>
 
-                                        {selectedCrypto?.symbol ===
-                                          crypto.symbol && (
+                                        {selectedCrypto?.network ===
+                                          crypto.network &&
+                                          selectedCrypto?.symbol === crypto.symbol && (
                                           <Check className="ml-3 h-4 w-4 shrink-0 text-primary" />
                                         )}
                                       </button>
@@ -4408,6 +4576,7 @@ async function generateReceipt({
   accountNumber,
   dateTime,
   transactionHash,
+  network,
 }: {
   amount: string;
   cryptoAmount: string;
@@ -4417,6 +4586,7 @@ async function generateReceipt({
   accountNumber: string;
   dateTime: string;
   transactionHash: string;
+  network: NetworkKey;
 }) {
   if (!transactionHash) {
     return;
@@ -4823,7 +4993,7 @@ async function generateReceipt({
     );
 
     const explorerUrl =
-      `${BASESCAN_TX_URL}${transactionHash}`;
+      `${getNetworkConfig(network).explorerTx}${transactionHash}`;
 
     const qrDataUrl =
       await QRCode.toDataURL(
@@ -5153,6 +5323,91 @@ function loadImage(
 
       image.src = src;
     }
+  );
+}
+
+function NetworkSelector({
+  value,
+  onChange,
+}: {
+  value: NetworkKey;
+  onChange: (network: NetworkKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const current = getNetworkConfig(value);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (ref.current && !ref.current.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3 text-[14px] font-medium"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <Image
+          src={current.logo}
+          alt=""
+          width={20}
+          height={20}
+          className="h-5 w-5 object-contain"
+        />
+        <span className="hidden sm:inline">{current.shortName}</span>
+        <ChevronDown
+          className={`h-4 w-4 text-muted-foreground transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 top-[calc(100%+8px)] z-[60] w-[220px] overflow-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 shadow-2xl"
+        >
+          {NETWORKS.map((network) => (
+            <button
+              key={network.key}
+              type="button"
+              role="option"
+              aria-selected={value === network.key}
+              onClick={() => {
+                onChange(network.key);
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between rounded-[8px] px-3 py-2.5 text-left transition hover:bg-secondary"
+            >
+              <span className="flex items-center gap-2.5">
+                <Image
+                  src={network.logo}
+                  alt=""
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
+                <span className="text-[13px]">{network.name}</span>
+              </span>
+              {value === network.key && (
+                <Check className="h-4 w-4 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1,119 +1,523 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PAYCREST_API = "https://api.paycrest.io/v2/rates";
+const PAYCREST_API =
+  "https://api.paycrest.io/v2/rates";
 
-const SUPPORTED_TOKENS = ["USDT", "USDC"] as const;
-const NETWORK = "base";
+const SUPPORTED_TOKENS = [
+  "USDT",
+  "USDC",
+] as const;
+
+const SUPPORTED_NETWORKS = [
+  "base",
+  "bnb-smart-chain",
+] as const;
+
 const FIAT = "NGN";
 
-export async function POST(request: NextRequest) {
+type SupportedToken =
+  (typeof SUPPORTED_TOKENS)[number];
+
+type SupportedNetwork =
+  (typeof SUPPORTED_NETWORKS)[number];
+
+/*
+ * ------------------------------------------------
+ * NORMALIZE NETWORK
+ * ------------------------------------------------
+ */
+
+function normalizeNetwork(
+  value: unknown
+): string {
+  if (
+    typeof value !== "string"
+  ) {
+    return "";
+  }
+
+  const normalized =
+    value
+      .trim()
+      .toLowerCase()
+      .replace(
+        /\s+network$/i,
+        ""
+      );
+
+  /*
+   * BASE
+   */
+
+  if (
+    normalized === "base" ||
+    normalized === "base mainnet"
+  ) {
+    return "base";
+  }
+
+  /*
+   * BNB SMART CHAIN
+   *
+   * Accept common frontend aliases:
+   *
+   * - bnb-smart-chain
+   * - bnb smart chain
+   * - bnb smart chain mainnet
+   * - bsc
+   * - bsc mainnet
+   */
+
+  if (
+    normalized ===
+      "bnb-smart-chain" ||
+    normalized ===
+      "bnb smart chain" ||
+    normalized ===
+      "bnb smart chain mainnet" ||
+    normalized === "bsc" ||
+    normalized ===
+      "bsc mainnet"
+  ) {
+    return "bnb-smart-chain";
+  }
+
+  return normalized;
+}
+
+/*
+ * ------------------------------------------------
+ * POST
+ * ------------------------------------------------
+ */
+
+export async function POST(
+  request: NextRequest
+) {
   try {
-    const body = await request.json();
+    const body =
+      await request.json();
 
-    const token = String(body.token || "").toUpperCase();
-    const nairaAmount = Number(body.nairaAmount);
+    /*
+     * ------------------------------------------------
+     * TOKEN
+     * ------------------------------------------------
+     */
 
-    if (!SUPPORTED_TOKENS.includes(token as (typeof SUPPORTED_TOKENS)[number])) {
-      return NextResponse.json(
-        { error: "Unsupported cryptocurrency." },
-        { status: 400 }
+    const token =
+      String(
+        body.token || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    /*
+     * ------------------------------------------------
+     * NETWORK
+     * ------------------------------------------------
+     */
+
+    const rawNetwork =
+      body.network ??
+      body.chain ??
+      body.selectedNetwork ??
+      "base";
+
+    const network =
+      normalizeNetwork(
+        rawNetwork
       );
-    }
 
-    if (!Number.isFinite(nairaAmount) || nairaAmount <= 0) {
+    /*
+     * ------------------------------------------------
+     * NAIRA AMOUNT
+     * ------------------------------------------------
+     */
+
+    const nairaAmount =
+      Number(
+        body.nairaAmount
+      );
+
+    console.log(
+      "OFFRAMP QUOTE REQUEST:",
+      {
+        token,
+        rawNetwork,
+        normalizedNetwork:
+          network,
+        nairaAmount,
+      }
+    );
+
+    /*
+     * ------------------------------------------------
+     * TOKEN VALIDATION
+     * ------------------------------------------------
+     */
+
+    if (
+      !SUPPORTED_TOKENS.includes(
+        token as SupportedToken
+      )
+    ) {
       return NextResponse.json(
-        { error: "Invalid Naira amount." },
+        {
+          success:
+            false,
+
+          error:
+            "Unsupported cryptocurrency.",
+
+          receivedToken:
+            body.token,
+
+          normalizedToken:
+            token,
+
+          supportedTokens:
+            SUPPORTED_TOKENS,
+        },
         { status: 400 }
       );
     }
 
     /*
-     * First quote:
-     * Ask Paycrest for the current sell rate for 1 token.
+     * ------------------------------------------------
+     * NETWORK VALIDATION
+     * ------------------------------------------------
      */
+
+    if (
+      !SUPPORTED_NETWORKS.includes(
+        network as SupportedNetwork
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          error:
+            "Unsupported network. Biyaport currently supports Base and BNB Smart Chain.",
+
+          receivedNetwork:
+            rawNetwork,
+
+          normalizedNetwork:
+            network,
+
+          supportedNetworks:
+            SUPPORTED_NETWORKS,
+        },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * ------------------------------------------------
+     * NAIRA AMOUNT VALIDATION
+     * ------------------------------------------------
+     */
+
+    if (
+      !Number.isFinite(
+        nairaAmount
+      ) ||
+      nairaAmount <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          error:
+            "Invalid Naira amount.",
+        },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * ------------------------------------------------
+     * FIRST PAYCREST QUOTE
+     * ------------------------------------------------
+     *
+     * Ask Paycrest for the current SELL rate
+     * for 1 token on the selected network.
+     *
+     * Example:
+     *
+     * Base:
+     * /base/USDT/1/NGN?side=sell
+     *
+     * BNB Smart Chain:
+     * /bnb-smart-chain/USDT/1/NGN?side=sell
+     */
+
     const initialUrl =
-      `${PAYCREST_API}/${NETWORK}/${token}/1/${FIAT}?side=sell`;
+      `${PAYCREST_API}/${network}/${token}/1/${FIAT}?side=sell`;
 
-    const initialResponse = await fetch(initialUrl, {
-      cache: "no-store",
-    });
+    console.log(
+      "PAYCREST INITIAL QUOTE URL:",
+      initialUrl
+    );
 
-    const initialData = await initialResponse.json();
+    const initialResponse =
+      await fetch(
+        initialUrl,
+        {
+          cache:
+            "no-store",
 
-    if (!initialResponse.ok || initialData?.status !== "success") {
-      console.error("PAYCREST INITIAL QUOTE ERROR:", initialData);
-
-      return NextResponse.json(
-        { error: "Unable to get crypto rate." },
-        { status: 502 }
+          headers: {
+            Accept:
+              "application/json",
+          },
+        }
       );
+
+    let initialData: any =
+      null;
+
+    try {
+      initialData =
+        await initialResponse.json();
+    } catch {
+      initialData =
+        null;
     }
 
-    const initialRate = Number(initialData?.data?.sell?.rate);
+    if (
+      !initialResponse.ok ||
+      initialData?.status !==
+        "success"
+    ) {
+      console.error(
+        "PAYCREST INITIAL QUOTE ERROR:",
+        {
+          status:
+            initialResponse.status,
 
-    if (!Number.isFinite(initialRate) || initialRate <= 0) {
+          data:
+            initialData,
+        }
+      );
+
       return NextResponse.json(
-        { error: "Invalid crypto rate returned by Paycrest." },
+        {
+          success:
+            false,
+
+          error:
+            "Unable to get crypto rate.",
+
+          details:
+            initialData,
+        },
         { status: 502 }
       );
     }
 
     /*
-     * Estimate how much crypto is needed for the
-     * requested Naira amount.
+     * ------------------------------------------------
+     * EXTRACT INITIAL RATE
+     * ------------------------------------------------
      */
-    let cryptoAmount = nairaAmount / initialRate;
+
+    const initialRate =
+      Number(
+        initialData
+          ?.data
+          ?.sell
+          ?.rate
+      );
+
+    if (
+      !Number.isFinite(
+        initialRate
+      ) ||
+      initialRate <= 0
+    ) {
+      return NextResponse.json(
+        {
+          success:
+            false,
+
+          error:
+            "Invalid crypto rate returned by Paycrest.",
+        },
+        { status: 502 }
+      );
+    }
 
     /*
-     * Refine the quote using the estimated crypto amount.
-     * This gives Paycrest the transaction notional instead
-     * of always asking for a 1-token quote.
+     * ------------------------------------------------
+     * ESTIMATE CRYPTO AMOUNT
+     * ------------------------------------------------
      */
-    const quoteAmount = Math.max(cryptoAmount, 0.000001);
+
+    let cryptoAmount =
+      nairaAmount /
+      initialRate;
+
+    /*
+     * ------------------------------------------------
+     * REFINE QUOTE
+     * ------------------------------------------------
+     */
+
+    const quoteAmount =
+      Math.max(
+        cryptoAmount,
+        0.000001
+      );
 
     const quoteUrl =
-      `${PAYCREST_API}/${NETWORK}/${token}/${quoteAmount}/${FIAT}?side=sell`;
+      `${PAYCREST_API}/${network}/${token}/${quoteAmount}/${FIAT}?side=sell`;
 
-    const quoteResponse = await fetch(quoteUrl, {
-      cache: "no-store",
-    });
+    console.log(
+      "PAYCREST FINAL QUOTE URL:",
+      quoteUrl
+    );
 
-    const quoteData = await quoteResponse.json();
+    const quoteResponse =
+      await fetch(
+        quoteUrl,
+        {
+          cache:
+            "no-store",
 
-    if (!quoteResponse.ok || quoteData?.status !== "success") {
-      console.error("PAYCREST QUOTE ERROR:", quoteData);
+          headers: {
+            Accept:
+              "application/json",
+          },
+        }
+      );
+
+    let quoteData: any =
+      null;
+
+    try {
+      quoteData =
+        await quoteResponse.json();
+    } catch {
+      quoteData =
+        null;
+    }
+
+    if (
+      !quoteResponse.ok ||
+      quoteData?.status !==
+        "success"
+    ) {
+      console.error(
+        "PAYCREST QUOTE ERROR:",
+        {
+          status:
+            quoteResponse.status,
+
+          data:
+            quoteData,
+        }
+      );
 
       return NextResponse.json(
-        { error: "Unable to calculate crypto equivalent." },
+        {
+          success:
+            false,
+
+          error:
+            "Unable to calculate crypto equivalent.",
+
+          details:
+            quoteData,
+        },
         { status: 502 }
       );
     }
 
-    const rate = Number(quoteData?.data?.sell?.rate);
+    /*
+     * ------------------------------------------------
+     * FINAL RATE
+     * ------------------------------------------------
+     */
 
-    if (!Number.isFinite(rate) || rate <= 0) {
+    const rate =
+      Number(
+        quoteData
+          ?.data
+          ?.sell
+          ?.rate
+      );
+
+    if (
+      !Number.isFinite(
+        rate
+      ) ||
+      rate <= 0
+    ) {
       return NextResponse.json(
-        { error: "Invalid quote rate returned by Paycrest." },
+        {
+          success:
+            false,
+
+          error:
+            "Invalid quote rate returned by Paycrest.",
+        },
         { status: 502 }
       );
     }
 
-    cryptoAmount = nairaAmount / rate;
+    /*
+     * ------------------------------------------------
+     * FINAL CRYPTO AMOUNT
+     * ------------------------------------------------
+     */
 
-    return NextResponse.json({
-      success: true,
-      token,
-      network: NETWORK,
-      fiat: FIAT,
-      nairaAmount,
-      rate,
-      cryptoAmount,
-    });
-  } catch (error) {
-    console.error("QUOTE ERROR:", error);
+    cryptoAmount =
+      nairaAmount /
+      rate;
+
+    /*
+     * ------------------------------------------------
+     * RESPONSE
+     * ------------------------------------------------
+     */
 
     return NextResponse.json(
-      { error: "Unable to calculate crypto equivalent." },
+      {
+        success:
+          true,
+
+        token,
+
+        network,
+
+        fiat:
+          FIAT,
+
+        nairaAmount,
+
+        rate,
+
+        cryptoAmount,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "OFFRAMP QUOTE ERROR:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        success:
+          false,
+
+        error:
+          "Unable to calculate crypto equivalent.",
+      },
       { status: 500 }
     );
   }

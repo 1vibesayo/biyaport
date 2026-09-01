@@ -3,12 +3,24 @@ import { NextRequest, NextResponse } from "next/server";
 const PAYCREST_API = "https://api.paycrest.io/v2/rates";
 
 const SUPPORTED_TOKENS = ["USDT", "USDC"] as const;
-const SUPPORTED_NETWORKS = ["base"] as const;
+const SUPPORTED_NETWORKS = [
+  "base",
+  "bnb-smart-chain",
+] as const;
 
-const NETWORK = "base";
 const FIAT = "NGN";
 
-type SupportedToken = (typeof SUPPORTED_TOKENS)[number];
+type SupportedToken =
+  (typeof SUPPORTED_TOKENS)[number];
+
+type SupportedNetwork =
+  (typeof SUPPORTED_NETWORKS)[number];
+
+/*
+ * ------------------------------------------------
+ * TOKEN NORMALIZATION
+ * ------------------------------------------------
+ */
 
 function normalizeToken(value: unknown): string {
   if (typeof value === "string") {
@@ -17,8 +29,12 @@ function normalizeToken(value: unknown): string {
       .toUpperCase()
       .replace(/\s+ON\s+BASE$/i, "")
       .replace(/\s+ON\s+BASE\s+NETWORK$/i, "")
+      .replace(/\s+ON\s+BNB\s+SMART\s+CHAIN$/i, "")
+      .replace(/\s+ON\s+BSC$/i, "")
       .replace(/-BASE$/i, "")
       .replace(/_BASE$/i, "")
+      .replace(/-BSC$/i, "")
+      .replace(/_BSC$/i, "")
       .trim();
   }
 
@@ -50,9 +66,15 @@ function normalizeToken(value: unknown): string {
   return "";
 }
 
+/*
+ * ------------------------------------------------
+ * NETWORK NORMALIZATION
+ * ------------------------------------------------
+ */
+
 function normalizeNetwork(value: unknown): string {
   if (typeof value !== "string") {
-    return NETWORK;
+    return "";
   }
 
   const normalized = value
@@ -60,14 +82,48 @@ function normalizeNetwork(value: unknown): string {
     .toLowerCase()
     .replace(/\s+network$/i, "");
 
-  if (normalized === "base mainnet") {
+  /*
+   * Base aliases
+   */
+  if (
+    normalized === "base mainnet" ||
+    normalized === "base"
+  ) {
     return "base";
+  }
+
+  /*
+   * BNB Smart Chain aliases
+   *
+   * Frontend can send:
+   * - bnb-smart-chain
+   * - bnb smart chain
+   * - bnb smart chain mainnet
+   * - bsc
+   * - bsc mainnet
+   */
+  if (
+    normalized === "bnb-smart-chain" ||
+    normalized === "bnb smart chain" ||
+    normalized === "bnb smart chain mainnet" ||
+    normalized === "bsc" ||
+    normalized === "bsc mainnet"
+  ) {
+    return "bnb-smart-chain";
   }
 
   return normalized;
 }
 
-export async function POST(request: NextRequest) {
+/*
+ * ------------------------------------------------
+ * POST
+ * ------------------------------------------------
+ */
+
+export async function POST(
+  request: NextRequest
+) {
   try {
     const body = await request.json();
 
@@ -102,13 +158,14 @@ export async function POST(request: NextRequest) {
      * ------------------------------------------------
      * CRYPTO AMOUNT
      *
-     * IMPORTANT:
-     * The crypto amount is now the INPUT.
+     * The crypto amount is the INPUT.
      *
      * Example:
      *
-     * User selects USDT
-     * User enters 1
+     * User selects:
+     * USDT
+     * BNB Smart Chain
+     * 1 USDT
      *
      * cryptoAmount = 1
      * ------------------------------------------------
@@ -120,16 +177,23 @@ export async function POST(request: NextRequest) {
       body.tokenAmount ??
       body.amountIn;
 
-    const cryptoAmount = Number(rawCryptoAmount);
+    const cryptoAmount = Number(
+      rawCryptoAmount
+    );
 
-    console.log("ONRAMP QUOTE REQUEST:", {
-      rawToken,
-      normalizedToken: token,
-      rawNetwork,
-      normalizedNetwork: network,
-      rawCryptoAmount,
-      cryptoAmount,
-    });
+    console.log(
+      "ONRAMP QUOTE REQUEST:",
+      {
+        rawToken,
+        normalizedToken: token,
+
+        rawNetwork,
+        normalizedNetwork: network,
+
+        rawCryptoAmount,
+        cryptoAmount,
+      }
+    );
 
     /*
      * ------------------------------------------------
@@ -145,10 +209,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Unsupported cryptocurrency.",
+          error:
+            "Unsupported cryptocurrency.",
+
           receivedToken: rawToken,
           normalizedToken: token,
-          supportedTokens: SUPPORTED_TOKENS,
+
+          supportedTokens:
+            SUPPORTED_TOKENS,
         },
         { status: 400 }
       );
@@ -162,16 +230,24 @@ export async function POST(request: NextRequest) {
 
     if (
       !SUPPORTED_NETWORKS.includes(
-        network as (typeof SUPPORTED_NETWORKS)[number]
+        network as SupportedNetwork
       )
     ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Unsupported network.",
-          receivedNetwork: rawNetwork,
-          normalizedNetwork: network,
-          supportedNetworks: SUPPORTED_NETWORKS,
+
+          error:
+            "Unsupported network.",
+
+          receivedNetwork:
+            rawNetwork,
+
+          normalizedNetwork:
+            network,
+
+          supportedNetworks:
+            SUPPORTED_NETWORKS,
         },
         { status: 400 }
       );
@@ -190,7 +266,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid crypto amount.",
+          error:
+            "Invalid crypto amount.",
         },
         { status: 400 }
       );
@@ -200,17 +277,19 @@ export async function POST(request: NextRequest) {
      * ------------------------------------------------
      * PAYCREST BUY RATE
      *
-     * For an on-ramp:
-     *
-     * NGN -> USDT / USDC
-     *
-     * We ask Paycrest how much NGN is required
-     * for the selected crypto amount.
+     * Fiat -> Crypto
      *
      * Example:
      *
-     * 1 USDT -> ₦1,500
+     * 1 USDT = ₦1,500
      *
+     * 1 USDT on Base:
+     *
+     * /base/USDT/1/NGN
+     *
+     * 1 USDT on BNB Smart Chain:
+     *
+     * /bnb-smart-chain/USDT/1/NGN
      * ------------------------------------------------
      */
 
@@ -222,17 +301,23 @@ export async function POST(request: NextRequest) {
       rateUrl
     );
 
-    const rateResponse = await fetch(rateUrl, {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
-    });
+    const rateResponse = await fetch(
+      rateUrl,
+      {
+        cache: "no-store",
+
+        headers: {
+          Accept:
+            "application/json",
+        },
+      }
+    );
 
     let rateData: any = null;
 
     try {
-      rateData = await rateResponse.json();
+      rateData =
+        await rateResponse.json();
     } catch {
       rateData = null;
     }
@@ -250,15 +335,21 @@ export async function POST(request: NextRequest) {
       console.error(
         "PAYCREST ONRAMP RATE ERROR:",
         {
-          status: rateResponse.status,
-          data: rateData,
+          status:
+            rateResponse.status,
+
+          data:
+            rateData,
         }
       );
 
       return NextResponse.json(
         {
           success: false,
-          error: "Unable to get crypto rate.",
+
+          error:
+            "Unable to get crypto rate.",
+
           details:
             rateData?.message ||
             rateData?.error ||
@@ -290,6 +381,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
+
           error:
             "Invalid crypto rate returned by Paycrest.",
         },
@@ -299,22 +391,7 @@ export async function POST(request: NextRequest) {
 
     /*
      * ------------------------------------------------
-     * CALCULATE LOCAL CURRENCY AMOUNT
-     *
-     * cryptoAmount is already the amount the user
-     * wants to receive.
-     *
-     * If Paycrest returns:
-     *
-     * rate = ₦1,500 per USDT
-     *
-     * and:
-     *
-     * cryptoAmount = 1
-     *
-     * then:
-     *
-     * localAmount = ₦1,500
+     * CALCULATE NGN AMOUNT
      * ------------------------------------------------
      */
 
@@ -328,6 +405,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
+
           error:
             "Unable to calculate local currency amount.",
         },
@@ -339,40 +417,46 @@ export async function POST(request: NextRequest) {
      * ------------------------------------------------
      * RESPONSE
      * ------------------------------------------------
-     *
-     * `cryptoAmount`
-     * = amount entered by the user
-     *
-     * `localAmount`
-     * = NGN amount calculated from Paycrest
-     *
-     * `nairaAmount`
-     * = compatibility alias
-     * ------------------------------------------------
      */
 
     return NextResponse.json({
       success: true,
 
       token,
+
       network,
+
       fiat: FIAT,
 
-      // Amount entered by the user
+      /*
+       * Amount the user wants to receive
+       */
       cryptoAmount,
 
-      // NGN equivalent
+      /*
+       * NGN equivalent
+       */
       localAmount,
 
-      // Compatibility with existing frontend/backend code
-      nairaAmount: localAmount,
+      /*
+       * Compatibility alias
+       */
+      nairaAmount:
+        localAmount,
 
-      // Paycrest rate
+      /*
+       * Paycrest rate
+       */
       rate,
 
-      // Currency labels
-      cryptoCurrency: token,
-      localCurrency: FIAT,
+      /*
+       * Currency labels
+       */
+      cryptoCurrency:
+        token,
+
+      localCurrency:
+        FIAT,
     });
   } catch (error) {
     console.error(
@@ -383,6 +467,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
+
         error:
           "Unable to calculate on-ramp quote.",
       },

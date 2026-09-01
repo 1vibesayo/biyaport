@@ -21,8 +21,11 @@ export async function GET(
     if (!orderId) {
       return NextResponse.json(
         {
-          success: false,
-          error: "Missing orderId.",
+          success:
+            false,
+
+          error:
+            "Missing orderId.",
         },
         { status: 400 }
       );
@@ -44,7 +47,9 @@ export async function GET(
 
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           error:
             "Paycrest API key is not configured.",
         },
@@ -74,27 +79,28 @@ export async function GET(
     /*
      * ------------------------------------------------
      * GET PAYCREST ORDER
-     *
-     * IMPORTANT:
-     *
-     * Paycrest v2 uses API-Key authentication
-     * for this endpoint.
      * ------------------------------------------------
      */
 
-    const response = await fetch(
-      url,
-      {
-        method: "GET",
+    const response =
+      await fetch(
+        url,
+        {
+          method:
+            "GET",
 
-        headers: {
-          "API-Key": apiKey,
-          Accept: "application/json",
-        },
+          headers: {
+            "API-Key":
+              apiKey,
 
-        cache: "no-store",
-      }
-    );
+            Accept:
+              "application/json",
+          },
+
+          cache:
+            "no-store",
+        }
+      );
 
     /*
      * ------------------------------------------------
@@ -119,7 +125,9 @@ export async function GET(
 
     try {
       paycrestData =
-        JSON.parse(responseText);
+        JSON.parse(
+          responseText
+        );
     } catch {
       console.error(
         "PAYCREST STATUS RESPONSE WAS NOT VALID JSON."
@@ -127,7 +135,9 @@ export async function GET(
 
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           error:
             "Paycrest returned an invalid response.",
         },
@@ -145,14 +155,18 @@ export async function GET(
       console.error(
         "PAYCREST STATUS REQUEST FAILED:",
         {
-          status: response.status,
-          response: paycrestData,
+          status:
+            response.status,
+
+          response:
+            paycrestData,
         }
       );
 
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
 
           error:
             paycrestData?.message ||
@@ -164,7 +178,8 @@ export async function GET(
             null,
         },
         {
-          status: response.status,
+          status:
+            response.status,
         }
       );
     }
@@ -172,18 +187,6 @@ export async function GET(
     /*
      * ------------------------------------------------
      * EXTRACT ORDER
-     *
-     * Paycrest response:
-     *
-     * {
-     *   status: "success",
-     *   message: "...",
-     *   data: {
-     *     id: "...",
-     *     status: "pending",
-     *     ...
-     *   }
-     * }
      * ------------------------------------------------
      */
 
@@ -192,11 +195,13 @@ export async function GET(
       paycrestData?.order ||
       paycrestData;
 
-    const status = String(
-      order?.status || ""
-    )
-      .trim()
-      .toLowerCase();
+    const status =
+      String(
+        order?.status ||
+          ""
+      )
+        .trim()
+        .toLowerCase();
 
     console.log(
       "EXTRACTED PAYCREST ONRAMP ORDER:",
@@ -214,13 +219,14 @@ export async function GET(
 
     /*
      * ------------------------------------------------
-     * RETURN STATUS TO BIYAPORT
+     * RETURN STATUS
      * ------------------------------------------------
      */
 
     return NextResponse.json(
       {
-        success: true,
+        success:
+          true,
 
         orderId,
 
@@ -228,12 +234,23 @@ export async function GET(
 
         order,
 
+        /*
+         * Useful when frontend needs to know
+         * which network the order belongs to.
+         */
+        network:
+          order?.destination?.recipient?.network ||
+          order?.destination?.network ||
+          order?.network ||
+          null,
+
         message:
           paycrestData?.message ||
           "Order status retrieved successfully.",
       },
       {
-        status: 200,
+        status:
+          200,
 
         headers: {
           "Cache-Control":
@@ -249,7 +266,8 @@ export async function GET(
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
 
         error:
           error instanceof Error

@@ -1,100 +1,150 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 const PAYCREST_API =
   "https://api.paycrest.io/v2/sender/orders";
 
-const SUPPORTED_TOKENS = ["USDT", "USDC"] as const;
+const SUPPORTED_TOKENS = [
+  "USDT",
+  "USDC",
+] as const;
 
-const NETWORK = "base";
-const FIAT = "NGN";
+const SUPPORTED_NETWORKS = [
+  "base",
+  "bnb-smart-chain",
+] as const;
+
+/*
+ * Your Biyaport fee.
+ *
+ * Example:
+ *
+ * 1% = "1"
+ */
+const SENDER_FEE_PERCENT = "1";
 
 type SupportedToken =
   (typeof SUPPORTED_TOKENS)[number];
 
-export async function POST(request: NextRequest) {
+type SupportedNetwork =
+  (typeof SUPPORTED_NETWORKS)[number];
+
+/*
+ * ------------------------------------------------
+ * NORMALIZE NETWORK
+ * ------------------------------------------------
+ */
+
+function normalizeNetwork(
+  value: unknown
+): string {
+  if (
+    typeof value !== "string"
+  ) {
+    return "";
+  }
+
+  const normalized =
+    value
+      .trim()
+      .toLowerCase()
+      .replace(
+        /\s+network$/i,
+        ""
+      );
+
+  /*
+   * Base
+   */
+  if (
+    normalized === "base" ||
+    normalized === "base mainnet"
+  ) {
+    return "base";
+  }
+
+  /*
+   * BNB Smart Chain
+   */
+  if (
+    normalized ===
+      "bnb-smart-chain" ||
+    normalized ===
+      "bnb smart chain" ||
+    normalized ===
+      "bnb smart chain mainnet" ||
+    normalized === "bsc" ||
+    normalized ===
+      "bsc mainnet"
+  ) {
+    return "bnb-smart-chain";
+  }
+
+  return normalized;
+}
+
+/*
+ * ------------------------------------------------
+ * POST
+ * ------------------------------------------------
+ */
+
+export async function POST(
+  request: Request
+) {
   try {
-    /*
-     * ------------------------------------------------
-     * API KEY
-     * ------------------------------------------------
-     */
-
-    const apiKey = process.env.PAYCREST_API_KEY?.trim();
-
-    if (!apiKey) {
-      console.error(
-        "PAYCREST_API_KEY is missing from environment variables."
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Paycrest API key is not configured.",
-        },
-        { status: 500 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * REQUEST BODY
-     * ------------------------------------------------
-     */
-
-    const body = await request.json();
+    const body =
+      await request.json();
 
     const {
       amount,
       crypto,
+      network,
       walletAddress,
-      reference,
 
       /*
-       * On-ramp refund account details.
-       *
-       * These are required by Paycrest for the
-       * fiat source.
+       * These names now match
+       * the frontend exactly.
        */
       institution,
       accountNumber,
       accountName,
+
+      reference,
     } = body;
 
     /*
-     * ------------------------------------------------
-     * NORMALIZE VALUES
-     * ------------------------------------------------
+     * --------------------------------------------
+     * NORMALIZE
+     * --------------------------------------------
      */
 
-    const token = String(crypto || "")
-      .trim()
-      .toUpperCase();
+    const token =
+      String(
+        crypto || ""
+      )
+        .trim()
+        .toUpperCase();
+
+    const normalizedNetwork =
+      normalizeNetwork(
+        network
+      );
 
     /*
-     * For on-ramp:
-     *
-     * `amount` is the NGN amount the user is paying.
+     * --------------------------------------------
+     * VALIDATION
+     * --------------------------------------------
      */
-    const nairaAmount = Number(amount);
 
-    console.log(
-      "PAYCREST ONRAMP TRANSACTION REQUEST:",
-      {
-        token,
-        nairaAmount,
-        walletAddress,
-        reference,
-        institution,
-        accountNumber,
-        accountName,
-      }
-    );
-
-    /*
-     * ------------------------------------------------
-     * VALIDATE TOKEN
-     * ------------------------------------------------
-     */
+    if (!amount) {
+      return NextResponse.json(
+        {
+          error:
+            "Amount is required",
+        },
+        { status: 400 }
+      );
+    }
 
     if (
       !SUPPORTED_TOKENS.includes(
@@ -104,7 +154,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Unsupported cryptocurrency.",
+            "Unsupported crypto",
+
+          receivedCrypto:
+            crypto,
+
+          normalizedCrypto:
+            token,
+
           supportedTokens:
             SUPPORTED_TOKENS,
         },
@@ -112,39 +169,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /*
-     * ------------------------------------------------
-     * VALIDATE NGN AMOUNT
-     * ------------------------------------------------
-     */
-
     if (
-      !Number.isFinite(nairaAmount) ||
-      nairaAmount <= 0
+      !SUPPORTED_NETWORKS.includes(
+        normalizedNetwork as SupportedNetwork
+      )
     ) {
       return NextResponse.json(
         {
           error:
-            "Invalid Naira amount.",
+            "Unsupported network",
+
+          receivedNetwork:
+            network,
+
+          normalizedNetwork,
+
+          supportedNetworks:
+            SUPPORTED_NETWORKS,
         },
         { status: 400 }
       );
     }
 
-    /*
-     * ------------------------------------------------
-     * VALIDATE WALLET
-     * ------------------------------------------------
-     */
-
-    if (
-      !walletAddress ||
-      typeof walletAddress !== "string"
-    ) {
+    if (!walletAddress) {
       return NextResponse.json(
         {
           error:
-            "Destination wallet address is required.",
+            "Wallet address is required",
         },
         { status: 400 }
       );
@@ -158,274 +209,266 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Invalid wallet address.",
+            "Invalid wallet address",
         },
         { status: 400 }
       );
     }
 
     /*
-     * ------------------------------------------------
-     * VALIDATE REFERENCE
-     * ------------------------------------------------
-     */
-
-    if (
-      !reference ||
-      typeof reference !== "string"
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Transaction reference is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * VALIDATE REFUND ACCOUNT
-     *
-     * Paycrest requires refundAccount on the
-     * fiat source for an on-ramp.
-     * ------------------------------------------------
+     * --------------------------------------------
+     * REFUND ACCOUNT VALIDATION
+     * --------------------------------------------
      */
 
     if (
       !institution ||
-      typeof institution !== "string"
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Refund bank institution is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (
       !accountNumber ||
-      typeof accountNumber !== "string"
+      !accountName
     ) {
-      return NextResponse.json(
+      console.error(
+        "Missing refund account details:",
         {
-          error:
-            "Refund account number is required.",
-        },
-        { status: 400 }
+          institution,
+          accountNumber,
+          accountName,
+        }
       );
-    }
 
-    if (
-      !accountName ||
-      typeof accountName !== "string"
-    ) {
       return NextResponse.json(
         {
           error:
-            "Refund account name is required.",
+            "Refund account details are required",
         },
         { status: 400 }
       );
     }
 
     /*
-     * ------------------------------------------------
-     * PAYCREST ON-RAMP ORDER
-     *
-     * Fiat → Crypto
-     *
-     * The user deposits NGN into the provider
-     * account returned by Paycrest.
-     *
-     * Paycrest then sends crypto to the user's
-     * wallet.
-     * ------------------------------------------------
+     * --------------------------------------------
+     * PAYCREST API KEY
+     * --------------------------------------------
      */
 
-    const payload = {
-      amount: String(nairaAmount),
+    const apiKey =
+      process.env.PAYCREST_API_KEY?.trim();
 
-      amountIn: "fiat",
+    if (!apiKey) {
+      console.error(
+        "PAYCREST_API_KEY is missing"
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Paycrest configuration is missing",
+        },
+        { status: 500 }
+      );
+    }
+
+    /*
+     * --------------------------------------------
+     * CREATE ONRAMP ORDER
+     *
+     * Fiat -> Crypto
+     * --------------------------------------------
+     */
+
+    const paycrestPayload = {
+      amount:
+        String(amount),
+
+      /*
+       * The amount above is NGN.
+       */
+      amountIn:
+        "fiat",
 
       source: {
-        type: "fiat",
-        currency: FIAT,
+        type:
+          "fiat",
+
+        currency:
+          "NGN",
 
         refundAccount: {
-          institution,
-          accountIdentifier: accountNumber,
-          accountName,
+          institution:
+            institution,
+
+          accountIdentifier:
+            accountNumber,
+
+          accountName:
+            accountName,
         },
       },
 
       destination: {
-        type: "crypto",
-        currency: token,
+        type:
+          "crypto",
+
+        currency:
+          token,
 
         recipient: {
-          address: walletAddress,
-          network: NETWORK,
+          address:
+            walletAddress,
+
+          /*
+           * Paycrest network ID.
+           *
+           * Base:
+           * "base"
+           *
+           * BNB Smart Chain:
+           * "bnb-smart-chain"
+           */
+          network:
+            normalizedNetwork,
         },
       },
 
+      /*
+       * Biyaport internal reference.
+       */
       reference,
+
+      /*
+       * Biyaport fee.
+       */
+      senderFeePercent:
+        SENDER_FEE_PERCENT,
     };
 
     console.log(
-      "PAYCREST ONRAMP ORDER PAYLOAD:",
+      "Creating Paycrest onramp order:",
       JSON.stringify(
-        payload,
+        paycrestPayload,
         null,
         2
       )
     );
 
     /*
-     * ------------------------------------------------
-     * CREATE PAYCREST ORDER
-     *
-     * IMPORTANT:
-     *
-     * Paycrest v2 uses:
-     *
-     * API-Key: YOUR_API_KEY
-     *
-     * NOT:
-     *
-     * Authorization: Bearer YOUR_API_KEY
-     * ------------------------------------------------
+     * --------------------------------------------
+     * PAYCREST REQUEST
+     * --------------------------------------------
      */
 
-    const orderResponse = await fetch(
-      PAYCREST_API,
-      {
-        method: "POST",
+    const response =
+      await fetch(
+        PAYCREST_API,
+        {
+          method:
+            "POST",
 
-        headers: {
-          "Content-Type":
-            "application/json",
+          headers: {
+            "API-Key":
+              apiKey,
 
-          "API-Key": apiKey,
-        },
+            "Content-Type":
+              "application/json",
 
-        body: JSON.stringify(
-          payload
-        ),
+            Accept:
+              "application/json",
+          },
 
-        cache: "no-store",
-      }
-    );
+          body:
+            JSON.stringify(
+              paycrestPayload
+            ),
+
+          cache:
+            "no-store",
+        }
+      );
 
     /*
-     * ------------------------------------------------
-     * PAYCREST RAW RESPONSE
-     *
-     * TEMPORARY DIAGNOSTIC LOGGING
-     * ------------------------------------------------
+     * --------------------------------------------
+     * RAW RESPONSE
+     * --------------------------------------------
      */
 
     const responseText =
-      await orderResponse.text();
+      await response.text();
 
     console.log(
-      "PAYCREST RAW HTTP STATUS:",
-      orderResponse.status
+      "PAYCREST ONRAMP HTTP STATUS:",
+      response.status
     );
 
     console.log(
-      "PAYCREST RAW RESPONSE TEXT:",
+      "PAYCREST ONRAMP RAW RESPONSE:",
       responseText
     );
 
-    let orderData: any = null;
+    let data: any =
+      null;
 
     try {
-      orderData =
-        JSON.parse(responseText);
+      data =
+        JSON.parse(
+          responseText
+        );
     } catch {
-      orderData = {
-        raw: responseText,
+      data = {
+        raw:
+          responseText,
       };
     }
 
     /*
-     * ------------------------------------------------
-     * PAYCREST PARSED RESPONSE
-     *
-     * TEMPORARY DIAGNOSTIC LOGGING
-     * ------------------------------------------------
-     */
-
-    console.log(
-      "PAYCREST ONRAMP ORDER RESPONSE:",
-      JSON.stringify(
-        orderData,
-        null,
-        2
-      )
-    );
-
-    /*
-     * ------------------------------------------------
+     * --------------------------------------------
      * HANDLE PAYCREST ERROR
-     * ------------------------------------------------
+     * --------------------------------------------
      */
 
-    if (
-      !orderResponse.ok ||
-      orderData?.status !== "success"
-    ) {
+    if (!response.ok) {
       console.error(
-        "PAYCREST ONRAMP ORDER ERROR:",
-        {
-          status:
-            orderResponse.status,
-          response:
-            orderData,
-        }
+        "Paycrest onramp error:",
+        data
       );
 
       return NextResponse.json(
         {
           error:
-            orderData?.message ||
-            orderData?.error ||
-            "Unable to create Paycrest on-ramp transaction.",
+            data?.message ||
+            data?.error ||
+            "Failed to create Paycrest onramp order",
 
           details:
-            orderData?.data ||
+            data?.data ||
             null,
         },
         {
           status:
-            orderResponse.status ||
-            502,
+            response.status,
         }
       );
     }
 
     /*
-     * ------------------------------------------------
+     * --------------------------------------------
      * EXTRACT ORDER
-     * ------------------------------------------------
+     * --------------------------------------------
      */
 
     const order =
-      orderData?.data ||
-      orderData;
+      data?.data;
 
-    /*
-     * ------------------------------------------------
-     * TEMPORARY DIAGNOSTIC:
-     * INSPECT THE ORDER SHAPE
-     * ------------------------------------------------
-     */
+    if (!order) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid response from Paycrest",
+        },
+        { status: 502 }
+      );
+    }
 
     console.log(
-      "EXTRACTED PAYCREST ORDER:",
+      "PAYCREST ONRAMP ORDER:",
       JSON.stringify(
         order,
         null,
@@ -433,77 +476,78 @@ export async function POST(request: NextRequest) {
       )
     );
 
-    console.log(
-      "EXTRACTED PAYCREST ORDER ID:",
-      order?.id
-    );
-
-    console.log(
-      "EXTRACTED PAYCREST PROVIDER ACCOUNT:",
-      JSON.stringify(
-        order?.providerAccount,
-        null,
-        2
-      )
-    );
-
     /*
-     * ------------------------------------------------
-     * BUILD FINAL BIYAPORT RESPONSE
-     * ------------------------------------------------
-     */
-
-    const finalResponse = {
-      success: true,
-
-      order,
-
-      token,
-      network: NETWORK,
-      fiat: FIAT,
-
-      nairaAmount,
-
-      reference,
-
-      walletAddress,
-    };
-
-    /*
-     * ------------------------------------------------
-     * TEMPORARY DIAGNOSTIC:
-     * THIS IS EXACTLY WHAT PAGE.TSX RECEIVES
-     * ------------------------------------------------
-     */
-
-    console.log(
-      "FINAL BIYAPORT ONRAMP RESPONSE:",
-      JSON.stringify(
-        finalResponse,
-        null,
-        2
-      )
-    );
-
-    /*
-     * ------------------------------------------------
-     * RETURN ORDER TO FRONTEND
-     * ------------------------------------------------
+     * --------------------------------------------
+     * RETURN ORDER
+     * --------------------------------------------
      */
 
     return NextResponse.json(
-      finalResponse
+      {
+        success:
+          true,
+
+        orderId:
+          order.id,
+
+        status:
+          order.status,
+
+        reference:
+          order.reference,
+
+        amount:
+          order.amount,
+
+        amountIn:
+          order.amountIn,
+
+        rate:
+          order.rate,
+
+        senderFee:
+          order.senderFee,
+
+        senderFeePercent:
+          order.senderFeePercent,
+
+        transactionFee:
+          order.transactionFee,
+
+        providerAccount:
+          order.providerAccount,
+
+        source:
+          order.source,
+
+        destination:
+          order.destination,
+
+        /*
+         * Explicit network returned
+         * to the frontend.
+         */
+        network:
+          normalizedNetwork,
+
+        token,
+
+        validUntil:
+          order
+            .providerAccount
+            ?.validUntil,
+      }
     );
   } catch (error) {
     console.error(
-      "ONRAMP TRANSACTION ERROR:",
+      "Onramp route error:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Unable to create on-ramp transaction.",
+          "Internal server error",
       },
       { status: 500 }
     );

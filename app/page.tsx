@@ -10,6 +10,17 @@ import {
   Send,
   ArrowLeft,
   Copy,
+  Wallet,
+  Share2,
+  Download,
+  ArrowRight,
+  RefreshCw,
+  ArrowLeftRight,
+  CreditCard,
+  History,
+  Home as HomeIcon,
+  Coins,
+  Menu,
 } from "lucide-react";
 
 import {
@@ -22,12 +33,15 @@ import {
   encodeFunctionData,
   erc20Abi,
   formatUnits,
+  maxUint256,
   parseUnits,
   createPublicClient,
   http,
+  keccak256,
+  stringToHex,
 } from "viem";
 
-import { base, bsc } from "viem/chains";
+import { base, baseSepolia, bsc } from "viem/chains";
 
 import QRCode from "qrcode";
 
@@ -69,9 +83,142 @@ const BSCSCAN_TX_URL =
 
 const RECEIPT_FONT = '"DM Sans", sans-serif';
 
-type NetworkKey =
-  | "base"
-  | "bnb-smart-chain";
+/*
+ * ====================================================
+ * B-CODES
+ * ====================================================
+ *
+ * B-Codes are currently being integrated/tested on Base
+ * Sepolia. Quick Port keeps its existing Base/BSC config.
+ */
+const BCODE_CHAIN_ID = 84532;
+const BCODE_CONTRACT_ADDRESS =
+  "0x8a7826FDBBE26CB8Fced97893A4144997F0fE74D" as `0x${string}`;
+const BCODE_BASE_SEPOLIA_USDT =
+  "0x2C6c7c00ACa9B9D8446d107367485079b0471706" as `0x${string}`;
+const BCODE_BASE_SEPOLIA_USDC =
+  "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`;
+const BCODE_TOKEN_DECIMALS = 6;
+const BCODE_FEE_BPS = 200;
+const BCODE_BPS_DENOMINATOR = 10_000;
+const BCODE_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const BCODE_APP_PARAM = "bcode";
+
+const BCODE_CONTRACT_ABI = [
+  {
+    type: "function",
+    name: "getBCode",
+    stateMutability: "view",
+    inputs: [{ name: "codeHash", type: "bytes32" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "creator", type: "address" },
+          { name: "token", type: "address" },
+          { name: "amount", type: "uint256" },
+          { name: "redeemed", type: "bool" },
+          { name: "cancelled", type: "bool" },
+          { name: "code", type: "string" },
+        ],
+      },
+    ],
+  },
+
+  {
+    type: "function",
+    name: "createBCode",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "codeHash", type: "bytes32" },
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+
+  {
+    type: "function",
+    name: "isRedeemable",
+    stateMutability: "view",
+    inputs: [{ name: "codeHash", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+
+  {
+    type: "function",
+    name: "creationNonces",
+    stateMutability: "view",
+    inputs: [{ name: "creator", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+
+  {
+    type: "function",
+    name: "createBCodeWithSignature",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "creator", type: "address" },
+      { name: "codeHash", type: "bytes32" },
+      { name: "code", type: "string" },
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const BCODE_PUBLIC_CLIENT = createPublicClient({
+  chain: baseSepolia,
+  transport: http(),
+});
+
+const getBCodeTokenConfig = (symbol: "USDT" | "USDC") =>
+  symbol === "USDT"
+    ? {
+        address: BCODE_BASE_SEPOLIA_USDT,
+        decimals: BCODE_TOKEN_DECIMALS,
+        logo: "/usdt-logo.svg",
+        name: "Tether USD",
+      }
+    : {
+        address: BCODE_BASE_SEPOLIA_USDC,
+        decimals: BCODE_TOKEN_DECIMALS,
+        logo: "/usdc-logo.svg",
+        name: "USD Coin",
+      };
+
+function generateBCodeValue() {
+  const values = new Uint32Array(8);
+  crypto.getRandomValues(values);
+
+  let first = "";
+  let second = "";
+
+  for (let i = 0; i < 4; i += 1) {
+    first += BCODE_CHARSET[values[i] % BCODE_CHARSET.length];
+    second += BCODE_CHARSET[values[i + 4] % BCODE_CHARSET.length];
+  }
+
+  return `B-${first}-${second}`;
+}
+
+function hashBCodeForClient(code: string) {
+  return keccak256(stringToHex(code.trim().toUpperCase()));
+}
+
+function isValidBCodeFormat(code: string) {
+  return /^B-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(
+    code.trim().toUpperCase()
+  );
+}
+
+
+type NetworkKey = "base" | "bnb-smart-chain" | "base-sepolia";
 
 type NetworkConfig = {
   key: NetworkKey;
@@ -154,13 +301,13 @@ type Institution = {
   code: string;
 };
 
-type CryptoSymbol = "USDT" | "USDC";
+type CryptoSymbol = "USDT" | "USDC" | "ETH" | "BNB";
 
 type CryptoOption = {
   symbol: CryptoSymbol;
   name: string;
   network: NetworkKey;
-  address: `0x${string}`;
+  address: `0x${string}` | null;
   decimals: number;
   logo: string;
 };
@@ -168,6 +315,8 @@ type CryptoOption = {
 type TokenBalance = {
   USDT: string;
   USDC: string;
+  ETH?: string;
+  BNB?: string;
 };
 
 type CurrencyCode = "NGN" | "KES";
@@ -235,6 +384,15 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     logo: "/usdc-logo.svg",
   },
   {
+    symbol: "ETH",
+    name: "Ethereum",
+    network: "base",
+    address: null,
+    decimals: 18,
+    logo: "/eth-logo.svg",
+  },
+
+  {
     symbol: "USDT",
     name: "Tether USD",
     network: "bnb-smart-chain",
@@ -290,6 +448,49 @@ export default function Home() {
   const { sendTransaction } = useSendTransaction();
 
   const wallet = wallets[0];
+
+  const [mainView, setMainView] =
+    useState<"quickport" | "bcodes">("quickport");
+
+  const [bcodeDeepLink, setBcodeDeepLink] =
+    useState("");
+
+/*
+   * ------------------------------------------------
+   * B-CODE DEEP LINK
+   * ------------------------------------------------
+   */
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get(BCODE_APP_PARAM);
+
+    if (code && isValidBCodeFormat(code)) {
+      setBcodeDeepLink(code.trim().toUpperCase());
+      setMainView("bcodes");
+    }
+  }, []);
+
+  const openBCodes = () => {
+    setMainView("bcodes");
+  };
+
+  const backToQuickPort = () => {
+    setMainView("quickport");
+    setBcodeDeepLink("");
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete(BCODE_APP_PARAM);
+    window.history.replaceState({}, "", url.toString());
+  };
+
+  const handleQuickPortNavigation = () => {
+    backToQuickPort();
+  };
+
+  const handleBCodesNavigation = () => {
+    openBCodes();
+  };
 
   /*
    * ------------------------------------------------
@@ -369,6 +570,9 @@ export default function Home() {
 
   const [loadingQuote, setLoadingQuote] =
     useState(false);
+
+  const [settlementAmount, setSettlementAmount] =
+    useState<number | null>(null);
 
   const [quoteError, setQuoteError] =
     useState("");
@@ -617,81 +821,103 @@ export default function Home() {
    */
 
   const refreshTokenBalances = async () => {
-    if (!wallet?.address) {
-      setTokenBalances({
-        USDT: "0.00",
-        USDC: "0.00",
-      });
+  if (!wallet?.address) {
+    setTokenBalances({
+      USDT: "0.00",
+      USDC: "0.00",
+      ETH: "0.00",
+    });
 
-      return;
-    }
+    return;
+  }
 
-    setLoadingBalances(true);
+  setLoadingBalances(true);
 
-    try {
-      const client = getPublicClient(selectedNetwork);
-      const usdtConfig = getTokenConfig(selectedNetwork, "USDT");
-      const usdcConfig = getTokenConfig(selectedNetwork, "USDC");
+  try {
+    const client = getPublicClient(selectedNetwork);
+    const usdtConfig = getTokenConfig(
+      selectedNetwork,
+      "USDT"
+    );
+    const usdcConfig = getTokenConfig(
+      selectedNetwork,
+      "USDC"
+    );
 
-      const [
-        usdtBalance,
-        usdcBalance,
-      ] = await Promise.all([
-        client.readContract({
-          address: usdtConfig.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [
-            wallet.address as `0x${string}`,
-          ],
-        }),
+    const [
+      usdtBalance,
+      usdcBalance,
+      ethBalance,
+    ] = await Promise.all([
+      client.readContract({
+        address: usdtConfig.address,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [
+          wallet.address as `0x${string}`,
+        ],
+      }),
 
-        client.readContract({
-          address: usdcConfig.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [
-            wallet.address as `0x${string}`,
-          ],
-        }),
-      ]);
+      client.readContract({
+        address: usdcConfig.address,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [
+          wallet.address as `0x${string}`,
+        ],
+      }),
 
-      setTokenBalances({
-        USDT: Number(
-          formatUnits(
-            usdtBalance,
-            usdtConfig.decimals
-          )
-        ).toFixed(2),
+      client.getBalance({
+        address:
+          wallet.address as `0x${string}`,
+      }),
+    ]);
 
-        USDC: Number(
-          formatUnits(
-            usdcBalance,
-            usdcConfig.decimals
-          )
-        ).toFixed(2),
-      });
-    } catch (error) {
-      console.error(
-        "TOKEN BALANCE ERROR:",
-        error
-      );
+    setTokenBalances({
+      USDT: Number(
+        formatUnits(
+          usdtBalance,
+          usdtConfig.decimals
+        )
+      ).toFixed(2),
 
-      setTokenBalances({
-        USDT: "0.00",
-        USDC: "0.00",
-      });
-    } finally {
-      setLoadingBalances(false);
-    }
-  };
+      USDC: Number(
+        formatUnits(
+          usdcBalance,
+          usdcConfig.decimals
+        )
+      ).toFixed(2),
+
+      ETH: Number(
+        formatUnits(
+          ethBalance,
+          18
+        )
+      ).toFixed(4),
+    });
+  } catch (error) {
+    console.error(
+      "TOKEN BALANCE ERROR:",
+      error
+    );
+
+    setTokenBalances({
+      USDT: "0.00",
+      USDC: "0.00",
+      ETH: "0.00",
+    });
+  } finally {
+    setLoadingBalances(false);
+  }
+};
 
   useEffect(() => {
     if (!authenticated || !wallet?.address) {
       setTokenBalances({
-        USDT: "0.00",
-        USDC: "0.00",
-      });
+      USDT: "0.00",
+      USDC: "0.00",
+      ETH: "0.00",
+    });
 
       return;
     }
@@ -1158,90 +1384,114 @@ export default function Home() {
     let cancelled = false;
 
     const getQuote = async () => {
-      setLoadingQuote(true);
-      setQuoteError("");
-      setCryptoAmount("");
+  setLoadingQuote(true);
+  setQuoteError("");
+  setCryptoAmount("");
 
-      try {
-        const response = await fetch(
-          "/api/quote",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              token:
-                selectedCrypto.symbol,
-              network:
-                selectedCrypto.network,
-              currency:
-                selectedCurrency,
-              nairaAmount:
-                Number(amount),
-            }),
-          }
-        );
-
-        const data =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              data?.message ||
-              "Unable to get crypto quote."
-          );
-        }
-
-        const value = Number(
-          data?.cryptoAmount
-        );
-
-        if (
-          !Number.isFinite(value) ||
-          value <= 0
-        ) {
-          throw new Error(
-            "Invalid crypto amount returned."
-          );
-        }
-
-        if (!cancelled) {
-          setCryptoAmount(
-            value.toFixed(6)
-          );
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error(
-            "QUOTE ERROR:",
-            error
-          );
-
-          setQuoteError(
-            error instanceof Error
-              ? error.message
-              : "Unable to get crypto quote."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingQuote(false);
-        }
+  try {
+    const response = await fetch(
+      "/api/quote",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          token:
+            selectedCrypto.symbol,
+          network:
+            selectedCrypto.network,
+          currency:
+            selectedCurrency,
+          nairaAmount:
+            Number(amount),
+          walletAddress:
+            wallet?.address,
+        }),
       }
-    };
-
-    const timeout = setTimeout(
-      getQuote,
-      500
     );
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-    };
+    const data =
+      await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ||
+          data?.message ||
+          "Unable to get crypto quote."
+      );
+    }
+
+    const value = Number(
+  data?.cryptoAmount
+);
+
+if (
+  !Number.isFinite(value) ||
+  value <= 0
+) {
+  throw new Error(
+    "Invalid crypto amount returned."
+  );
+}
+
+const returnedSettlementAmount =
+  Number(data?.settlementAmount);
+
+if (
+  selectedCrypto.symbol === "ETH" &&
+  (!Number.isFinite(
+    returnedSettlementAmount
+  ) ||
+    returnedSettlementAmount <= 0)
+) {
+  throw new Error(
+    "Invalid USDC settlement amount returned for ETH."
+  );
+}
+
+if (!cancelled) {
+  setCryptoAmount(
+    value.toFixed(6)
+  );
+
+  setSettlementAmount(
+    selectedCrypto.symbol === "ETH"
+      ? returnedSettlementAmount
+      : null
+  );
+}
+
+  } catch (error) {
+    if (!cancelled) {
+      console.error(
+        "QUOTE ERROR:",
+        error
+      );
+
+      setQuoteError(
+        error instanceof Error
+          ? error.message
+          : "Unable to get crypto quote."
+      );
+    }
+  } finally {
+    if (!cancelled) {
+      setLoadingQuote(false);
+    }
+  }
+};
+
+const timeout = setTimeout(
+  getQuote,
+  500
+);
+
+return () => {
+  cancelled = true;
+  clearTimeout(timeout);
+};
   }, [
     amount,
     selectedCrypto,
@@ -2390,7 +2640,12 @@ useEffect(() => {
               accountNumber,
               accountName,
               reference:
-                `biyaport-${Date.now()}`,
+              `biyaport-${Date.now()}`,
+
+          settlementAmount:
+            selectedCrypto.symbol === "ETH"
+              ? settlementAmount
+              : undefined,
             }),
           }
         );
@@ -2437,8 +2692,9 @@ useEffect(() => {
 
       const orderAmount =
         Number(
-          data?.amount
-        );
+        data?.paycrestAmount ??
+        data?.amount
+      );
 
       const senderFee =
         Number(
@@ -2498,42 +2754,85 @@ useEffect(() => {
         );
       }
 
-      const totalUnits =
-        parseUnits(
-          totalCryptoAmount.toFixed(
-            selectedCrypto.decimals
-          ),
-          selectedCrypto.decimals
-        );
-
-      const transferData =
-        encodeFunctionData({
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [
-            receiveAddress as `0x${string}`,
-            totalUnits,
-          ],
-        });
-
       setPaymentStage(2);
 
-      const result =
-        await sendTransaction(
-          {
-            to:
-              selectedCrypto.address,
-            data:
-              transferData,
-            value: BigInt(0),
-            chainId:
-              networkConfig.chainId,
-          },
-          {
-            address:
-              wallet.address,
-          }
-        );
+let result;
+
+if (selectedCrypto.symbol === "ETH") {
+  const swapTransaction =
+    data?.transaction;
+
+  if (
+    !swapTransaction?.to ||
+    !swapTransaction?.data
+  ) {
+    throw new Error(
+      "0x did not return a valid ETH swap transaction."
+    );
+  }
+
+  result =
+    await sendTransaction(
+      {
+        to:
+          swapTransaction.to as `0x${string}`,
+
+        data:
+          swapTransaction.data as `0x${string}`,
+
+        value:
+          BigInt(
+            swapTransaction.value ?? "0"
+          ),
+
+        chainId:
+          networkConfig.chainId,
+      },
+      {
+        address:
+          wallet.address,
+      }
+    );
+} else {
+  const totalUnits =
+    parseUnits(
+      totalCryptoAmount.toFixed(
+        selectedCrypto.decimals
+      ),
+      selectedCrypto.decimals
+    );
+
+  const transferData =
+    encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [
+        receiveAddress as `0x${string}`,
+        totalUnits,
+      ],
+    });
+
+  result =
+    await sendTransaction(
+      {
+        to:
+          selectedCrypto.address!,
+
+        data:
+          transferData,
+
+        value:
+          BigInt(0),
+
+        chainId:
+          networkConfig.chainId,
+      },
+      {
+        address:
+          wallet.address,
+      }
+    );
+}
 
       const hash =
         result?.hash;
@@ -2550,11 +2849,25 @@ useEffect(() => {
 
       setPaymentStage(3);
 
-      setReceiptCryptoAmount(
-        totalCryptoAmount.toFixed(
-          selectedCrypto.decimals
-        )
-      );
+      if (selectedCrypto.symbol === "ETH") {
+  const ethValue =
+    BigInt(
+      data?.transaction?.value ?? "0"
+    );
+
+  setReceiptCryptoAmount(
+    formatUnits(
+      ethValue,
+      18
+    )
+  );
+} else {
+  setReceiptCryptoAmount(
+    totalCryptoAmount.toFixed(
+      selectedCrypto.decimals
+    )
+  );
+}
 
       setReceiptDateTime(
         formatReceiptDate(
@@ -2858,6 +3171,21 @@ useEffect(() => {
 
   /*
    * ====================================================
+   * B-CODES VIEW
+   * ====================================================
+   */
+
+  if (mainView === "bcodes") {
+    return (
+      <BCodeView
+        initialRedeemCode={bcodeDeepLink}
+        onBackHome={backToQuickPort}
+      />
+    );
+  }
+
+  /*
+   * ====================================================
    * MAIN FORM
    * ====================================================
    */
@@ -2867,21 +3195,10 @@ useEffect(() => {
       <Background />
 
       <div className="relative z-10 min-h-screen">
-        <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
-          <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
-
-            <Image
-              src="/biyaport_logo.svg"
-              alt="Biyaport"
-              width={160}
-              height={44}
-              className="h-[36px] w-auto object-contain sm:h-[44px]"
-              priority
-            />
-
-            <ConnectWalletButton />
-          </div>
-        </header>
+        <SiteNav
+          onQuickPort={handleQuickPortNavigation}
+          onBCodes={handleBCodesNavigation}
+        />
 
         <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
           <div className="flex w-full max-w-[590px] flex-col items-center">
@@ -4386,26 +4703,2760 @@ ONRAMP MODAL 1
             </div>
 
             <p className="mt-6 w-full px-2 text-center text-[14px] leading-[20px] text-muted-foreground sm:mt-8 sm:px-0 sm:text-[16px] sm:leading-[22px]">
-              The fastest way to send crypto to
-              Nigerian bank accounts. No wallet needed
+              Send crypto to
+              local bank accounts. No wallet needed
               for recipients.
             </p>
           </div>
         </section>
       </div>
-
-      <style jsx global>{`
-        @keyframes biyaport-spin {
-          from {
-            transform: rotate(0deg);
-          }
-
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </main>
+  );
+}
+
+/*
+ * ====================================================
+ * B-CODE VIEW
+ * ====================================================
+ */
+
+function BCodeView({
+  initialRedeemCode,
+  onBackHome,
+}: {
+  initialRedeemCode?: string;
+  onBackHome: () => void;
+}) {
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const { sendTransaction } = useSendTransaction();
+  const wallet = wallets[0];
+
+  type BCodeMode = "generate" | "redeem";
+  type GenerateStep = 1 | 2;
+  type GenerateState = "idle" | "processing" | "success" | "error";
+  type RedeemStep = 1 | 2;
+  type RedeemState = "idle" | "processing" | "success" | "error";
+  type BCodeStage = 1 | 2 | 3;
+
+  const [mode, setMode] = useState<BCodeMode>(
+    initialRedeemCode ? "redeem" : "generate"
+  );
+
+  /*
+   * ====================================================
+   * GENERATE STATE
+   * ====================================================
+   */
+
+  const [generateStep, setGenerateStep] =
+    useState<GenerateStep>(1);
+
+  const [generateNetwork, setGenerateNetwork] =
+    useState<NetworkKey>("base-sepolia");
+
+  const [generateToken, setGenerateToken] =
+    useState<"USDT" | "USDC">("USDC");
+
+  const [
+    generateCryptoDropdownOpen,
+    setGenerateCryptoDropdownOpen,
+  ] = useState(false);
+
+  const [generateCryptoSearch, setGenerateCryptoSearch] =
+    useState("");
+
+  const generateCryptoDropdownRef =
+    useRef<HTMLDivElement | null>(null);
+
+  const [generateAmount, setGenerateAmount] =
+    useState("");
+
+  const [generatedCode, setGeneratedCode] =
+    useState("");
+
+  const [generatedHash, setGeneratedHash] =
+    useState<`0x${string}` | "">("");
+
+  const [generateState, setGenerateState] =
+    useState<GenerateState>("idle");
+
+  const [generateStage, setGenerateStage] =
+    useState<BCodeStage>(1);
+
+  const [generateError, setGenerateError] =
+    useState("");
+
+  const [generateTxHash, setGenerateTxHash] =
+    useState("");
+
+  const [generatedQr, setGeneratedQr] =
+    useState("");
+
+  /*
+   * ====================================================
+   * REDEEM STATE
+   * ====================================================
+   */
+
+  const [redeemStep, setRedeemStep] =
+    useState<RedeemStep>(1);
+
+  const [redeemCode, setRedeemCode] = useState(
+    initialRedeemCode || ""
+  );
+
+  const [redeemInput, setRedeemInput] = useState("");
+
+  const handleRedeemInput = (value: string) => {
+    const raw = value
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 8);
+
+    let formatted = raw;
+
+    if (raw.length > 4) {
+      formatted = `${raw.slice(0, 4)}-${raw.slice(4)}`;
+    }
+
+    setRedeemInput(formatted);
+    setRedeemCode(`B-${formatted}`);
+    setRedeemError("");
+  };
+
+  const [redeemState, setRedeemState] =
+    useState<RedeemState>("idle");
+
+  const [redeemStage, setRedeemStage] =
+    useState<BCodeStage>(1);
+
+  const [redeemError, setRedeemError] =
+    useState("");
+
+  const [redeemToken, setRedeemToken] =
+    useState<"USDT" | "USDC" | "">("");
+
+  const [redeemAmount, setRedeemAmount] =
+    useState("");
+
+  const [redeemRecipient, setRedeemRecipient] =
+    useState("");
+
+  const [redeemTxHash, setRedeemTxHash] =
+    useState("");
+
+  /*
+   * ====================================================
+   * GENERATE CRYPTO SEARCH
+   * ====================================================
+   */
+
+  const filteredGenerateCryptoOptions = (
+    ["USDT", "USDC"] as const
+  ).filter((symbol) =>
+    symbol
+      .toLowerCase()
+      .includes(
+        generateCryptoSearch.trim().toLowerCase()
+      )
+  );
+
+  /*
+   * ====================================================
+   * CLOSE CRYPTO DROPDOWN ON OUTSIDE CLICK
+   * ====================================================
+   */
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      if (
+        generateCryptoDropdownRef.current &&
+        !generateCryptoDropdownRef.current.contains(target)
+      ) {
+        setGenerateCryptoDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleClickOutside
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+    };
+  }, []);
+
+  /*
+   * ====================================================
+   * INITIAL REDEEM CODE
+   * ====================================================
+   */
+
+  useEffect(() => {
+    if (initialRedeemCode) {
+      const code =
+        initialRedeemCode.trim().toUpperCase();
+
+      setRedeemCode(code);
+
+      setRedeemInput(
+        code.startsWith("B-")
+          ? code.slice(2)
+          : code
+      );
+    }
+  }, [initialRedeemCode]);
+
+  /*
+   * ====================================================
+   * NETWORK LABEL
+   * ====================================================
+   */
+
+  const generateNetworkLabel =
+    getNetworkConfig(generateNetwork).name;
+
+  /*
+   * ====================================================
+   * GENERATE FEE
+   * ====================================================
+   */
+
+  const generateFee =
+    generateAmount &&
+    Number(generateAmount) > 0
+      ? Number(generateAmount) *
+        (BCODE_FEE_BPS / BCODE_BPS_DENOMINATOR)
+      : 0;
+
+  const generateTotal =
+    generateAmount &&
+    Number(generateAmount) > 0
+      ? Number(generateAmount) + generateFee
+      : 0;
+
+  /*
+   * ====================================================
+   * SWITCH MODE
+   * ====================================================
+   */
+
+  const switchMode = (nextMode: BCodeMode) => {
+    setMode(nextMode);
+
+    setGenerateState("idle");
+    setGenerateStage(1);
+    setGenerateError("");
+
+    setRedeemState("idle");
+    setRedeemStage(1);
+    setRedeemError("");
+
+    if (
+      nextMode === "redeem" &&
+      initialRedeemCode
+    ) {
+      setRedeemCode(
+        initialRedeemCode.trim().toUpperCase()
+      );
+    }
+  };
+
+  /*
+   * ====================================================
+   * VALIDATE B-CODE
+   * ====================================================
+   */
+
+  const validateBCode = async () => {
+    const code =
+      redeemCode.trim().toUpperCase();
+
+    setRedeemError("");
+
+    if (!isValidBCodeFormat(code)) {
+      setRedeemError(
+        "Enter a valid B-Code in the format B-XXXX-XXXX."
+      );
+
+      return false;
+    }
+
+    try {
+      const codeHash =
+        hashBCodeForClient(code);
+
+      const bcode =
+        await BCODE_PUBLIC_CLIENT.readContract({
+          address:
+            BCODE_CONTRACT_ADDRESS,
+          abi:
+            BCODE_CONTRACT_ABI,
+          functionName:
+            "getBCode",
+          args: [codeHash],
+        });
+
+      if (
+        bcode.creator ===
+        "0x0000000000000000000000000000000000000000"
+      ) {
+        setRedeemError(
+          "This B-Code does not exist."
+        );
+
+        return false;
+      }
+
+      if (bcode.redeemed) {
+        setRedeemError(
+          "This B-Code has already been redeemed."
+        );
+
+        return false;
+      }
+
+      if (bcode.cancelled) {
+        setRedeemError(
+          "This B-Code has been cancelled."
+        );
+
+        return false;
+      }
+
+      const token =
+        bcode.token.toLowerCase();
+
+      if (
+        token ===
+        BCODE_BASE_SEPOLIA_USDC.toLowerCase()
+      ) {
+        setRedeemToken("USDC");
+      } else if (
+        token ===
+        BCODE_BASE_SEPOLIA_USDT.toLowerCase()
+      ) {
+        setRedeemToken("USDT");
+      } else {
+        setRedeemToken("");
+
+        setRedeemError(
+          "This B-Code contains an unsupported token."
+        );
+
+        return false;
+      }
+
+      setRedeemAmount(
+        formatUnits(
+          bcode.amount,
+          BCODE_TOKEN_DECIMALS
+        )
+      );
+
+      setRedeemCode(code);
+      setRedeemStep(2);
+
+      return true;
+    } catch (error) {
+      console.error(
+        "B-CODE VALIDATION ERROR:",
+        error
+      );
+
+      setRedeemError(
+        error instanceof Error
+          ? error.message
+          : "Unable to validate this B-Code."
+      );
+
+      return false;
+    }
+  };
+
+  /*
+   * ====================================================
+   * GENERATE CONTINUE
+   * ====================================================
+   */
+
+  const handleGenerateContinue = async () => {
+    if (
+      !authenticated ||
+      !wallet?.address
+    ) {
+      setGenerateError(
+        "Connect your wallet first."
+      );
+
+      return;
+    }
+
+    const numericAmount =
+      Number(generateAmount);
+
+    if (
+      !Number.isFinite(
+        numericAmount
+      ) ||
+      numericAmount <= 0
+    ) {
+      setGenerateError(
+        "Enter an amount greater than zero."
+      );
+
+      return;
+    }
+
+    const token =
+      getBCodeTokenConfig(
+        generateToken
+      );
+
+    const amountUnits =
+      parseUnits(
+        numericAmount.toFixed(
+          BCODE_TOKEN_DECIMALS
+        ),
+        token.decimals
+      );
+
+    const feeUnits =
+      (amountUnits *
+        BigInt(BCODE_FEE_BPS)) /
+      BigInt(
+        BCODE_BPS_DENOMINATOR
+      );
+
+    if (feeUnits <= 0n) {
+      setGenerateError(
+        "Amount is too small to cover the 2% creation fee."
+      );
+
+      return;
+    }
+
+    setGenerateError("");
+    setGenerateStep(2);
+  };
+
+  /*
+   * ====================================================
+   * CHECK TOKEN ALLOWANCE
+   * ====================================================
+   */
+
+  const checkTokenAllowance = async ({
+    tokenAddress,
+    owner,
+    requiredAmount,
+  }: {
+    tokenAddress: `0x${string}`;
+    owner: `0x${string}`;
+    requiredAmount: bigint;
+  }) => {
+    const allowance =
+      await BCODE_PUBLIC_CLIENT.readContract({
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [
+          owner,
+          BCODE_CONTRACT_ADDRESS,
+        ],
+      });
+
+    return allowance >= requiredAmount;
+  };
+
+  /*
+   * ====================================================
+   * ONE-TIME TOKEN APPROVAL
+   * ====================================================
+   */
+
+  const enableBCodeToken = async ({
+    tokenAddress,
+  }: {
+    tokenAddress: `0x${string}`;
+  }) => {
+    if (!wallet?.address) {
+      throw new Error(
+        "Connect your wallet first."
+      );
+    }
+
+    const approvalData =
+      encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [
+          BCODE_CONTRACT_ADDRESS,
+          maxUint256,
+        ],
+      });
+
+    const approvalResult =
+      await sendTransaction(
+        {
+          to: tokenAddress,
+          data: approvalData,
+          value: 0n,
+          chainId: BCODE_CHAIN_ID,
+        },
+        {
+          address:
+            wallet.address,
+        }
+      );
+
+    if (!approvalResult?.hash) {
+      throw new Error(
+        "Token approval was not submitted."
+      );
+    }
+
+    await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+      {
+        hash:
+          approvalResult.hash as `0x${string}`,
+        confirmations: 1,
+      }
+    );
+
+    return approvalResult.hash;
+  };
+
+  /*
+   * ====================================================
+   * SIGN B-CODE CREATION
+   * ====================================================
+   */
+
+  const signBCodeCreation = async ({
+    codeHash,
+    tokenAddress,
+    amount,
+    nonce,
+    deadline,
+  }: {
+    codeHash: `0x${string}`;
+    tokenAddress: `0x${string}`;
+    amount: bigint;
+    nonce: bigint;
+    deadline: bigint;
+  }) => {
+    if (!wallet?.address) {
+      throw new Error(
+        "Connect your wallet first."
+      );
+    }
+
+    const provider =
+      await wallet.getEthereumProvider();
+
+    const typedData = {
+      types: {
+        CreateBCode: [
+          {
+            name: "creator",
+            type: "address",
+          },
+          {
+            name: "codeHash",
+            type: "bytes32",
+          },
+          {
+            name: "token",
+            type: "address",
+          },
+          {
+            name: "amount",
+            type: "uint256",
+          },
+          {
+            name: "nonce",
+            type: "uint256",
+          },
+          {
+            name: "deadline",
+            type: "uint256",
+          },
+        ],
+      },
+
+      primaryType:
+        "CreateBCode",
+
+      domain: {
+        name:
+          "Biyaport B-Codes",
+        version: "1",
+        chainId:
+          BCODE_CHAIN_ID,
+        verifyingContract:
+          BCODE_CONTRACT_ADDRESS,
+      },
+
+      message: {
+        creator:
+          wallet.address,
+        codeHash,
+        token:
+          tokenAddress,
+        amount:
+          amount.toString(),
+        nonce:
+          nonce.toString(),
+        deadline:
+          deadline.toString(),
+      },
+    };
+
+    const signature =
+      await provider.request({
+        method:
+          "eth_signTypedData_v4",
+        params: [
+          wallet.address,
+          JSON.stringify(
+            typedData
+          ),
+        ],
+      });
+
+    return signature as `0x${string}`;
+  };
+
+  /*
+ * ====================================================
+ * CREATE B-CODE
+ * ====================================================
+ */
+
+const handleCreateBCode = async () => {
+  if (
+    !authenticated ||
+    !wallet?.address
+  ) {
+    setGenerateError(
+      "Connect your wallet first."
+    );
+
+    return;
+  }
+
+  /*
+   * ====================================================
+   * CURRENT TEST NETWORK
+   * ====================================================
+   */
+
+  if (
+    generateNetwork !==
+    "base-sepolia"
+  ) {
+    setGenerateError(
+      "B-Codes are currently only available on Base Sepolia."
+    );
+
+    return;
+  }
+
+  const numericAmount =
+    Number(generateAmount);
+
+  if (
+    !Number.isFinite(
+      numericAmount
+    ) ||
+    numericAmount <= 0
+  ) {
+    setGenerateError(
+      "Enter an amount greater than zero."
+    );
+
+    return;
+  }
+
+  const token =
+    getBCodeTokenConfig(
+      generateToken
+    );
+
+  const amountUnits =
+    parseUnits(
+      numericAmount.toFixed(
+        BCODE_TOKEN_DECIMALS
+      ),
+      token.decimals
+    );
+
+  const feeUnits =
+    (amountUnits *
+      BigInt(
+        BCODE_FEE_BPS
+      )) /
+    BigInt(
+      BCODE_BPS_DENOMINATOR
+    );
+
+  if (feeUnits <= 0n) {
+    setGenerateError(
+      "Amount is too small to cover the 2% creation fee."
+    );
+
+    return;
+  }
+
+  /*
+   * The contract pulls:
+   *
+   * B-Code amount + 2% creation fee
+   */
+  const totalRequired =
+    amountUnits +
+    feeUnits;
+
+  setGenerateState(
+    "processing"
+  );
+
+  setGenerateStage(1);
+  setGenerateError("");
+
+  try {
+    /*
+     * ====================================================
+     * SWITCH WALLET TO B-CODE NETWORK
+     * ====================================================
+     */
+
+    if (wallet.switchChain) {
+      await wallet.switchChain(
+        BCODE_CHAIN_ID
+      );
+    }
+
+      /*
+     * ====================================================
+     * GENERATE UNIQUE B-CODE
+     * ====================================================
+     */
+
+    let code =
+      generateBCodeValue();
+
+    let codeHash =
+      hashBCodeForClient(
+        code
+      );
+
+    let codeIsAvailable =
+      false;
+
+    for (
+      let attempt = 0;
+      attempt < 5;
+      attempt += 1
+    ) {
+      const existing =
+        await BCODE_PUBLIC_CLIENT.readContract(
+          {
+            address:
+              BCODE_CONTRACT_ADDRESS,
+            abi:
+              BCODE_CONTRACT_ABI,
+            functionName:
+              "getBCode",
+            args: [
+              codeHash,
+            ],
+          }
+        );
+
+      if (
+        existing.creator ===
+        "0x0000000000000000000000000000000000000000"
+      ) {
+        codeIsAvailable =
+          true;
+
+        break;
+      }
+
+      code =
+        generateBCodeValue();
+
+      codeHash =
+        hashBCodeForClient(
+          code
+        );
+    }
+
+    if (!codeIsAvailable) {
+      throw new Error(
+        "Unable to generate a unique B-Code. Please try again."
+      );
+    }
+
+    /*
+     * Keep these available for the success screen.
+     */
+
+    setGeneratedCode(
+      code
+    );
+
+    setGeneratedHash(
+      codeHash
+    );
+
+    /*
+     * ====================================================
+     * CHECK ALLOWANCE
+     * ====================================================
+     *
+     * The contract requires:
+     *
+     * amount + 2% fee
+     *
+     * If allowance is already sufficient,
+     * the user does not see another approval.
+     */
+
+    const allowanceSufficient =
+      await checkTokenAllowance({
+        tokenAddress:
+          token.address,
+        owner:
+          wallet.address as `0x${string}`,
+        requiredAmount:
+          totalRequired,
+      });
+
+    /*
+     * ====================================================
+     * ONE-TIME APPROVAL
+     * ====================================================
+     *
+     * Only happens when the current allowance
+     * is insufficient.
+     */
+
+    if (!allowanceSufficient) {
+      await enableBCodeToken({
+        tokenAddress:
+          token.address,
+      });
+    }
+
+    /*
+     * ====================================================
+     * GET CREATION NONCE
+     * ====================================================
+     */
+
+    const nonce =
+      await BCODE_PUBLIC_CLIENT.readContract(
+        {
+          address:
+            BCODE_CONTRACT_ADDRESS,
+          abi:
+            BCODE_CONTRACT_ABI,
+          functionName:
+            "creationNonces",
+          args: [
+            wallet.address as `0x${string}`,
+          ],
+        }
+      );
+
+    /*
+     * ====================================================
+     * CREATE SIGNATURE DEADLINE
+     * ====================================================
+     *
+     * IMPORTANT:
+     *
+     * This does NOT make the B-Code expire.
+     *
+     * It only limits how long the signed
+     * creation authorization can be submitted.
+     */
+
+    const deadline =
+      BigInt(
+        Math.floor(
+          Date.now() /
+            1000
+        ) + 10 * 60
+      );
+
+      /*
+       * ====================================================
+       * STAGE 2
+       * ====================================================
+       */
+
+      setGenerateStage(2);
+
+      /*
+       * ====================================================
+       * SIGN EIP-712 AUTHORIZATION
+       * ====================================================
+       */
+
+      const signature =
+        await signBCodeCreation({
+          codeHash,
+          tokenAddress:
+            token.address,
+          amount:
+            amountUnits,
+          nonce,
+          deadline,
+        });
+
+      /*
+       * ====================================================
+       * STAGE 3
+       * ====================================================
+       */
+
+      setGenerateStage(3);
+
+      /*
+       * ====================================================
+       * SEND SIGNED AUTHORIZATION TO SERVER
+       * ====================================================
+       *
+       * The server/relayer submits the actual
+       * createBCodeWithSignature transaction.
+       *
+       * The user's wallet does NOT sign another
+       * transaction here.
+       */
+
+      const response =
+        await fetch(
+          "/api/bcode/create",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                creator:
+                  wallet.address,
+                codeHash,
+                code,
+                token:
+                  token.address,
+                amount:
+                  amountUnits.toString(),
+                nonce:
+                  nonce.toString(),
+                deadline:
+                  deadline.toString(),
+                signature,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Unable to create B-Code."
+        );
+      }
+
+      /*
+       * ====================================================
+       * SAVE RELAYER TRANSACTION HASH
+       * ====================================================
+       */
+
+      const txHash =
+        data?.txHash ||
+        data?.hash ||
+        "";
+
+      if (!txHash) {
+        throw new Error(
+          "B-Code transaction was submitted without a transaction hash."
+        );
+      }
+
+      setGenerateTxHash(
+        txHash
+      );
+
+      /*
+       * ====================================================
+       * WAIT FOR RELAYER TRANSACTION
+       * ====================================================
+       */
+
+      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+        {
+          hash:
+            txHash as `0x${string}`,
+          confirmations: 1,
+        }
+      );
+
+      /*
+       * ====================================================
+       * GENERATE DEEP LINK
+       * ====================================================
+       */
+
+      const deepLink =
+        `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
+          code
+        )}`;
+
+      const qr =
+        await QRCode.toDataURL(
+          deepLink,
+          {
+            width: 480,
+            margin: 2,
+            errorCorrectionLevel:
+              "H",
+          }
+        );
+
+      setGeneratedQr(
+        qr
+      );
+
+      /*
+       * ====================================================
+       * SUCCESS
+       * ====================================================
+       */
+
+      setGenerateState(
+        "success"
+      );
+
+      setGenerateStage(3);
+    } catch (error) {
+      console.error(
+        "B-CODE CREATION ERROR:",
+        error
+      );
+
+      setGenerateState(
+        "error"
+      );
+
+      setGenerateError(
+        error instanceof Error
+          ? error.message
+          : "Unable to create B-Code."
+      );
+    }
+  };
+
+  /*
+   * ====================================================
+   * DOWNLOAD QR
+   * ====================================================
+   */
+
+  const downloadQr = () => {
+    if (
+      !generatedQr ||
+      !generatedCode
+    ) {
+      return;
+    }
+
+    const link =
+      document.createElement(
+        "a"
+      );
+
+    link.href =
+      generatedQr;
+
+    link.download =
+      `${generatedCode}.png`;
+
+    link.click();
+  };
+
+  /*
+   * ====================================================
+   * DOWNLOAD SHARE IMAGE
+   * ====================================================
+   */
+
+  const downloadShareImage =
+    async () => {
+      if (
+        !generatedCode ||
+        !generatedQr
+      ) {
+        return;
+      }
+
+      try {
+        const qrImage =
+          await loadImage(
+            generatedQr
+          );
+
+        const logoImage =
+          await loadImage(
+            "/biyaport_logo.svg"
+          );
+
+        const canvas =
+          document.createElement(
+            "canvas"
+          );
+
+        /*
+         * ====================================================
+         * EXPORT SCALE
+         * ====================================================
+         *
+         * Design size: 558 × 288
+         * Export size: 1674 × 864
+         */
+
+        const exportScale = 3;
+
+        const designWidth = 558;
+        const designHeight = 288;
+
+        canvas.width =
+          designWidth *
+          exportScale;
+
+        canvas.height =
+          designHeight *
+          exportScale;
+
+        canvas.style.width =
+          `${designWidth}px`;
+
+        canvas.style.height =
+          `${designHeight}px`;
+
+        const ctx =
+          canvas.getContext(
+            "2d"
+          );
+
+        if (!ctx) {
+          throw new Error(
+            "Unable to create share image."
+          );
+        }
+
+        ctx.scale(
+          exportScale,
+          exportScale
+        );
+
+        /*
+         * ====================================================
+         * MAIN IMAGE
+         * ====================================================
+         */
+
+        const padding = 30;
+        const radius = 20;
+
+        ctx.save();
+
+        ctx.beginPath();
+
+        ctx.roundRect(
+          0,
+          0,
+          designWidth,
+          designHeight,
+          radius
+        );
+
+        ctx.clip();
+
+        /*
+         * ====================================================
+         * BACKGROUND
+         * ====================================================
+         */
+
+        ctx.fillStyle =
+          "#050511";
+
+        ctx.fillRect(
+          0,
+          0,
+          designWidth,
+          designHeight
+        );
+
+        /*
+         * ====================================================
+         * BLUE RADIAL GLOW
+         * ====================================================
+         */
+
+        const glow =
+          ctx.createRadialGradient(
+            designWidth / 2,
+            -20,
+            0,
+            designWidth / 2,
+            -20,
+            260
+          );
+
+        glow.addColorStop(
+          0,
+          "rgba(21, 87, 232, 0.16)"
+        );
+
+        glow.addColorStop(
+          0.28,
+          "rgba(21, 87, 232, 0.07)"
+        );
+
+        glow.addColorStop(
+          0.68,
+          "rgba(21, 87, 232, 0)"
+        );
+
+        ctx.fillStyle =
+          glow;
+
+        ctx.fillRect(
+          0,
+          0,
+          designWidth,
+          designHeight
+        );
+
+        /*
+         * ====================================================
+         * OUTER ELLIPSE RINGS
+         * ====================================================
+         */
+
+        ctx.save();
+
+        ctx.translate(
+          designWidth / 2,
+          -145
+        );
+
+        ctx.scale(
+          1,
+          0.45
+        );
+
+        ctx.beginPath();
+
+        ctx.arc(
+          0,
+          0,
+          185,
+          0,
+          Math.PI * 2
+        );
+
+        ctx.strokeStyle =
+          "rgba(21, 87, 232, 0.16)";
+
+        ctx.lineWidth = 2;
+
+        ctx.stroke();
+
+        ctx.restore();
+
+        ctx.save();
+
+        ctx.translate(
+          designWidth / 2,
+          -165
+        );
+
+        ctx.scale(
+          1,
+          0.45
+        );
+
+        ctx.beginPath();
+
+        ctx.arc(
+          0,
+          0,
+          250,
+          0,
+          Math.PI * 2
+        );
+
+        ctx.strokeStyle =
+          "rgba(21, 87, 232, 0.14)";
+
+        ctx.lineWidth = 1;
+
+        ctx.stroke();
+
+        ctx.restore();
+
+        /*
+         * ====================================================
+         * LEFT SIDE
+         * ====================================================
+         */
+
+        ctx.drawImage(
+          logoImage,
+          padding,
+          padding,
+          138,
+          44
+        );
+
+        /*
+         * ====================================================
+         * B-CODE
+         * ====================================================
+         */
+
+        ctx.fillStyle =
+          "#FFFFFF";
+
+        ctx.font =
+          "700 32px DM Sans, Arial, sans-serif";
+
+        ctx.textBaseline =
+          "alphabetic";
+
+        ctx.fillText(
+          generatedCode,
+          padding,
+          228
+        );
+
+        /*
+         * ====================================================
+         * AMOUNT + NETWORK
+         * ====================================================
+         */
+
+        const amountText =
+          `${Number(
+            generateAmount
+          ).toLocaleString(
+            undefined,
+            {
+              maximumFractionDigits: 6,
+            }
+          )} ${generateToken}`;
+
+        const networkText =
+          generateNetworkLabel;
+
+        ctx.font =
+          "700 16px DM Sans, Arial, sans-serif";
+
+        const amountWidth =
+          ctx.measureText(
+            amountText
+          ).width;
+
+        ctx.fillStyle =
+          "#FFFFFF";
+
+        ctx.fillText(
+          amountText,
+          padding,
+          254
+        );
+
+        ctx.fillStyle =
+          "#9B9BAC";
+
+        ctx.font =
+          "400 16px DM Sans, Arial, sans-serif";
+
+        ctx.fillText(
+          networkText,
+          padding +
+            amountWidth +
+            8,
+          254
+        );
+
+        /*
+         * ====================================================
+         * RIGHT CONTAINER
+         * ====================================================
+         */
+
+        const containerX = 346;
+        const containerY = padding;
+
+        const containerWidth = 182;
+        const containerHeight = 228;
+
+        ctx.fillStyle =
+          "#0F0F1B";
+
+        ctx.beginPath();
+
+        roundRect(
+          ctx,
+          containerX,
+          containerY,
+          containerWidth,
+          containerHeight,
+          16
+        );
+
+        ctx.fill();
+
+        /*
+         * ====================================================
+         * QR CODE
+         * ====================================================
+         */
+
+        const qrSize = 150;
+
+        const qrX =
+          containerX +
+          (containerWidth -
+            qrSize) /
+            2;
+
+        const qrY =
+          containerY + 12;
+
+        ctx.drawImage(
+          qrImage,
+          qrX,
+          qrY,
+          qrSize,
+          qrSize
+        );
+
+        /*
+         * ====================================================
+         * DASHED DIVIDER
+         * ====================================================
+         */
+
+        const dividerY =
+          qrY +
+          qrSize +
+          10;
+
+        ctx.beginPath();
+
+        ctx.setLineDash([
+          4,
+          4,
+        ]);
+
+        ctx.moveTo(
+          containerX + 16,
+          dividerY
+        );
+
+        ctx.lineTo(
+          containerX +
+            containerWidth -
+            16,
+          dividerY
+        );
+
+        ctx.strokeStyle =
+          "#20202B";
+
+        ctx.lineWidth = 1;
+
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+
+        /*
+         * ====================================================
+         * INSTRUCTIONS
+         * ====================================================
+         */
+
+        const centerX =
+          containerX +
+          containerWidth / 2;
+
+        ctx.textAlign =
+          "center";
+
+        ctx.fillStyle =
+          "#FFFFFF";
+
+        ctx.font =
+          "500 12px DM Sans, Arial, sans-serif";
+
+        ctx.fillText(
+          "Scan to redeem",
+          centerX,
+          dividerY + 19
+        );
+
+        ctx.fillStyle =
+          "#9B9BAC";
+
+        ctx.font =
+          "400 12px DM Sans, Arial, sans-serif";
+
+        ctx.fillText(
+          "Or visit biyaport.app",
+          centerX,
+          dividerY + 37
+        );
+
+        ctx.textAlign =
+          "left";
+
+        ctx.restore();
+
+        /*
+         * ====================================================
+         * DOWNLOAD
+         * ====================================================
+         */
+
+        const link =
+          document.createElement(
+            "a"
+          );
+
+        link.download =
+          `${generatedCode}.png`;
+
+        link.href =
+          canvas.toDataURL(
+            "image/png"
+          );
+
+        link.click();
+      } catch (error) {
+        console.error(
+          "[B-CODE SHARE IMAGE ERROR]",
+          error
+        );
+      }
+    };
+
+  /*
+   * ====================================================
+   * REDEEM B-CODE
+   * ====================================================
+   */
+
+  const handleRedeem = async () => {
+    const code =
+      redeemCode.trim().toUpperCase();
+
+    if (
+      !isValidBCodeFormat(code)
+    ) {
+      setRedeemError(
+        "Enter a valid B-Code in the format B-XXXX-XXXX."
+      );
+
+      setRedeemStep(1);
+
+      return;
+    }
+
+    if (
+      !/^0x[a-fA-F0-9]{40}$/.test(
+        redeemRecipient.trim()
+      )
+    ) {
+      setRedeemError(
+        "Enter a valid wallet address."
+      );
+
+      return;
+    }
+
+    setRedeemState(
+      "processing"
+    );
+
+    setRedeemStage(1);
+    setRedeemError("");
+
+    try {
+      setRedeemStage(2);
+
+      const response =
+        await fetch(
+          "/api/bcode/redeem",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body:
+              JSON.stringify({
+                code,
+                recipient:
+                  redeemRecipient.trim(),
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Unable to redeem B-Code."
+        );
+      }
+
+      setRedeemStage(3);
+
+      setRedeemTxHash(
+        data.txHash || ""
+      );
+
+      setRedeemState(
+        "success"
+      );
+    } catch (error) {
+      console.error(
+        "B-CODE REDEMPTION ERROR:",
+        error
+      );
+
+      setRedeemState(
+        "error"
+      );
+
+      setRedeemError(
+        error instanceof Error
+          ? error.message
+          : "Unable to redeem B-Code."
+      );
+    }
+  };
+
+  /*
+   * ====================================================
+   * RESET GENERATE
+   * ====================================================
+   */
+
+  const resetGenerate = () => {
+    setGenerateStep(1);
+    setGenerateState("idle");
+    setGenerateStage(1);
+    setGenerateError("");
+    setGenerateTxHash("");
+    setGeneratedCode("");
+    setGeneratedHash("");
+    setGeneratedQr("");
+    setGenerateCryptoSearch("");
+    setGenerateCryptoDropdownOpen(false);
+  };
+
+  /*
+   * ====================================================
+   * RESET REDEEM
+   * ====================================================
+   */
+
+  const resetRedeem = () => {
+    setRedeemStep(1);
+    setRedeemState("idle");
+    setRedeemStage(1);
+    setRedeemError("");
+    setRedeemToken("");
+    setRedeemAmount("");
+    setRedeemRecipient("");
+    setRedeemTxHash("");
+  };
+
+  /*
+   * ====================================================
+   * EXPLORER URL
+   * ====================================================
+   */
+
+  const explorerBase =
+    generateNetwork === "base"
+      ? "https://basescan.org/tx/"
+      : generateNetwork ===
+        "bnb-smart-chain"
+      ? "https://bscscan.com/tx/"
+      : "https://sepolia.basescan.org/tx/";
+
+  const explorerUrl =
+    generateTxHash
+      ? `${explorerBase}${generateTxHash}`
+      : redeemTxHash
+      ? `${explorerBase}${redeemTxHash}`
+      : "";
+
+  /*
+   * ====================================================
+   * RETURN
+   * ====================================================
+   */
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-[#050511]">
+      <Background />
+
+      <div className="relative z-10 min-h-screen">
+        {/* ====================================================
+            HEADER
+        ==================================================== */}
+
+        <SiteNav
+          onQuickPort={onBackHome}
+          onBCodes={() => {}}
+        />
+
+        {/* ====================================================
+            MAIN
+        ==================================================== */}
+
+        <section className="min-h-screen overflow-y-auto px-4 pb-28 pt-[112px] sm:px-6 sm:pb-12 sm:pt-[128px]">
+          <div className="mx-auto w-full max-w-[590px]">
+            <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
+              {/* ====================================================
+                  TITLE
+              ==================================================== */}
+
+              {!(
+                (mode === "generate" &&
+                  generateState ===
+                    "success") ||
+                (mode === "redeem" &&
+                  redeemState ===
+                    "success")
+              ) && (
+                <div className="mb-6 flex items-center justify-between gap-4">
+                  <div>
+                    <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
+                      B-Codes
+                    </h1>
+                  </div>
+                </div>
+              )}
+
+              {/* ====================================================
+                  GENERATE / REDEEM SWITCH
+              ==================================================== */}
+
+              {(
+                (mode === "generate" &&
+                  generateState ===
+                    "idle" &&
+                  generateStep ===
+                    1) ||
+                (mode === "redeem" &&
+                  redeemState ===
+                    "idle" &&
+                  redeemStep ===
+                    1)
+              ) && (
+                <div className="mb-6 flex h-[52px] rounded-[12px] bg-input p-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      switchMode(
+                        "generate"
+                      );
+                      setGenerateStep(
+                        1
+                      );
+                    }}
+                    className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                      mode === "generate"
+                        ? "bg-[#050511] text-foreground shadow-sm"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    Generate
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      switchMode(
+                        "redeem"
+                      );
+                      setRedeemStep(
+                        1
+                      );
+                    }}
+                    className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                      mode === "redeem"
+                        ? "bg-[#050511] text-foreground shadow-sm"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    Redeem
+                  </button>
+                </div>
+              )}
+
+              {/* ====================================================
+                  GENERATE
+              ==================================================== */}
+
+              {mode === "generate" && (
+                <>
+                  {/* ====================================================
+                      GENERATE PROCESSING
+                  ==================================================== */}
+
+                  {generateState ===
+                    "processing" && (
+                    <BCodeProgress
+                      title="Generating B-Code"
+                      stage={
+                        generateStage
+                      }
+                      labels={[
+                        "Preparing B-Code",
+                        "Signing authorization",
+                        "Submitting B-Code",
+                      ]}
+                    />
+                  )}
+
+                  {/* ====================================================
+                      GENERATE SUCCESS
+                  ==================================================== */}
+
+                  {generateState ===
+                    "success" && (
+                    <div className="text-center">
+                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                          <Check className="h-6 w-6 text-white" />
+                        </div>
+                      </div>
+
+                      <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                        B-Code Generated
+                      </h2>
+
+                      <p className="mt-2 text-[14px] text-muted-foreground">
+                        Anyone with this B-Code can withdraw the funds to their wallet.
+                      </p>
+
+                      <div className="mx-auto mt-6 w-fit rounded-[12px] border border-dashed border-border bg-input px-5 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="text-[27px] font-bold tracking-[0.08em]">
+                            {generatedCode}
+                          </span>
+
+                          <CopyButton
+                            value={
+                              generatedCode
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <button
+                          type="button"
+                          onClick={
+                            downloadShareImage
+                          }
+                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
+                        >
+                          Share B-Code
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={
+                            resetGenerate
+                          }
+                          className="mx-auto mt-5 block text-[13px] font-medium text-muted-foreground underline underline-offset-4 transition hover:text-foreground"
+                        >
+                          Generate new B-Code
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ====================================================
+                      GENERATE ERROR
+                  ==================================================== */}
+
+                  {generateState ===
+                    "error" && (
+                    <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                      <p className="text-[14px] text-destructive">
+                        {generateError ||
+                          "B-Code creation failed."}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGenerateState(
+                            "idle"
+                          );
+
+                          setGenerateStage(
+                            1
+                          );
+                        }}
+                        className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ====================================================
+                      GENERATE STEP 1
+                  ==================================================== */}
+
+                  {generateState ===
+                    "idle" &&
+                    generateStep ===
+                      1 && (
+                      <>
+                        {/* TOKEN + NETWORK SELECTOR */}
+
+                        <div
+                          ref={
+                            generateCryptoDropdownRef
+                          }
+                          className="relative"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGenerateCryptoDropdownOpen(
+                                (
+                                  open
+                                ) =>
+                                  !open
+                              )
+                            }
+                            className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Image
+                                src={
+                                  getBCodeTokenConfig(
+                                    generateToken
+                                  ).logo
+                                }
+                                alt=""
+                                width={
+                                  38
+                                }
+                                height={
+                                  38
+                                }
+                                className="h-9 w-9 object-contain"
+                              />
+
+                              <div className="text-left">
+                                <p className="text-[15px] font-semibold">
+                                  {
+                                    generateToken
+                                  }
+                                </p>
+
+                                <p className="text-[12px] text-muted-foreground">
+                                  {
+                                    generateNetworkLabel
+                                  }
+                                </p>
+                              </div>
+                            </div>
+
+                            <ChevronDown
+                              className={`h-4 w-4 text-muted-foreground transition-transform ${
+                                generateCryptoDropdownOpen
+                                  ? "rotate-180"
+                                  : ""
+                              }`}
+                            />
+                          </button>
+
+                          {/* DROPDOWN */}
+
+                          {generateCryptoDropdownOpen && (
+                            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                              {/* SEARCH + NETWORK */}
+
+                              <div className="border-b border-border p-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+                                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+
+                                    <input
+                                      type="text"
+                                      value={
+                                        generateCryptoSearch
+                                      }
+                                      onChange={(
+                                        event
+                                      ) =>
+                                        setGenerateCryptoSearch(
+                                          event
+                                            .target
+                                            .value
+                                        )
+                                      }
+                                      placeholder="Search supported crypto"
+                                      className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+                                      autoFocus
+                                    />
+                                  </div>
+
+                                  <NetworkSelector
+                                    value={
+                                      generateNetwork
+                                    }
+                                    onChange={(
+                                      network
+                                    ) => {
+                                      setGenerateNetwork(
+                                        network
+                                      );
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* CRYPTO LIST */}
+
+                              <div className="max-h-[220px] overflow-y-auto p-1.5">
+                                {filteredGenerateCryptoOptions.length >
+                                0 ? (
+                                  filteredGenerateCryptoOptions.map(
+                                    (
+                                      symbol
+                                    ) => {
+                                      const token =
+                                        getBCodeTokenConfig(
+                                          symbol
+                                        );
+
+                                      return (
+                                        <button
+                                          key={`${generateNetwork}-${symbol}`}
+                                          type="button"
+                                          onClick={() => {
+                                            setGenerateToken(
+                                              symbol
+                                            );
+
+                                            setGenerateCryptoDropdownOpen(
+                                              false
+                                            );
+
+                                            setGenerateCryptoSearch(
+                                              ""
+                                            );
+                                          }}
+                                          className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <Image
+                                              src={
+                                                token.logo
+                                              }
+                                              alt=""
+                                              width={
+                                                32
+                                              }
+                                              height={
+                                                32
+                                              }
+                                              className="h-8 w-8 object-contain"
+                                            />
+
+                                            <div>
+                                              <div className="text-[14px] font-medium">
+                                                {
+                                                  symbol
+                                                }
+                                              </div>
+
+                                              <div className="text-[12px] text-muted-foreground">
+                                                {symbol ===
+                                                "USDC"
+                                                  ? "USD Coin"
+                                                  : "Tether USD"}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {generateToken ===
+                                            symbol && (
+                                            <Check className="h-4 w-4 text-primary" />
+                                          )}
+                                        </button>
+                                      );
+                                    }
+                                  )
+                                ) : (
+                                  <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+                                    No supported
+                                    crypto found.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* AMOUNT */}
+
+                        <div className="mt-4">
+                          <label className="mb-2 block text-[13px] text-muted-foreground">
+                            Amount recipient
+                            receives
+                          </label>
+
+                          <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={
+                                generateAmount
+                              }
+                              onChange={(
+                                event
+                              ) => {
+                                setGenerateAmount(
+                                  event.target.value.replace(
+                                    /[^0-9.]/g,
+                                    ""
+                                  )
+                                );
+
+                                setGenerateError(
+                                  ""
+                                );
+                              }}
+                              placeholder="0.00"
+                              className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted-foreground"
+                            />
+
+                            <span className="font-semibold">
+                              {
+                                generateToken
+                              }
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* ERROR */}
+
+                        {generateError && (
+                          <p className="mt-3 text-[13px] text-destructive">
+                            {
+                              generateError
+                            }
+                          </p>
+                        )}
+
+                        {/* CONTINUE */}
+
+                        <button
+                          type="button"
+                          onClick={
+                            handleGenerateContinue
+                          }
+                          className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                        >
+                          Continue
+                        </button>
+                      </>
+                    )}
+
+                  {/* ====================================================
+                      GENERATE STEP 2
+                  ==================================================== */}
+
+                  {generateState ===
+                    "idle" &&
+                    generateStep ===
+                      2 && (
+                      <>
+                        <div className="rounded-[12px] bg-input p-5">
+                          <div className="space-y-3 text-[14px]">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Network
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  generateNetworkLabel
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Token
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  generateToken
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Recipient
+                                receives
+                              </span>
+
+                              <span className="font-semibold">
+                                {Number(
+                                  generateAmount
+                                ).toLocaleString(
+                                  undefined,
+                                  {
+                                    maximumFractionDigits: 6,
+                                  }
+                                )}{" "}
+                                {
+                                  generateToken
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Creation fee
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  generateFee
+                                }{" "}
+                                {
+                                  generateToken
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4 border-t border-border pt-3">
+                              <span className="text-muted-foreground">
+                                Total wallet
+                                spend
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  generateTotal
+                                }{" "}
+                                {
+                                  generateToken
+                                }
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {generateNetwork !==
+                          "base-sepolia" && (
+                          <div className="mt-4 rounded-[10px] border border-primary/20 bg-primary/5 p-4 text-[13px] text-muted-foreground">
+                            B-Codes on{" "}
+                            <span className="font-medium text-foreground">
+                              {
+                                generateNetworkLabel
+                              }
+                            </span>{" "}
+                            are not available yet.
+                            Base Sepolia is currently
+                            being used for testing.
+                          </div>
+                        )}
+
+                        {/* ERROR */}
+
+                        {generateError && (
+                          <p className="mt-3 text-[13px] text-destructive">
+                            {
+                              generateError
+                            }
+                          </p>
+                        )}
+
+                        {/* ACTIONS */}
+
+                        <div className="mt-5 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setGenerateStep(
+                                1
+                              )
+                            }
+                            className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                          >
+                            Back
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={
+                              handleCreateBCode
+                            }
+                            className="flex h-[56px] flex-[1.7] items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                          >
+                            Create B-Code
+                          </button>
+                        </div>
+                      </>
+                    )}
+                </>
+              )}
+
+              {/* ====================================================
+                  REDEEM
+              ==================================================== */}
+
+              {mode === "redeem" && (
+                <>
+                  {/* ====================================================
+                      REDEEM PROCESSING
+                  ==================================================== */}
+
+                  {redeemState ===
+                    "processing" && (
+                    <BCodeProgress
+                      title="Redeeming B-Code"
+                      stage={
+                        redeemStage
+                      }
+                      labels={[
+                        "Validating redemption",
+                        "Authorizing redemption",
+                        "Confirming redemption",
+                      ]}
+                    />
+                  )}
+
+                  {/* ====================================================
+                      REDEEM SUCCESS
+                  ==================================================== */}
+
+                  {redeemState ===
+                    "success" && (
+                    <div className="text-center">
+                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                          <Check className="h-6 w-6 text-white" />
+                        </div>
+                      </div>
+
+                      <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                        Redemption Successful
+                      </h2>
+
+                      <p className="mt-2 text-[14px] text-muted-foreground">
+                        {
+                          redeemAmount
+                        }{" "}
+                        {
+                          redeemToken
+                        } has been
+                        sent to your wallet.
+                      </p>
+
+                      <div className="mt-6 rounded-[12px] bg-input p-4 text-left text-[14px]">
+                        <div className="flex justify-between gap-4">
+                          <span className="text-muted-foreground">
+                            B-Code
+                          </span>
+
+                          <span className="font-semibold">
+                            {
+                              redeemCode
+                            }
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex justify-between gap-4">
+                          <span className="text-muted-foreground">
+                            Recipient
+                          </span>
+
+                          <span className="max-w-[260px] truncate font-semibold">
+                            {
+                              redeemRecipient
+                            }
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={
+                            onBackHome
+                          }
+                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
+                        >
+                          Port to naira
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRedeemStep(
+                              1
+                            );
+
+                            setRedeemState(
+                              "idle"
+                            );
+
+                            setRedeemStage(
+                              1
+                            );
+
+                            setRedeemError(
+                              ""
+                            );
+
+                            setRedeemCode(
+                              ""
+                            );
+
+                            setRedeemInput(
+                              ""
+                            );
+                          }}
+                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary"
+                        >
+                          New B-code
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ====================================================
+                      REDEEM ERROR
+                  ==================================================== */}
+
+                  {redeemState ===
+                    "error" && (
+                    <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                      <p className="text-[14px] text-destructive">
+                        {
+                          redeemError
+                        }
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRedeemState(
+                            "idle"
+                          );
+
+                          setRedeemStage(
+                            1
+                          );
+                        }}
+                        className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ====================================================
+                      REDEEM STEP 1
+                  ==================================================== */}
+
+                  {redeemState ===
+                    "idle" &&
+                    redeemStep ===
+                      1 && (
+                      <>
+                        <label className="mb-2 block text-[13px] text-muted-foreground">
+                          Input B-Code
+                        </label>
+
+                        <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                          <span className="shrink-0 text-[17px] font-medium tracking-[0.06em]">
+                            B-
+                          </span>
+
+                          <input
+                            type="text"
+                            value={
+                              redeemInput
+                            }
+                            onChange={(
+                              e
+                            ) =>
+                              handleRedeemInput(
+                                e.target
+                                  .value
+                              )
+                            }
+                            placeholder="XXXX-XXXX"
+                            className="min-w-0 flex-1 bg-transparent text-[17px] tracking-[0.06em] outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+
+                        {redeemError && (
+                          <p className="mt-3 text-[13px] text-destructive">
+                            {
+                              redeemError
+                            }
+                          </p>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={
+                            validateBCode
+                          }
+                          className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                        >
+                          Validate B-Code
+                        </button>
+                      </>
+                    )}
+
+                  {/* ====================================================
+                      REDEEM STEP 2
+                  ==================================================== */}
+
+                  {redeemState ===
+                    "idle" &&
+                    redeemStep ===
+                      2 && (
+                      <>
+                        <div className="rounded-[12px] bg-input p-5">
+                          <div className="space-y-3 text-[14px]">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                B-Code
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  redeemCode
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Token
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  redeemToken
+                                }
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between gap-4 border-t border-border pt-3">
+                              <span className="text-muted-foreground">
+                                You receive
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  redeemAmount
+                                }{" "}
+                                {
+                                  redeemToken
+                                }
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-5">
+                          <label className="mb-2 block text-[14px] text-muted-foreground">
+                            Wallet address to
+                            receive funds
+                          </label>
+
+                          <input
+                            type="text"
+                            value={
+                              redeemRecipient
+                            }
+                            onChange={(
+                              event
+                            ) => {
+                              setRedeemRecipient(
+                                event.target
+                                  .value
+                              );
+
+                              setRedeemError(
+                                ""
+                              );
+                            }}
+                            placeholder="0x..."
+                            className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[14px] outline-none placeholder:text-muted-foreground"
+                          />
+                        </div>
+
+                        {redeemError && (
+                          <p className="mt-3 text-[13px] text-destructive">
+                            {
+                              redeemError
+                            }
+                          </p>
+                        )}
+
+                        <div className="mt-5 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRedeemStep(
+                                1
+                              )
+                            }
+                            className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                          >
+                            Back
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={
+                              handleRedeem
+                            }
+                            className="flex h-[56px] flex-[1.7] items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                          >
+                            Redeem B-Code
+
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/*
+ * ====================================================
+ * B-CODE PROGRESS
+ * ====================================================
+ */
+
+function BCodeProgress({
+  title,
+  stage,
+  labels,
+}: {
+  title: string;
+  stage: 1 | 2 | 3;
+  labels: [string, string, string];
+}) {
+  const progress =
+    stage === 1
+      ? 0
+      : stage === 2
+      ? 50
+      : 100;
+
+  return (
+    <div className="py-12 text-center">
+      <div className="mx-auto flex h-[60px] w-[60px] items-center justify-center rounded-full bg-primary">
+        <Loader2 className="h-7 w-7 animate-spin text-white" />
+      </div>
+
+      <h2 className="mt-7 text-[24px] font-semibold tracking-[-0.03em]">
+        {title}
+      </h2>
+
+      <p className="mt-3 text-[15px] text-muted-foreground">
+        {labels[stage - 1]}
+      </p>
+
+      <div className="relative mx-auto mt-9 w-full max-w-[310px]">
+        <div className="relative h-[3px] w-full rounded-full bg-[#090d24]">
+          <div
+            className="absolute left-0 top-0 h-[3px] rounded-full bg-primary transition-all duration-700 ease-in-out"
+            style={{
+              width: `${progress}%`,
+            }}
+          />
+        </div>
+
+        <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary" />
+
+        <div
+          className={`absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${
+            stage >= 2
+              ? "bg-primary"
+              : "bg-[#080b1c]"
+          }`}
+        />
+
+        <div
+          className={`absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full ${
+            stage >= 3
+              ? "bg-primary"
+              : "bg-[#080b1c]"
+          }`}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -5413,26 +8464,26 @@ function NetworkSelector({
 
 /*
  * ====================================================
- * PAYMENT SHELL
+ * SHARED NAVIGATION
  * ====================================================
  */
 
-function PaymentShell({
-  children,
+function SiteNav({
+  onQuickPort,
+  onBCodes,
 }: {
-  children: React.ReactNode;
+  onQuickPort?: () => void;
+  onBCodes?: () => void;
 }) {
+  const [activeMobileTab, setActiveMobileTab] = useState<
+    "quick-port" | "b-codes" | "swap" | "history"
+  >("quick-port");
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#050511]">
-
-      <Background />
-
-      <div className="relative z-10 min-h-screen">
-
-        <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
-
-          <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
-
+    <>
+      <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
+        <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
+          <div className="flex min-w-0 items-center">
             <Image
               src="/biyaport_logo.svg"
               alt="Biyaport"
@@ -5441,12 +8492,199 @@ function PaymentShell({
               className="h-[36px] w-auto object-contain sm:h-[44px]"
               priority
             />
-
-            <ConnectWalletButton />
-
           </div>
 
-        </header>
+          {/* Desktop navigation: centered as one grouped container */}
+          <nav
+            className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-[11px] md:flex"
+            aria-label="Main navigation"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("quick-port");
+                onQuickPort?.();
+              }}
+              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            >
+              Quick Port
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("b-codes");
+                onBCodes?.();
+              }}
+              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+            >
+              B-Codes
+            </button>
+
+            <button
+              type="button"
+              disabled
+              className="cursor-default rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground"
+            >
+              Swap
+            </button>
+
+            <button
+              type="button"
+              disabled
+              className="cursor-default rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground"
+            >
+              History
+            </button>
+          </nav>
+
+          <ConnectWalletButton />
+        </div>
+      </header>
+
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-[110] px-6 pb-[calc(env(safe-area-inset-bottom)+24px)] md:hidden"
+        aria-label="Mobile navigation"
+      >
+        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">
+
+          {/* Quick Port */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMobileTab("quick-port");
+              onQuickPort?.();
+            }}
+            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+              activeMobileTab === "quick-port"
+                ? "bg-[#0B50EA] px-3 text-white"
+                : "w-11 px-0 text-muted-foreground active:scale-95"
+            }`}
+          >
+            <HomeIcon className="h-5 w-5 shrink-0" strokeWidth={2} />
+
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+                activeMobileTab === "quick-port"
+                  ? "ml-2 max-w-[100px] opacity-100"
+                  : "ml-0 max-w-0 opacity-0"
+              }`}
+            >
+              Quick Port
+            </span>
+          </button>
+
+          {/* B-Codes */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMobileTab("b-codes");
+              onBCodes?.();
+            }}
+            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+              activeMobileTab === "b-codes"
+                ? "bg-[#0B50EA] px-3 text-white"
+                : "w-11 px-0 text-muted-foreground active:scale-95"
+            }`}
+          >
+            <Coins className="h-5 w-5 shrink-0" strokeWidth={2} />
+
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+                activeMobileTab === "b-codes"
+                  ? "ml-2 max-w-[100px] opacity-100"
+                  : "ml-0 max-w-0 opacity-0"
+              }`}
+            >
+              B-Codes
+            </span>
+          </button>
+
+          {/* Swap */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMobileTab("swap");
+              // Empty modal for now.
+            }}
+            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+              activeMobileTab === "swap"
+                ? "bg-[#0B50EA] px-3 text-white"
+                : "w-11 px-0 text-muted-foreground active:scale-95"
+            }`}
+          >
+            <ArrowLeftRight className="h-5 w-5 shrink-0" strokeWidth={2} />
+
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+                activeMobileTab === "swap"
+                  ? "ml-2 max-w-[100px] opacity-100"
+                  : "ml-0 max-w-0 opacity-0"
+              }`}
+            >
+              Swap
+            </span>
+          </button>
+
+          {/* History */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveMobileTab("history");
+              // Empty modal for now.
+            }}
+            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+              activeMobileTab === "history"
+                ? "bg-[#0B50EA] px-3 text-white"
+                : "w-11 px-0 text-muted-foreground active:scale-95"
+            }`}
+          >
+            <Menu className="h-5 w-5 shrink-0" strokeWidth={2} />
+
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+                activeMobileTab === "history"
+                  ? "ml-2 max-w-[100px] opacity-100"
+                  : "ml-0 max-w-0 opacity-0"
+              }`}
+            >
+              History
+            </span>
+          </button>
+
+        </div>
+      </nav>
+    </>
+  );
+}
+
+
+/*
+ * ====================================================
+ * PAYMENT SHELL
+ * ====================================================
+ */
+
+function PaymentShell({
+  children,
+  onQuickPort,
+  onBCodes,
+}: {
+  children: React.ReactNode;
+  onQuickPort?: () => void;
+  onBCodes?: () => void;
+}) {
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-[#050511]">
+
+      <Background />
+
+      <div className="relative z-10 min-h-screen">
+
+        <SiteNav
+          onQuickPort={onQuickPort}
+          onBCodes={onBCodes}
+        />
 
         <section className="min-h-screen overflow-y-auto px-4 pb-12 pt-[112px] sm:px-6 sm:pt-[128px]">
           {children}

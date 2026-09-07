@@ -8543,10 +8543,10 @@ function SiteNav({
       </header>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-[110] px-6 pb-[calc(env(safe-area-inset-bottom)+24px)] md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-[110] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] md:hidden"
         aria-label="Mobile navigation"
       >
-        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">
+        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[12px] border border-[#0F0F1B] bg-[#050511] p-2">
 
           {/* Quick Port */}
           <button
@@ -8555,16 +8555,16 @@ function SiteNav({
               setActiveMobileTab("quick-port");
               onQuickPort?.();
             }}
-            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+            className={`flex h-11 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
               activeMobileTab === "quick-port"
-                ? "bg-[#0B50EA] px-3 text-white"
+                ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
             }`}
           >
             <HomeIcon className="h-5 w-5 shrink-0" strokeWidth={2} />
 
             <span
-              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+              className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
                 activeMobileTab === "quick-port"
                   ? "ml-2 max-w-[100px] opacity-100"
                   : "ml-0 max-w-0 opacity-0"
@@ -8575,30 +8575,30 @@ function SiteNav({
           </button>
 
           {/* B-Codes */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveMobileTab("b-codes");
-              onBCodes?.();
-            }}
-            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
-              activeMobileTab === "b-codes"
-                ? "bg-[#0B50EA] px-3 text-white"
-                : "w-11 px-0 text-muted-foreground active:scale-95"
-            }`}
-          >
-            <Coins className="h-5 w-5 shrink-0" strokeWidth={2} />
+<button
+  type="button"
+  onClick={() => {
+    setActiveMobileTab("b-codes");
+    onBCodes?.();
+  }}
+  className={`flex h-11 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+    activeMobileTab === "b-codes"
+      ? "bg-[#0B50EA] px-6 text-white"
+      : "w-11 px-0 text-muted-foreground active:scale-95"
+  }`}
+>
+  <Coins className="h-5 w-5 shrink-0" strokeWidth={2} />
 
-            <span
-              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
-                activeMobileTab === "b-codes"
-                  ? "ml-2 max-w-[100px] opacity-100"
-                  : "ml-0 max-w-0 opacity-0"
-              }`}
-            >
-              B-Codes
-            </span>
-          </button>
+  <span
+    className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
+      activeMobileTab === "b-codes"
+        ? "ml-2 max-w-[100px] opacity-100"
+        : "ml-0 max-w-0 opacity-0"
+    }`}
+  >
+    B-Codes
+  </span>
+</button>
 
           {/* Swap */}
           <button
@@ -8609,14 +8609,14 @@ function SiteNav({
             }}
             className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
               activeMobileTab === "swap"
-                ? "bg-[#0B50EA] px-3 text-white"
+                ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
             }`}
           >
             <ArrowLeftRight className="h-5 w-5 shrink-0" strokeWidth={2} />
 
             <span
-              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+              className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
                 activeMobileTab === "swap"
                   ? "ml-2 max-w-[100px] opacity-100"
                   : "ml-0 max-w-0 opacity-0"
@@ -8635,14 +8635,14 @@ function SiteNav({
             }}
             className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
               activeMobileTab === "history"
-                ? "bg-[#0B50EA] px-3 text-white"
+                ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
             }`}
           >
             <Menu className="h-5 w-5 shrink-0" strokeWidth={2} />
 
             <span
-              className={`overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-300 ${
+              className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
                 activeMobileTab === "history"
                   ? "ml-2 max-w-[100px] opacity-100"
                   : "ml-0 max-w-0 opacity-0"

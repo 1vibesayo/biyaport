@@ -8543,10 +8543,10 @@ function SiteNav({
       </header>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-[110] px-5 pb-[calc(env(safe-area-inset-bottom)+24px)] md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-[110] px-5 pb-[calc(env(safe-area-inset-bottom)+8px)] md:hidden"
         aria-label="Mobile navigation"
       >
-        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[12px] border border-[#0F0F1B] bg-[#050511] p-2">
+        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">
 
           {/* Quick Port */}
           <button
@@ -8555,7 +8555,7 @@ function SiteNav({
               setActiveMobileTab("quick-port");
               onQuickPort?.();
             }}
-            className={`flex h-11 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
               activeMobileTab === "quick-port"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -8581,7 +8581,7 @@ function SiteNav({
     setActiveMobileTab("b-codes");
     onBCodes?.();
   }}
-  className={`flex h-11 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+  className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
     activeMobileTab === "b-codes"
       ? "bg-[#0B50EA] px-6 text-white"
       : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -8607,7 +8607,7 @@ function SiteNav({
               setActiveMobileTab("swap");
               // Empty modal for now.
             }}
-            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
               activeMobileTab === "swap"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -8633,7 +8633,7 @@ function SiteNav({
               setActiveMobileTab("history");
               // Empty modal for now.
             }}
-            className={`flex h-11 items-center justify-center rounded-[12px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
               activeMobileTab === "history"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"

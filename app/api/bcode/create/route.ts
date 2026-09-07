@@ -3,6 +3,9 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  keccak256,
+  recoverTypedDataAddress,
+  toBytes,
   type Address,
   type Hex,
 } from "viem";
@@ -20,6 +23,8 @@ import { privateKeyToAccount } from "viem/accounts";
  *              ↓
  * POST /api/bcode/create
  *              ↓
+ * Server verifies signature
+ *              ↓
  * Relayer submits transaction
  *              ↓
  * BiyaportBCodes.createBCodeWithSignature()
@@ -36,6 +41,8 @@ import { privateKeyToAccount } from "viem/accounts";
 // ====================================================
 
 const CHAIN = baseSepolia;
+
+const CHAIN_ID = 84532;
 
 const B_CODE_CONTRACT_ADDRESS =
   "0x8a7826FDBBE26CB8Fced97893A4144997F0fE74D" as Address;
@@ -91,6 +98,47 @@ const B_CODE_ABI = [
 ] as const;
 
 // ====================================================
+// EIP-712 CONFIG
+// ====================================================
+
+const BCODE_DOMAIN = {
+  name: "Biyaport B-Codes",
+  version: "1",
+  chainId: CHAIN_ID,
+  verifyingContract:
+    B_CODE_CONTRACT_ADDRESS,
+} as const;
+
+const BCODE_CREATE_TYPES = {
+  CreateBCode: [
+    {
+      name: "creator",
+      type: "address",
+    },
+    {
+      name: "codeHash",
+      type: "bytes32",
+    },
+    {
+      name: "token",
+      type: "address",
+    },
+    {
+      name: "amount",
+      type: "uint256",
+    },
+    {
+      name: "nonce",
+      type: "uint256",
+    },
+    {
+      name: "deadline",
+      type: "uint256",
+    },
+  ],
+} as const;
+
+// ====================================================
 // TYPES
 // ====================================================
 
@@ -113,31 +161,15 @@ export async function POST(
   request: NextRequest
 ) {
   try {
-    /*
-     * ==================================================
-     * ENVIRONMENT VARIABLES
-     * ==================================================
-     *
-     * These are SERVER-SIDE ONLY.
-     *
-     * Do not use NEXT_PUBLIC_ for either value.
-     */
+    // ==================================================
+    // ENVIRONMENT VARIABLES
+    // ==================================================
 
     const rawRelayerPrivateKey =
-      process.env.RELAYER_PRIVATE_KEY?.trim();
+      process.env.BCODE_RELAYER_PRIVATE_KEY?.trim();
 
     const rpcUrl =
-      process.env.BASE_SEPOLIA_RPC_URL?.trim();
-
-    /*
-     * Diagnostic check.
-     *
-     * IMPORTANT:
-     * We intentionally do NOT print the private key.
-     *
-     * A normal 32-byte private key with 0x is 66
-     * characters long.
-     */
+      process.env.BASE_RPC_URL?.trim();
 
     console.log(
       "[B-CODE CREATE] Environment check:",
@@ -148,7 +180,7 @@ export async function POST(
         relayerPrivateKeyLength:
           rawRelayerPrivateKey?.length ?? 0,
 
-        hasBaseSepoliaRpc:
+        hasBaseRpc:
           Boolean(rpcUrl),
       }
     );
@@ -159,7 +191,7 @@ export async function POST(
 
     if (!rawRelayerPrivateKey) {
       console.error(
-        "[B-CODE CREATE] RELAYER_PRIVATE_KEY is not configured."
+        "[B-CODE CREATE] BCODE_RELAYER_PRIVATE_KEY is not configured."
       );
 
       return NextResponse.json(
@@ -172,27 +204,10 @@ export async function POST(
       );
     }
 
-    /*
-     * Normalize the private key.
-     *
-     * Supports both:
-     *
-     * 0x1234...
-     *
-     * and:
-     *
-     * 1234...
-     */
-
     const normalizedRelayerPrivateKey =
       rawRelayerPrivateKey.startsWith("0x")
         ? rawRelayerPrivateKey
         : `0x${rawRelayerPrivateKey}`;
-
-    /*
-     * Validate private-key format before passing
-     * it to viem.
-     */
 
     if (
       !/^0x[a-fA-F0-9]{64}$/.test(
@@ -200,7 +215,7 @@ export async function POST(
       )
     ) {
       console.error(
-        "[B-CODE CREATE] RELAYER_PRIVATE_KEY has an invalid format."
+        "[B-CODE CREATE] Invalid relayer private key format."
       );
 
       return NextResponse.json(
@@ -214,19 +229,19 @@ export async function POST(
     }
 
     // ==================================================
-    // RPC
+    // RPC VALIDATION
     // ==================================================
 
     if (!rpcUrl) {
       console.error(
-        "[B-CODE CREATE] BASE_SEPOLIA_RPC_URL is not configured."
+        "[B-CODE CREATE] BASE_RPC_URL is not configured."
       );
 
       return NextResponse.json(
         {
           success: false,
           error:
-            "Relayer RPC is not configured.",
+            "Base RPC is not configured.",
         },
         { status: 500 }
       );
@@ -298,7 +313,8 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields.",
+          error:
+            "Missing required fields.",
         },
         { status: 400 }
       );
@@ -309,24 +325,30 @@ export async function POST(
     // ==================================================
 
     if (
-      !/^0x[a-fA-F0-9]{40}$/.test(creator)
+      !/^0x[a-fA-F0-9]{40}$/.test(
+        creator
+      )
     ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid creator address.",
+          error:
+            "Invalid creator address.",
         },
         { status: 400 }
       );
     }
 
     if (
-      !/^0x[a-fA-F0-9]{40}$/.test(token)
+      !/^0x[a-fA-F0-9]{40}$/.test(
+        token
+      )
     ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid token address.",
+          error:
+            "Invalid token address.",
         },
         { status: 400 }
       );
@@ -343,7 +365,8 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "Unsupported token.",
+          error:
+            "Unsupported token. Only Base Sepolia USDC is supported.",
         },
         { status: 400 }
       );
@@ -354,12 +377,15 @@ export async function POST(
     // ==================================================
 
     if (
-      !/^0x[a-fA-F0-9]{64}$/.test(codeHash)
+      !/^0x[a-fA-F0-9]{64}$/.test(
+        codeHash
+      )
     ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid codeHash.",
+          error:
+            "Invalid codeHash.",
         },
         { status: 400 }
       );
@@ -370,12 +396,15 @@ export async function POST(
     // ==================================================
 
     if (
-      !/^0x[a-fA-F0-9]+$/.test(signature)
+      !/^0x[a-fA-F0-9]+$/.test(
+        signature
+      )
     ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid signature.",
+          error:
+            "Invalid signature.",
         },
         { status: 400 }
       );
@@ -397,7 +426,8 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid numeric value.",
+          error:
+            "Invalid numeric value.",
         },
         { status: 400 }
       );
@@ -418,7 +448,8 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid nonce.",
+          error:
+            "Invalid nonce.",
         },
         { status: 400 }
       );
@@ -444,15 +475,141 @@ export async function POST(
     }
 
     // ==================================================
-    // CREATOR / RELAYER CHECK
+    // CODE HASH INTEGRITY CHECK
     // ==================================================
 
-    /*
-     * The creator is the wallet that signed the
-     * EIP-712 authorization.
-     *
-     * The relayer only pays gas.
-     */
+    const calculatedCodeHash =
+      keccak256(toBytes(code));
+
+    console.log(
+      "[B-CODE CREATE] Code hash check:",
+      {
+        supplied: codeHash,
+        calculated: calculatedCodeHash,
+      }
+    );
+
+    if (
+      calculatedCodeHash.toLowerCase() !==
+      codeHash.toLowerCase()
+    ) {
+      console.error(
+        "[B-CODE CREATE] Code hash mismatch."
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "B-Code hash does not match the supplied code.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ==================================================
+    // EIP-712 SIGNATURE VERIFICATION
+    // ==================================================
+
+    console.log(
+      "[B-CODE CREATE] Verifying EIP-712 signature..."
+    );
+
+    let recoveredSigner: Address;
+
+    try {
+      recoveredSigner =
+        await recoverTypedDataAddress({
+          domain: BCODE_DOMAIN,
+
+          types:
+            BCODE_CREATE_TYPES,
+
+          primaryType:
+            "CreateBCode",
+
+          message: {
+            creator:
+              creator as Address,
+
+            codeHash:
+              codeHash as `0x${string}`,
+
+            token:
+              token as Address,
+
+            amount:
+              amountBigInt,
+
+            nonce:
+              nonceBigInt,
+
+            deadline:
+              deadlineBigInt,
+          },
+
+          signature:
+            signature as `0x${string}`,
+        });
+    } catch (signatureError) {
+      console.error(
+        "[B-CODE CREATE] Signature recovery failed:",
+        signatureError
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Unable to verify the B-Code signature.",
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(
+      "[B-CODE CREATE] Declared creator:",
+      creator
+    );
+
+    console.log(
+      "[B-CODE CREATE] Recovered signer:",
+      recoveredSigner
+    );
+
+    // ==================================================
+    // CREATOR SIGNATURE MATCH
+    // ==================================================
+
+    if (
+      recoveredSigner.toLowerCase() !==
+      creator.toLowerCase()
+    ) {
+      console.error(
+        "[B-CODE CREATE] SIGNATURE MISMATCH:",
+        {
+          creator,
+          recoveredSigner,
+        }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "The B-Code signature does not belong to the creator wallet.",
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(
+      "[B-CODE CREATE] EIP-712 signature verified successfully."
+    );
+
+    // ==================================================
+    // CREATOR / RELAYER INFORMATION
+    // ==================================================
 
     if (
       creator.toLowerCase() ===
@@ -469,7 +626,8 @@ export async function POST(
 
     const relayerBalance =
       await publicClient.getBalance({
-        address: relayerAccount.address,
+        address:
+          relayerAccount.address,
       });
 
     console.log(
@@ -507,19 +665,27 @@ export async function POST(
         address:
           B_CODE_CONTRACT_ADDRESS,
 
-        abi: B_CODE_ABI,
+        abi:
+          B_CODE_ABI,
 
         functionName:
           "createBCodeWithSignature",
 
         args: [
           creator as Address,
+
           codeHash as `0x${string}`,
+
           code,
+
           token as Address,
+
           amountBigInt,
+
           nonceBigInt,
+
           deadlineBigInt,
+
           signature as `0x${string}`,
         ],
 
@@ -560,7 +726,10 @@ export async function POST(
     // CHECK RECEIPT
     // ==================================================
 
-    if (receipt.status !== "success") {
+    if (
+      receipt.status !==
+      "success"
+    ) {
       console.error(
         "[B-CODE CREATE] Transaction reverted:",
         txHash
@@ -589,7 +758,9 @@ export async function POST(
     return NextResponse.json({
       success: true,
       txHash,
-      relayer: relayerAccount.address,
+      relayer:
+        relayerAccount.address,
+      creator,
     });
   } catch (error) {
     console.error(

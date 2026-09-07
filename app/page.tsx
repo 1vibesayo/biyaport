@@ -106,37 +106,42 @@ const BCODE_APP_PARAM = "bcode";
 
 const BCODE_CONTRACT_ABI = [
   {
-    type: "function",
-    name: "getBCode",
-    stateMutability: "view",
-    inputs: [{ name: "codeHash", type: "bytes32" }],
-    outputs: [
-      {
-        name: "",
-        type: "tuple",
-        components: [
-          { name: "creator", type: "address" },
-          { name: "token", type: "address" },
-          { name: "amount", type: "uint256" },
-          { name: "redeemed", type: "bool" },
-          { name: "cancelled", type: "bool" },
-          { name: "code", type: "string" },
-        ],
-      },
-    ],
-  },
-
-  {
-    type: "function",
-    name: "createBCode",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "codeHash", type: "bytes32" },
-      { name: "token", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [],
-  },
+  type: "function",
+  name: "getBCode",
+  stateMutability: "view",
+  inputs: [
+    {
+      name: "codeHash",
+      type: "bytes32",
+    },
+  ],
+  outputs: [
+    {
+      name: "creator",
+      type: "address",
+    },
+    {
+      name: "token",
+      type: "address",
+    },
+    {
+      name: "amount",
+      type: "uint256",
+    },
+    {
+      name: "redeemed",
+      type: "bool",
+    },
+    {
+      name: "cancelled",
+      type: "bool",
+    },
+    {
+      name: "code",
+      type: "string",
+    },
+  ],
+},
 
   {
     type: "function",
@@ -174,7 +179,7 @@ const BCODE_CONTRACT_ABI = [
 
 const BCODE_PUBLIC_CLIENT = createPublicClient({
   chain: baseSepolia,
-  transport: http(),
+  transport: http(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL),
 });
 
 const getBCodeTokenConfig = (symbol: "USDT" | "USDC") =>
@@ -4990,73 +4995,85 @@ function BCodeView({
     }
 
     try {
-      const codeHash =
-        hashBCodeForClient(code);
+  const codeHash =
+    hashBCodeForClient(code);
 
-      const bcode =
-        await BCODE_PUBLIC_CLIENT.readContract({
-          address:
-            BCODE_CONTRACT_ADDRESS,
-          abi:
-            BCODE_CONTRACT_ABI,
-          functionName:
-            "getBCode",
-          args: [codeHash],
-        });
+  const bcode =
+    await BCODE_PUBLIC_CLIENT.readContract({
+      address:
+        BCODE_CONTRACT_ADDRESS,
+      abi:
+        BCODE_CONTRACT_ABI,
+      functionName:
+        "getBCode",
+      args: [
+        codeHash,
+      ],
+    });
 
-      if (
-        bcode.creator ===
-        "0x0000000000000000000000000000000000000000"
-      ) {
-        setRedeemError(
-          "This B-Code does not exist."
-        );
+  const [
+    creator,
+    tokenAddress,
+    amount,
+    redeemed,
+    cancelled,
+  ] = bcode;
 
-        return false;
-      }
+  if (
+    creator ===
+    "0x0000000000000000000000000000000000000000"
+  ) {
+    setRedeemError(
+      "This B-Code does not exist."
+    );
 
-      if (bcode.redeemed) {
-        setRedeemError(
-          "This B-Code has already been redeemed."
-        );
+    return false;
+  }
 
-        return false;
-      }
+  if (redeemed) {
+    setRedeemError(
+      "This B-Code has already been redeemed."
+    );
 
-      if (bcode.cancelled) {
-        setRedeemError(
-          "This B-Code has been cancelled."
-        );
+    return false;
+  }
 
-        return false;
-      }
+  if (cancelled) {
+    setRedeemError(
+      "This B-Code has been cancelled."
+    );
 
-      const token =
-        bcode.token.toLowerCase();
+    return false;
+  }
 
-      if (
-        token ===
-        BCODE_BASE_SEPOLIA_USDC.toLowerCase()
-      ) {
-        setRedeemToken("USDC");
-      } else if (
-        token ===
-        BCODE_BASE_SEPOLIA_USDT.toLowerCase()
-      ) {
-        setRedeemToken("USDT");
-      } else {
-        setRedeemToken("");
+  const token =
+    tokenAddress.toLowerCase();
 
-        setRedeemError(
-          "This B-Code contains an unsupported token."
-        );
+  if (
+    token ===
+    BCODE_BASE_SEPOLIA_USDC.toLowerCase()
+  ) {
+    setRedeemToken("USDC");
+  } else if (
+    token ===
+    BCODE_BASE_SEPOLIA_USDT.toLowerCase()
+  ) {
+    setRedeemToken("USDT");
+  } else {
+    setRedeemToken("");
 
-        return false;
-      }
+    setRedeemError(
+      "This B-Code contains an unsupported token."
+    );
+
+    return false;
+  }
+
+  // Continue with the rest of your redeem logic here...
 
       setRedeemAmount(
         formatUnits(
-          bcode.amount,
+          amount,
           BCODE_TOKEN_DECIMALS
         )
       );
@@ -5263,62 +5280,72 @@ function BCodeView({
       await wallet.getEthereumProvider();
 
     const typedData = {
-      types: {
-        CreateBCode: [
-          {
-            name: "creator",
-            type: "address",
-          },
-          {
-            name: "codeHash",
-            type: "bytes32",
-          },
-          {
-            name: "token",
-            type: "address",
-          },
-          {
-            name: "amount",
-            type: "uint256",
-          },
-          {
-            name: "nonce",
-            type: "uint256",
-          },
-          {
-            name: "deadline",
-            type: "uint256",
-          },
-        ],
+  types: {
+    EIP712Domain: [
+      {
+        name: "name",
+        type: "string",
       },
-
-      primaryType:
-        "CreateBCode",
-
-      domain: {
-        name:
-          "Biyaport B-Codes",
-        version: "1",
-        chainId:
-          BCODE_CHAIN_ID,
-        verifyingContract:
-          BCODE_CONTRACT_ADDRESS,
+      {
+        name: "version",
+        type: "string",
       },
-
-      message: {
-        creator:
-          wallet.address,
-        codeHash,
-        token:
-          tokenAddress,
-        amount:
-          amount.toString(),
-        nonce:
-          nonce.toString(),
-        deadline:
-          deadline.toString(),
+      {
+        name: "chainId",
+        type: "uint256",
       },
-    };
+      {
+        name: "verifyingContract",
+        type: "address",
+      },
+    ],
+
+    CreateBCode: [
+      {
+        name: "creator",
+        type: "address",
+      },
+      {
+        name: "codeHash",
+        type: "bytes32",
+      },
+      {
+        name: "token",
+        type: "address",
+      },
+      {
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        name: "nonce",
+        type: "uint256",
+      },
+      {
+        name: "deadline",
+        type: "uint256",
+      },
+    ],
+  },
+
+  primaryType: "CreateBCode",
+
+  domain: {
+    name: "Biyaport B-Codes",
+    version: "1",
+    chainId: BCODE_CHAIN_ID,
+    verifyingContract: BCODE_CONTRACT_ADDRESS,
+  },
+
+  message: {
+    creator: wallet.address,
+    codeHash,
+    token: tokenAddress,
+    amount: amount.toString(),
+    nonce: nonce.toString(),
+    deadline: deadline.toString(),
+  },
+};
 
     const signature =
       await provider.request({
@@ -5468,44 +5495,45 @@ const handleCreateBCode = async () => {
       attempt += 1
     ) {
       const existing =
-        await BCODE_PUBLIC_CLIENT.readContract(
-          {
-            address:
-              BCODE_CONTRACT_ADDRESS,
-            abi:
-              BCODE_CONTRACT_ABI,
-            functionName:
-              "getBCode",
-            args: [
-              codeHash,
-            ],
-          }
-        );
+  await BCODE_PUBLIC_CLIENT.readContract({
+    address:
+      BCODE_CONTRACT_ADDRESS,
+    abi:
+      BCODE_CONTRACT_ABI,
+    functionName:
+      "getBCode",
+    args: [
+      codeHash,
+    ],
+  });
 
-      if (
-        existing.creator ===
-        "0x0000000000000000000000000000000000000000"
-      ) {
-        codeIsAvailable =
-          true;
+const [creator] =
+  existing;
 
-        break;
-      }
+if (
+  creator ===
+  "0x0000000000000000000000000000000000000000"
+) {
+  codeIsAvailable =
+    true;
 
-      code =
-        generateBCodeValue();
+  break;
+}
 
-      codeHash =
-        hashBCodeForClient(
-          code
-        );
-    }
+code =
+  generateBCodeValue();
 
-    if (!codeIsAvailable) {
-      throw new Error(
-        "Unable to generate a unique B-Code. Please try again."
-      );
-    }
+codeHash =
+  hashBCodeForClient(
+    code
+  );
+}
+
+if (!codeIsAvailable) {
+  throw new Error(
+    "Unable to generate a unique B-Code. Please try again."
+  );
+}
 
     /*
      * Keep these available for the success screen.

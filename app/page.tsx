@@ -7439,15 +7439,6 @@ if (!codeIsAvailable) {
 
     {myBCodesOpen && (
       <div className="mt-1">
-        <div className="mb-5">
-          <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
-            My B-Codes
-          </h2>
-
-          <p className="mt-1 text-[12px] text-muted-foreground">
-            B-Codes created by this wallet
-          </p>
-        </div>
 
         <div className="mb-4 flex w-full gap-1 rounded-[10px] bg-input p-1">
   {([
@@ -11217,14 +11208,6 @@ function SwapView({
                   "Swap"
                 )}
               </button>
-
-              <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">
-                Same-network swaps only. The
-                wallet will ask you to approve an
-                ERC-20 token first when required,
-                then sign the swap transaction.
-              </p>
-
                 </>
               )}
             </div>

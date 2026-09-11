@@ -20,7 +20,9 @@ import {
   History,
   Home as HomeIcon,
   Coins,
+  Settings,
   Menu,
+  X,
 } from "lucide-react";
 
 import {
@@ -145,6 +147,22 @@ const BCODE_CONTRACT_ABI = [
 
   {
     type: "function",
+    name: "getBCodeHashesByCreator",
+    stateMutability: "view",
+    inputs: [{ name: "creator", type: "address" }],
+    outputs: [{ name: "", type: "bytes32[]" }],
+  },
+
+  {
+    type: "function",
+    name: "cancelBCode",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "codeHash", type: "bytes32" }],
+    outputs: [],
+  },
+
+  {
+    type: "function",
     name: "isRedeemable",
     stateMutability: "view",
     inputs: [{ name: "codeHash", type: "bytes32" }],
@@ -189,12 +207,14 @@ const getBCodeTokenConfig = (symbol: "USDT" | "USDC") =>
         decimals: BCODE_TOKEN_DECIMALS,
         logo: "/usdt-logo.svg",
         name: "Tether USD",
+        symbol: "USDT" as const,
       }
     : {
         address: BCODE_BASE_SEPOLIA_USDC,
         decimals: BCODE_TOKEN_DECIMALS,
         logo: "/usdc-logo.svg",
         name: "USD Coin",
+        symbol: "USDC" as const,
       };
 
 function generateBCodeValue() {
@@ -455,7 +475,7 @@ export default function Home() {
   const wallet = wallets[0];
 
   const [mainView, setMainView] =
-    useState<"quickport" | "bcodes">("quickport");
+    useState<"quickport" | "bcodes" | "swap">("quickport");
 
   const [bcodeDeepLink, setBcodeDeepLink] =
     useState("");
@@ -495,6 +515,14 @@ export default function Home() {
 
   const handleBCodesNavigation = () => {
     openBCodes();
+  };
+
+  const openSwap = () => {
+    setMainView("swap");
+  };
+
+  const handleSwapNavigation = () => {
+    openSwap();
   };
 
   /*
@@ -2928,7 +2956,11 @@ if (selectedCrypto.symbol === "ETH") {
         : 100;
 
     return (
-      <PaymentShell>
+      <PaymentShell
+        onQuickPort={handleQuickPortNavigation}
+        onBCodes={handleBCodesNavigation}
+        onSwap={handleSwapNavigation}
+      >
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
@@ -3033,7 +3065,11 @@ if (selectedCrypto.symbol === "ETH") {
     "success"
   ) {
     return (
-      <PaymentShell>
+      <PaymentShell
+        onQuickPort={handleQuickPortNavigation}
+        onBCodes={handleBCodesNavigation}
+        onSwap={handleSwapNavigation}
+      >
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
@@ -3134,7 +3170,11 @@ if (selectedCrypto.symbol === "ETH") {
     "error"
   ) {
     return (
-      <PaymentShell>
+      <PaymentShell
+        onQuickPort={handleQuickPortNavigation}
+        onBCodes={handleBCodesNavigation}
+        onSwap={handleSwapNavigation}
+      >
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
@@ -3189,6 +3229,10 @@ if (selectedCrypto.symbol === "ETH") {
     );
   }
 
+  if (mainView === "swap") {
+    return <SwapView onBackHome={backToQuickPort} />;
+  }
+
   /*
    * ====================================================
    * MAIN FORM
@@ -3203,6 +3247,7 @@ if (selectedCrypto.symbol === "ETH") {
         <SiteNav
           onQuickPort={handleQuickPortNavigation}
           onBCodes={handleBCodesNavigation}
+          onSwap={handleSwapNavigation}
         />
 
         <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
@@ -4796,6 +4841,43 @@ function BCodeView({
     useState("");
 
   const [generatedQr, setGeneratedQr] =
+    useState("");
+
+  /*
+   * ====================================================
+   * MY B-CODES STATE
+   * ====================================================
+   */
+
+  type BCodeHistoryItem = {
+    hash: `0x${string}`;
+    creator: `0x${string}`;
+    token: `0x${string}`;
+    amount: bigint;
+    redeemed: boolean;
+    cancelled: boolean;
+    code: string;
+  };
+
+  const [myBCodesOpen, setMyBCodesOpen] =
+    useState(false);
+  const [myBCodesFilter, setMyBCodesFilter] =
+    useState<"all" | "active" | "cancelled" | "redeemed">("all");
+  const [expandedBCodeHash, setExpandedBCodeHash] =
+    useState<`0x${string}` | null>(null);
+  const [myBCodes, setMyBCodes] =
+    useState<BCodeHistoryItem[]>([]);
+  const [myBCodesLoading, setMyBCodesLoading] =
+    useState(false);
+  const [myBCodesError, setMyBCodesError] =
+    useState("");
+  const [copiedBCode, setCopiedBCode] =
+    useState<string | null>(null);
+  const [cancelHash, setCancelHash] =
+    useState<`0x${string}` | null>(null);
+  const [cancelLoading, setCancelLoading] =
+    useState(false);
+  const [cancelError, setCancelError] =
     useState("");
 
   /*
@@ -6402,6 +6484,193 @@ if (!codeIsAvailable) {
 
   /*
    * ====================================================
+   * MY B-CODES HELPERS
+   * ====================================================
+   */
+
+  const getHistoryToken = (address: `0x${string}`) => {
+    if (address.toLowerCase() === BCODE_BASE_SEPOLIA_USDT.toLowerCase()) {
+      return getBCodeTokenConfig("USDT");
+    }
+
+    if (address.toLowerCase() === BCODE_BASE_SEPOLIA_USDC.toLowerCase()) {
+      return getBCodeTokenConfig("USDC");
+    }
+
+    return null;
+  };
+
+  const fetchMyBCodes = async () => {
+    if (!wallet?.address) {
+      setMyBCodes([]);
+      return;
+    }
+
+    setMyBCodesLoading(true);
+    setMyBCodesError("");
+
+    try {
+      const hashes = await BCODE_PUBLIC_CLIENT.readContract({
+        address: BCODE_CONTRACT_ADDRESS,
+        abi: BCODE_CONTRACT_ABI,
+        functionName: "getBCodeHashesByCreator",
+        args: [wallet.address as `0x${string}`],
+      });
+
+      if (hashes.length === 0) {
+        setMyBCodes([]);
+        return;
+      }
+
+      const records = await Promise.all(
+        hashes.map(async (hash) => {
+          const result = await BCODE_PUBLIC_CLIENT.readContract({
+            address: BCODE_CONTRACT_ADDRESS,
+            abi: BCODE_CONTRACT_ABI,
+            functionName: "getBCode",
+            args: [hash],
+          });
+
+          const [creator, token, amount, redeemed, cancelled, code] = result;
+
+          return {
+            hash,
+            creator,
+            token,
+            amount,
+            redeemed,
+            cancelled,
+            code,
+          } satisfies BCodeHistoryItem;
+        })
+      );
+
+      setMyBCodes(records.reverse());
+    } catch (error) {
+      console.error("MY B-CODES ERROR:", error);
+      setMyBCodes([]);
+      setMyBCodesError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load your B-Codes."
+      );
+    } finally {
+      setMyBCodesLoading(false);
+    }
+  };
+
+  const openMyBCodes = () => {
+    setMyBCodesOpen(true);
+    setMyBCodesFilter("all");
+    setExpandedBCodeHash(null);
+    setCancelHash(null);
+    setCancelError("");
+    setMyBCodesError("");
+
+    // Fetch immediately when the user clicks My B-Codes.
+    // The effect below also retries automatically if the wallet address
+    // becomes available after the view has opened.
+    if (wallet?.address) {
+      void fetchMyBCodes();
+    } else {
+      setMyBCodes([]);
+      setMyBCodesError("Connect your wallet to view your B-Codes.");
+    }
+  };
+
+  useEffect(() => {
+    if (myBCodesOpen && wallet?.address) {
+      void fetchMyBCodes();
+    }
+  }, [myBCodesOpen, wallet?.address]);
+
+  const closeMyBCodes = () => {
+    if (cancelLoading) return;
+    setMyBCodesOpen(false);
+    setExpandedBCodeHash(null);
+    setCancelHash(null);
+    setCancelError("");
+  };
+
+  const getHistoryStatus = (item: BCodeHistoryItem) =>
+    item.cancelled ? "cancelled" : item.redeemed ? "redeemed" : "active";
+
+  const filteredMyBCodes = myBCodes.filter((item) =>
+    myBCodesFilter === "all"
+      ? true
+      : getHistoryStatus(item) === myBCodesFilter
+  );
+
+  const copyMyBCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedBCode(code);
+      window.setTimeout(() => {
+        setCopiedBCode((current) =>
+          current === code ? null : current
+        );
+      }, 1500);
+    } catch (error) {
+      console.error("B-CODE COPY ERROR:", error);
+    }
+  };
+
+  const handleCancelBCode = async () => {
+    if (!cancelHash || !wallet?.address) {
+      return;
+    }
+
+    setCancelLoading(true);
+    setCancelError("");
+
+    try {
+      if (wallet.switchChain) {
+        await wallet.switchChain(BCODE_CHAIN_ID);
+      }
+
+      const data = encodeFunctionData({
+        abi: BCODE_CONTRACT_ABI,
+        functionName: "cancelBCode",
+        args: [cancelHash],
+      });
+
+      const result = await sendTransaction(
+        {
+          to: BCODE_CONTRACT_ADDRESS,
+          data,
+          value: 0n,
+          chainId: BCODE_CHAIN_ID,
+        },
+        {
+          address: wallet.address,
+        }
+      );
+
+      if (!result?.hash) {
+        throw new Error("Cancellation transaction was not submitted.");
+      }
+
+      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt({
+        hash: result.hash as `0x${string}`,
+        confirmations: 1,
+      });
+
+      setCancelHash(null);
+      await fetchMyBCodes();
+    } catch (error) {
+      console.error("B-CODE CANCELLATION ERROR:", error);
+      setCancelError(
+        error instanceof Error
+          ? error.message
+          : "Unable to cancel this B-Code."
+      );
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  /*
+   * ====================================================
    * RESET GENERATE
    * ====================================================
    */
@@ -6483,938 +6752,962 @@ if (!codeIsAvailable) {
 
         <section className="min-h-screen overflow-y-auto px-4 pb-28 pt-[112px] sm:px-6 sm:pb-12 sm:pt-[128px]">
           <div className="mx-auto w-full max-w-[590px]">
-            <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
-              {/* ====================================================
-                  TITLE
-              ==================================================== */}
+  <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
+    {/* ====================================================
+        TITLE
+    ==================================================== */}
 
-              {!(
-                (mode === "generate" &&
-                  generateState ===
-                    "success") ||
-                (mode === "redeem" &&
-                  redeemState ===
-                    "success")
-              ) && (
-                <div className="mb-6 flex items-center justify-between gap-4">
-                  <div>
-                    <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
-                      B-Codes
-                    </h1>
+    {!(
+      (mode === "generate" &&
+        generateState === "success") ||
+      (mode === "redeem" &&
+        redeemState === "success")
+    ) && (
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
+          B-Codes
+        </h1>
+
+        {myBCodesOpen ? (
+          <button
+            type="button"
+            onClick={closeMyBCodes}
+            disabled={cancelLoading}
+            className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground disabled:opacity-50"
+          >
+            Back
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={openMyBCodes}
+            className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground"
+          >
+            My B-Codes
+          </button>
+        )}
+      </div>
+    )}
+
+    {!myBCodesOpen && (
+      <>
+        {/* ====================================================
+            GENERATE / REDEEM SWITCH
+        ==================================================== */}
+
+        {(
+          (mode === "generate" &&
+            generateState === "idle" &&
+            generateStep === 1) ||
+          (mode === "redeem" &&
+            redeemState === "idle" &&
+            redeemStep === 1)
+        ) && (
+          <div className="mb-6 flex h-[52px] rounded-[12px] bg-input p-1">
+            <button
+              type="button"
+              onClick={() => {
+                switchMode("generate");
+                setGenerateStep(1);
+              }}
+              className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                mode === "generate"
+                  ? "bg-[#050511] text-foreground shadow-sm"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Generate
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                switchMode("redeem");
+                setRedeemStep(1);
+              }}
+              className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                mode === "redeem"
+                  ? "bg-[#050511] text-foreground shadow-sm"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Redeem
+            </button>
+          </div>
+        )}
+
+        {/* ====================================================
+            GENERATE
+        ==================================================== */}
+
+        {mode === "generate" && (
+          <>
+            {generateState === "processing" && (
+              <BCodeProgress
+                title="Generating B-Code"
+                stage={generateStage}
+                labels={[
+                  "Preparing B-Code",
+                  "Signing authorization",
+                  "Submitting B-Code",
+                ]}
+              />
+            )}
+
+            {generateState === "success" && (
+              <div className="text-center">
+                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                    <Check className="h-6 w-6 text-white" />
                   </div>
                 </div>
-              )}
 
-              {/* ====================================================
-                  GENERATE / REDEEM SWITCH
-              ==================================================== */}
+                <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                  B-Code Generated
+                </h2>
 
-              {(
-                (mode === "generate" &&
-                  generateState ===
-                    "idle" &&
-                  generateStep ===
-                    1) ||
-                (mode === "redeem" &&
-                  redeemState ===
-                    "idle" &&
-                  redeemStep ===
-                    1)
-              ) && (
-                <div className="mb-6 flex h-[52px] rounded-[12px] bg-input p-1">
+                <p className="mt-2 text-[14px] text-muted-foreground">
+                  Anyone with this B-Code can withdraw the funds to their wallet.
+                </p>
+
+                <div className="mx-auto mt-6 w-fit rounded-[12px] border border-dashed border-border bg-input px-5 py-4">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-[27px] font-bold tracking-[0.08em]">
+                      {generatedCode}
+                    </span>
+
+                    <CopyButton value={generatedCode} />
+                  </div>
+                </div>
+
+                <div className="mt-5">
                   <button
                     type="button"
-                    onClick={() => {
-                      switchMode(
-                        "generate"
-                      );
-                      setGenerateStep(
-                        1
-                      );
-                    }}
-                    className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
-                      mode === "generate"
-                        ? "bg-[#050511] text-foreground shadow-sm"
-                        : "text-muted-foreground"
-                    }`}
+                    onClick={downloadShareImage}
+                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
                   >
-                    Generate
+                    Share B-Code
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      switchMode(
-                        "redeem"
-                      );
-                      setRedeemStep(
-                        1
-                      );
-                    }}
-                    className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
-                      mode === "redeem"
-                        ? "bg-[#050511] text-foreground shadow-sm"
-                        : "text-muted-foreground"
-                    }`}
+                    onClick={resetGenerate}
+                    className="mx-auto mt-5 block text-[13px] font-medium text-muted-foreground underline underline-offset-4 transition hover:text-foreground"
                   >
-                    Redeem
+                    Generate new B-Code
                   </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* ====================================================
-                  GENERATE
-              ==================================================== */}
+            {generateState === "error" && (
+              <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                <p className="text-[14px] text-destructive">
+                  {generateError || "B-Code creation failed."}
+                </p>
 
-              {mode === "generate" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGenerateState("idle");
+                    setGenerateStage(1);
+                  }}
+                  className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {generateState === "idle" &&
+              generateStep === 1 && (
                 <>
-                  {/* ====================================================
-                      GENERATE PROCESSING
-                  ==================================================== */}
-
-                  {generateState ===
-                    "processing" && (
-                    <BCodeProgress
-                      title="Generating B-Code"
-                      stage={
-                        generateStage
+                  <div
+                    ref={generateCryptoDropdownRef}
+                    className="relative"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setGenerateCryptoDropdownOpen(
+                          (open) => !open
+                        )
                       }
-                      labels={[
-                        "Preparing B-Code",
-                        "Signing authorization",
-                        "Submitting B-Code",
-                      ]}
-                    />
-                  )}
+                      className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src={
+                            getBCodeTokenConfig(
+                              generateToken
+                            ).logo
+                          }
+                          alt=""
+                          width={38}
+                          height={38}
+                          className="h-9 w-9 object-contain"
+                        />
 
-                  {/* ====================================================
-                      GENERATE SUCCESS
-                  ==================================================== */}
+                        <div className="text-left">
+                          <p className="text-[15px] font-semibold">
+                            {generateToken}
+                          </p>
 
-                  {generateState ===
-                    "success" && (
-                    <div className="text-center">
-                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-                          <Check className="h-6 w-6 text-white" />
+                          <p className="text-[12px] text-muted-foreground">
+                            {generateNetworkLabel}
+                          </p>
                         </div>
                       </div>
 
-                      <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
-                        B-Code Generated
-                      </h2>
+                      <ChevronDown
+                        className={`h-4 w-4 text-muted-foreground transition-transform ${
+                          generateCryptoDropdownOpen
+                            ? "rotate-180"
+                            : ""
+                        }`}
+                      />
+                    </button>
 
-                      <p className="mt-2 text-[14px] text-muted-foreground">
-                        Anyone with this B-Code can withdraw the funds to their wallet.
-                      </p>
+                    {generateCryptoDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                        <div className="border-b border-border p-3">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+                              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
 
-                      <div className="mx-auto mt-6 w-fit rounded-[12px] border border-dashed border-border bg-input px-5 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <span className="text-[27px] font-bold tracking-[0.08em]">
-                            {generatedCode}
-                          </span>
-
-                          <CopyButton
-                            value={
-                              generatedCode
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-5">
-                        <button
-                          type="button"
-                          onClick={
-                            downloadShareImage
-                          }
-                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
-                        >
-                          Share B-Code
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={
-                            resetGenerate
-                          }
-                          className="mx-auto mt-5 block text-[13px] font-medium text-muted-foreground underline underline-offset-4 transition hover:text-foreground"
-                        >
-                          Generate new B-Code
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ====================================================
-                      GENERATE ERROR
-                  ==================================================== */}
-
-                  {generateState ===
-                    "error" && (
-                    <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                      <p className="text-[14px] text-destructive">
-                        {generateError ||
-                          "B-Code creation failed."}
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGenerateState(
-                            "idle"
-                          );
-
-                          setGenerateStage(
-                            1
-                          );
-                        }}
-                        className="mt-4 text-[14px] font-medium underline underline-offset-4"
-                      >
-                        Try again
-                      </button>
-                    </div>
-                  )}
-
-                  {/* ====================================================
-                      GENERATE STEP 1
-                  ==================================================== */}
-
-                  {generateState ===
-                    "idle" &&
-                    generateStep ===
-                      1 && (
-                      <>
-                        {/* TOKEN + NETWORK SELECTOR */}
-
-                        <div
-                          ref={
-                            generateCryptoDropdownRef
-                          }
-                          className="relative"
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setGenerateCryptoDropdownOpen(
-                                (
-                                  open
-                                ) =>
-                                  !open
-                              )
-                            }
-                            className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4"
-                          >
-                            <div className="flex items-center gap-3">
-                              <Image
-                                src={
-                                  getBCodeTokenConfig(
-                                    generateToken
-                                  ).logo
+                              <input
+                                type="text"
+                                value={generateCryptoSearch}
+                                onChange={(event) =>
+                                  setGenerateCryptoSearch(
+                                    event.target.value
+                                  )
                                 }
-                                alt=""
-                                width={
-                                  38
-                                }
-                                height={
-                                  38
-                                }
-                                className="h-9 w-9 object-contain"
+                                placeholder="Search supported crypto"
+                                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+                                autoFocus
                               />
-
-                              <div className="text-left">
-                                <p className="text-[15px] font-semibold">
-                                  {
-                                    generateToken
-                                  }
-                                </p>
-
-                                <p className="text-[12px] text-muted-foreground">
-                                  {
-                                    generateNetworkLabel
-                                  }
-                                </p>
-                              </div>
                             </div>
 
-                            <ChevronDown
-                              className={`h-4 w-4 text-muted-foreground transition-transform ${
-                                generateCryptoDropdownOpen
-                                  ? "rotate-180"
-                                  : ""
-                              }`}
+                            <NetworkSelector
+                              value={generateNetwork}
+                              onChange={(network) => {
+                                setGenerateNetwork(network);
+                              }}
                             />
-                          </button>
+                          </div>
+                        </div>
 
-                          {/* DROPDOWN */}
+                        <div className="max-h-[220px] overflow-y-auto p-1.5">
+                          {filteredGenerateCryptoOptions.length >
+                          0 ? (
+                            filteredGenerateCryptoOptions.map(
+                              (symbol) => {
+                                const token =
+                                  getBCodeTokenConfig(
+                                    symbol
+                                  );
 
-                          {generateCryptoDropdownOpen && (
-                            <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-                              {/* SEARCH + NETWORK */}
-
-                              <div className="border-b border-border p-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
-                                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-
-                                    <input
-                                      type="text"
-                                      value={
-                                        generateCryptoSearch
-                                      }
-                                      onChange={(
-                                        event
-                                      ) =>
-                                        setGenerateCryptoSearch(
-                                          event
-                                            .target
-                                            .value
-                                        )
-                                      }
-                                      placeholder="Search supported crypto"
-                                      className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
-                                      autoFocus
-                                    />
-                                  </div>
-
-                                  <NetworkSelector
-                                    value={
-                                      generateNetwork
-                                    }
-                                    onChange={(
-                                      network
-                                    ) => {
-                                      setGenerateNetwork(
-                                        network
+                                return (
+                                  <button
+                                    key={`${generateNetwork}-${symbol}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setGenerateToken(symbol);
+                                      setGenerateCryptoDropdownOpen(
+                                        false
                                       );
+                                      setGenerateCryptoSearch("");
                                     }}
-                                  />
-                                </div>
-                              </div>
+                                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <Image
+                                        src={token.logo}
+                                        alt=""
+                                        width={32}
+                                        height={32}
+                                        className="h-8 w-8 object-contain"
+                                      />
 
-                              {/* CRYPTO LIST */}
+                                      <div>
+                                        <div className="text-[14px] font-medium">
+                                          {symbol}
+                                        </div>
 
-                              <div className="max-h-[220px] overflow-y-auto p-1.5">
-                                {filteredGenerateCryptoOptions.length >
-                                0 ? (
-                                  filteredGenerateCryptoOptions.map(
-                                    (
-                                      symbol
-                                    ) => {
-                                      const token =
-                                        getBCodeTokenConfig(
-                                          symbol
-                                        );
+                                        <div className="text-[12px] text-muted-foreground">
+                                          {symbol === "USDC"
+                                            ? "USD Coin"
+                                            : "Tether USD"}
+                                        </div>
+                                      </div>
+                                    </div>
 
-                                      return (
-                                        <button
-                                          key={`${generateNetwork}-${symbol}`}
-                                          type="button"
-                                          onClick={() => {
-                                            setGenerateToken(
-                                              symbol
-                                            );
-
-                                            setGenerateCryptoDropdownOpen(
-                                              false
-                                            );
-
-                                            setGenerateCryptoSearch(
-                                              ""
-                                            );
-                                          }}
-                                          className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
-                                        >
-                                          <div className="flex items-center gap-3">
-                                            <Image
-                                              src={
-                                                token.logo
-                                              }
-                                              alt=""
-                                              width={
-                                                32
-                                              }
-                                              height={
-                                                32
-                                              }
-                                              className="h-8 w-8 object-contain"
-                                            />
-
-                                            <div>
-                                              <div className="text-[14px] font-medium">
-                                                {
-                                                  symbol
-                                                }
-                                              </div>
-
-                                              <div className="text-[12px] text-muted-foreground">
-                                                {symbol ===
-                                                "USDC"
-                                                  ? "USD Coin"
-                                                  : "Tether USD"}
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          {generateToken ===
-                                            symbol && (
-                                            <Check className="h-4 w-4 text-primary" />
-                                          )}
-                                        </button>
-                                      );
-                                    }
-                                  )
-                                ) : (
-                                  <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
-                                    No supported
-                                    crypto found.
-                                  </div>
-                                )}
-                              </div>
+                                    {generateToken ===
+                                      symbol && (
+                                      <Check className="h-4 w-4 text-primary" />
+                                    )}
+                                  </button>
+                                );
+                              }
+                            )
+                          ) : (
+                            <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+                              No supported crypto found.
                             </div>
                           )}
                         </div>
-
-                        {/* AMOUNT */}
-
-                        <div className="mt-4">
-                          <label className="mb-2 block text-[13px] text-muted-foreground">
-                            Amount recipient
-                            receives
-                          </label>
-
-                          <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={
-                                generateAmount
-                              }
-                              onChange={(
-                                event
-                              ) => {
-                                setGenerateAmount(
-                                  event.target.value.replace(
-                                    /[^0-9.]/g,
-                                    ""
-                                  )
-                                );
-
-                                setGenerateError(
-                                  ""
-                                );
-                              }}
-                              placeholder="0.00"
-                              className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted-foreground"
-                            />
-
-                            <span className="font-semibold">
-                              {
-                                generateToken
-                              }
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* ERROR */}
-
-                        {generateError && (
-                          <p className="mt-3 text-[13px] text-destructive">
-                            {
-                              generateError
-                            }
-                          </p>
-                        )}
-
-                        {/* CONTINUE */}
-
-                        <button
-                          type="button"
-                          onClick={
-                            handleGenerateContinue
-                          }
-                          className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                        >
-                          Continue
-                        </button>
-                      </>
+                      </div>
                     )}
+                  </div>
 
-                  {/* ====================================================
-                      GENERATE STEP 2
-                  ==================================================== */}
+                  <div className="mt-4">
+                    <label className="mb-2 block text-[13px] text-muted-foreground">
+                      Amount recipient receives
+                    </label>
 
-                  {generateState ===
-                    "idle" &&
-                    generateStep ===
-                      2 && (
-                      <>
-                        <div className="rounded-[12px] bg-input p-5">
-                          <div className="space-y-3 text-[14px]">
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                Network
-                              </span>
+                    <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={generateAmount}
+                        onChange={(event) => {
+                          setGenerateAmount(
+                            event.target.value.replace(
+                              /[^0-9.]/g,
+                              ""
+                            )
+                          );
 
-                              <span className="font-semibold">
-                                {
-                                  generateNetworkLabel
-                                }
-                              </span>
-                            </div>
+                          setGenerateError("");
+                        }}
+                        placeholder="0.00"
+                        className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted-foreground"
+                      />
 
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                Token
-                              </span>
+                      <span className="font-semibold">
+                        {generateToken}
+                      </span>
+                    </div>
+                  </div>
 
-                              <span className="font-semibold">
-                                {
-                                  generateToken
-                                }
-                              </span>
-                            </div>
+                  {generateError && (
+                    <p className="mt-3 text-[13px] text-destructive">
+                      {generateError}
+                    </p>
+                  )}
 
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                Recipient
-                                receives
-                              </span>
-
-                              <span className="font-semibold">
-                                {Number(
-                                  generateAmount
-                                ).toLocaleString(
-                                  undefined,
-                                  {
-                                    maximumFractionDigits: 6,
-                                  }
-                                )}{" "}
-                                {
-                                  generateToken
-                                }
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                Creation fee
-                              </span>
-
-                              <span className="font-semibold">
-                                {
-                                  generateFee
-                                }{" "}
-                                {
-                                  generateToken
-                                }
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between gap-4 border-t border-border pt-3">
-                              <span className="text-muted-foreground">
-                                Total wallet
-                                spend
-                              </span>
-
-                              <span className="font-semibold">
-                                {
-                                  generateTotal
-                                }{" "}
-                                {
-                                  generateToken
-                                }
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {generateNetwork !==
-                          "base-sepolia" && (
-                          <div className="mt-4 rounded-[10px] border border-primary/20 bg-primary/5 p-4 text-[13px] text-muted-foreground">
-                            B-Codes on{" "}
-                            <span className="font-medium text-foreground">
-                              {
-                                generateNetworkLabel
-                              }
-                            </span>{" "}
-                            are not available yet.
-                            Base Sepolia is currently
-                            being used for testing.
-                          </div>
-                        )}
-
-                        {/* ERROR */}
-
-                        {generateError && (
-                          <p className="mt-3 text-[13px] text-destructive">
-                            {
-                              generateError
-                            }
-                          </p>
-                        )}
-
-                        {/* ACTIONS */}
-
-                        <div className="mt-5 flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setGenerateStep(
-                                1
-                              )
-                            }
-                            className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
-                          >
-                            Back
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={
-                              handleCreateBCode
-                            }
-                            className="flex h-[56px] flex-[1.7] items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                          >
-                            Create B-Code
-                          </button>
-                        </div>
-                      </>
-                    )}
+                  <button
+                    type="button"
+                    onClick={handleGenerateContinue}
+                    className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                  >
+                    Continue
+                  </button>
                 </>
               )}
 
-              {/* ====================================================
-                  REDEEM
-              ==================================================== */}
-
-              {mode === "redeem" && (
+            {generateState === "idle" &&
+              generateStep === 2 && (
                 <>
-                  {/* ====================================================
-                      REDEEM PROCESSING
-                  ==================================================== */}
+                  <div className="rounded-[12px] bg-input p-5">
+                    <div className="space-y-3 text-[14px]">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Network
+                        </span>
 
-                  {redeemState ===
-                    "processing" && (
-                    <BCodeProgress
-                      title="Redeeming B-Code"
-                      stage={
-                        redeemStage
-                      }
-                      labels={[
-                        "Validating redemption",
-                        "Authorizing redemption",
-                        "Confirming redemption",
-                      ]}
-                    />
-                  )}
-
-                  {/* ====================================================
-                      REDEEM SUCCESS
-                  ==================================================== */}
-
-                  {redeemState ===
-                    "success" && (
-                    <div className="text-center">
-                      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-                          <Check className="h-6 w-6 text-white" />
-                        </div>
+                        <span className="font-semibold">
+                          {generateNetworkLabel}
+                        </span>
                       </div>
 
-                      <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
-                        Redemption Successful
-                      </h2>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Token
+                        </span>
 
-                      <p className="mt-2 text-[14px] text-muted-foreground">
-                        {
-                          redeemAmount
-                        }{" "}
-                        {
-                          redeemToken
-                        } has been
-                        sent to your wallet.
-                      </p>
+                        <span className="font-semibold">
+                          {generateToken}
+                        </span>
+                      </div>
 
-                      <div className="mt-6 rounded-[12px] bg-input p-4 text-left text-[14px]">
-                        <div className="flex justify-between gap-4">
-                          <span className="text-muted-foreground">
-                            B-Code
-                          </span>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Recipient receives
+                        </span>
 
-                          <span className="font-semibold">
+                        <span className="font-semibold">
+                          {Number(
+                            generateAmount
+                          ).toLocaleString(
+                            undefined,
                             {
-                              redeemCode
+                              maximumFractionDigits: 6,
                             }
-                          </span>
-                        </div>
-
-                        <div className="mt-3 flex justify-between gap-4">
-                          <span className="text-muted-foreground">
-                            Recipient
-                          </span>
-
-                          <span className="max-w-[260px] truncate font-semibold">
-                            {
-                              redeemRecipient
-                            }
-                          </span>
-                        </div>
+                          )}{" "}
+                          {generateToken}
+                        </span>
                       </div>
 
-                      <div className="mt-6 flex gap-3">
-                        <button
-                          type="button"
-                          onClick={
-                            onBackHome
-                          }
-                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
-                        >
-                          Port to naira
-                        </button>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Creation fee
+                        </span>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRedeemStep(
-                              1
-                            );
-
-                            setRedeemState(
-                              "idle"
-                            );
-
-                            setRedeemStage(
-                              1
-                            );
-
-                            setRedeemError(
-                              ""
-                            );
-
-                            setRedeemCode(
-                              ""
-                            );
-
-                            setRedeemInput(
-                              ""
-                            );
-                          }}
-                          className="flex h-[52px] w-full items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary"
-                        >
-                          New B-code
-                        </button>
+                        <span className="font-semibold">
+                          {generateFee} {generateToken}
+                        </span>
                       </div>
+
+                      <div className="flex justify-between gap-4 border-t border-border pt-3">
+                        <span className="text-muted-foreground">
+                          Total wallet spend
+                        </span>
+
+                        <span className="font-semibold">
+                          {generateTotal} {generateToken}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {generateNetwork !== "base-sepolia" && (
+                    <div className="mt-4 rounded-[10px] border border-primary/20 bg-primary/5 p-4 text-[13px] text-muted-foreground">
+                      B-Codes on{" "}
+                      <span className="font-medium text-foreground">
+                        {generateNetworkLabel}
+                      </span>{" "}
+                      are not available yet. Base Sepolia is currently
+                      being used for testing.
                     </div>
                   )}
 
-                  {/* ====================================================
-                      REDEEM ERROR
-                  ==================================================== */}
+                  {generateError && (
+                    <p className="mt-3 text-[13px] text-destructive">
+                      {generateError}
+                    </p>
+                  )}
 
-                  {redeemState ===
-                    "error" && (
-                    <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                      <p className="text-[14px] text-destructive">
-                        {
-                          redeemError
-                        }
-                      </p>
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setGenerateStep(1)}
+                      className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                    >
+                      Back
+                    </button>
 
+                    <button
+                      type="button"
+                      onClick={handleCreateBCode}
+                      className="flex h-[56px] flex-[1.7] items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                    >
+                      Create B-Code
+                    </button>
+                  </div>
+                </>
+              )}
+          </>
+        )}
+
+        {/* ====================================================
+            REDEEM
+        ==================================================== */}
+
+        {mode === "redeem" && (
+          <>
+            {redeemState === "processing" && (
+              <BCodeProgress
+                title="Redeeming B-Code"
+                stage={redeemStage}
+                labels={[
+                  "Validating redemption",
+                  "Authorizing redemption",
+                  "Confirming redemption",
+                ]}
+              />
+            )}
+
+            {redeemState === "success" && (
+              <div className="text-center">
+                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                    <Check className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+
+                <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                  Redemption Successful
+                </h2>
+
+                <p className="mt-2 text-[14px] text-muted-foreground">
+                  {redeemAmount} {redeemToken} has been sent to your wallet.
+                </p>
+
+                <div className="mt-6 rounded-[12px] bg-input p-4 text-left text-[14px]">
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">
+                      B-Code
+                    </span>
+
+                    <span className="font-semibold">
+                      {redeemCode}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex justify-between gap-4">
+                    <span className="text-muted-foreground">
+                      Recipient
+                    </span>
+
+                    <span className="max-w-[260px] truncate font-semibold">
+                      {redeemRecipient}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={onBackHome}
+                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
+                  >
+                    Port to naira
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRedeemStep(1);
+                      setRedeemState("idle");
+                      setRedeemStage(1);
+                      setRedeemError("");
+                      setRedeemCode("");
+                      setRedeemInput("");
+                    }}
+                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary"
+                  >
+                    New B-code
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {redeemState === "error" && (
+              <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                <p className="text-[14px] text-destructive">
+                  {redeemError}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRedeemState("idle");
+                    setRedeemStage(1);
+                  }}
+                  className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {redeemState === "idle" &&
+              redeemStep === 1 && (
+                <>
+                  <label className="mb-2 block text-[13px] text-muted-foreground">
+                    Input B-Code
+                  </label>
+
+                  <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                    <span className="shrink-0 text-[17px] font-medium tracking-[0.06em]">
+                      B-
+                    </span>
+
+                    <input
+                      type="text"
+                      value={redeemInput}
+                      onChange={(e) =>
+                        handleRedeemInput(e.target.value)
+                      }
+                      placeholder="XXXX-XXXX"
+                      className="min-w-0 flex-1 bg-transparent text-[17px] tracking-[0.06em] outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  {redeemError && (
+                    <p className="mt-3 text-[13px] text-destructive">
+                      {redeemError}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={validateBCode}
+                    className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                  >
+                    Validate B-Code
+                  </button>
+                </>
+              )}
+
+            {redeemState === "idle" &&
+              redeemStep === 2 && (
+                <>
+                  <div className="rounded-[12px] bg-input p-5">
+                    <div className="space-y-3 text-[14px]">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          B-Code
+                        </span>
+
+                        <span className="font-semibold">
+                          {redeemCode}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Token
+                        </span>
+
+                        <span className="font-semibold">
+                          {redeemToken}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between gap-4 border-t border-border pt-3">
+                        <span className="text-muted-foreground">
+                          You receive
+                        </span>
+
+                        <span className="font-semibold">
+                          {redeemAmount} {redeemToken}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <label className="mb-2 block text-[14px] text-muted-foreground">
+                      Wallet address to receive funds
+                    </label>
+
+                    <input
+                      type="text"
+                      value={redeemRecipient}
+                      onChange={(event) => {
+                        setRedeemRecipient(event.target.value);
+                        setRedeemError("");
+                      }}
+                      placeholder="0x..."
+                      className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[14px] outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+
+                  {redeemError && (
+                    <p className="mt-3 text-[13px] text-destructive">
+                      {redeemError}
+                    </p>
+                  )}
+
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRedeemStep(1)}
+                      className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                    >
+                      Back
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRedeem}
+                      className="flex h-[56px] flex-[1.7] items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                    >
+                      Redeem B-Code
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </>
+              )}
+          </>
+        )}
+      </>
+    )}
+
+    {myBCodesOpen && (
+      <div className="mt-1">
+        <div className="mb-5">
+          <h2 className="text-[18px] font-semibold tracking-[-0.02em]">
+            My B-Codes
+          </h2>
+
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            B-Codes created by this wallet
+          </p>
+        </div>
+
+        <div className="mb-4 flex w-full gap-1 rounded-[10px] bg-input p-1">
+  {([
+    ["all", "All"],
+    ["active", "Active"],
+    ["cancelled", "Canceled"],
+    ["redeemed", "Redeemed"],
+  ] as const).map(([value, label]) => (
+    <button
+      key={value}
+      type="button"
+      onClick={() => setMyBCodesFilter(value)}
+      className={`min-w-0 flex-1 rounded-[8px] px-2 py-2 text-center text-[12px] font-medium transition ${
+        myBCodesFilter === value
+          ? "bg-[#050511] text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  ))}
+</div>
+
+        {myBCodesLoading ? (
+          <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+
+            <p className="mt-4 text-[14px] text-muted-foreground">
+              Loading your B-Codes...
+            </p>
+          </div>
+        ) : myBCodesError ? (
+          <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-5 text-center">
+            <p className="text-[14px] text-destructive">
+              {myBCodesError}
+            </p>
+
+            <button
+              type="button"
+              onClick={fetchMyBCodes}
+              className="mt-4 text-[13px] font-medium underline underline-offset-4"
+            >
+              Try again
+            </button>
+          </div>
+        ) : filteredMyBCodes.length === 0 ? (
+          <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-input">
+              <Coins className="h-5 w-5 text-muted-foreground" />
+            </div>
+
+            <p className="mt-4 text-[15px] font-medium">
+              {myBCodes.length === 0
+                ? "No B-Codes yet"
+                : "No matching B-Codes"}
+            </p>
+
+            <p className="mt-1 max-w-[280px] text-[13px] leading-5 text-muted-foreground">
+              {myBCodes.length === 0
+                ? "B-Codes you create will appear here."
+                : "Try another filter to see your B-Codes."}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredMyBCodes.map((item) => {
+              const token = getHistoryToken(item.token);
+              const amount = formatUnits(
+                item.amount,
+                BCODE_TOKEN_DECIMALS
+              );
+
+              const displayAmount =
+                Number(amount).toLocaleString(
+                  undefined,
+                  {
+                    maximumFractionDigits: 6,
+                  }
+                );
+
+              const status = item.cancelled
+                ? "Canceled"
+                : item.redeemed
+                ? "Redeemed"
+                : "Active";
+
+              const isExpanded =
+                expandedBCodeHash === item.hash;
+
+              return (
+                <div
+                  key={item.hash}
+                  className="overflow-hidden rounded-[12px] border border-border bg-input"
+                >
+                  <div
+                    className={`group flex items-center gap-3 px-3 py-3 sm:px-4 ${
+                      isExpanded
+                        ? "-translate-x-[126px] sm:translate-x-0"
+                        : "translate-x-0"
+                    } transition-transform duration-200 sm:transform-none`}
+                    onClick={() => {
+                      if (
+                        window.matchMedia(
+                          "(max-width: 639px)"
+                        ).matches
+                      ) {
+                        setExpandedBCodeHash(
+                          isExpanded
+                            ? null
+                            : item.hash
+                        );
+                      }
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      {token ? (
+                        <Image
+                          src={token.logo}
+                          alt=""
+                          width={34}
+                          height={34}
+                          className="h-[34px] w-[34px] shrink-0 object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold">
+                          ?
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[14px] font-semibold">
+                            {displayAmount}{" "}
+                            {token?.symbol ?? "TOKEN"}
+                          </span>
+
+                          <span
+                            className={`shrink-0 text-[11px] ${
+                              item.cancelled ||
+                              item.redeemed
+                                ? "text-muted-foreground"
+                                : "text-primary"
+                            }`}
+                          >
+                            {status}
+                          </span>
+                        </div>
+
+                        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                          {item.code}
+                        </p>
+
+                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                          Base Sepolia
+                        </p>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`absolute right-3 flex shrink-0 items-center gap-1 sm:static sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 ${
+                        isExpanded
+                          ? "opacity-100"
+                          : "opacity-0 sm:opacity-0"
+                      }`}
+                    >
                       <button
                         type="button"
-                        onClick={() => {
-                          setRedeemState(
-                            "idle"
-                          );
-
-                          setRedeemStage(
-                            1
-                          );
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          copyMyBCode(item.code);
                         }}
-                        className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                        className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
+                        aria-label="Copy B-Code"
                       >
-                        Try again
+                        {copiedBCode === item.code ? (
+                          <Check className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
                       </button>
-                    </div>
-                  )}
 
-                  {/* ====================================================
-                      REDEEM STEP 1
-                  ==================================================== */}
-
-                  {redeemState ===
-                    "idle" &&
-                    redeemStep ===
-                      1 && (
-                      <>
-                        <label className="mb-2 block text-[13px] text-muted-foreground">
-                          Input B-Code
-                        </label>
-
-                        <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
-                          <span className="shrink-0 text-[17px] font-medium tracking-[0.06em]">
-                            B-
-                          </span>
-
-                          <input
-                            type="text"
-                            value={
-                              redeemInput
-                            }
-                            onChange={(
-                              e
-                            ) =>
-                              handleRedeemInput(
-                                e.target
-                                  .value
-                              )
-                            }
-                            placeholder="XXXX-XXXX"
-                            className="min-w-0 flex-1 bg-transparent text-[17px] tracking-[0.06em] outline-none placeholder:text-muted-foreground"
-                          />
-                        </div>
-
-                        {redeemError && (
-                          <p className="mt-3 text-[13px] text-destructive">
-                            {
-                              redeemError
-                            }
-                          </p>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={
-                            validateBCode
-                          }
-                          className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                        >
-                          Validate B-Code
-                        </button>
-                      </>
-                    )}
-
-                  {/* ====================================================
-                      REDEEM STEP 2
-                  ==================================================== */}
-
-                  {redeemState ===
-                    "idle" &&
-                    redeemStep ===
-                      2 && (
-                      <>
-                        <div className="rounded-[12px] bg-input p-5">
-                          <div className="space-y-3 text-[14px]">
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                B-Code
-                              </span>
-
-                              <span className="font-semibold">
-                                {
-                                  redeemCode
-                                }
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between gap-4">
-                              <span className="text-muted-foreground">
-                                Token
-                              </span>
-
-                              <span className="font-semibold">
-                                {
-                                  redeemToken
-                                }
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between gap-4 border-t border-border pt-3">
-                              <span className="text-muted-foreground">
-                                You receive
-                              </span>
-
-                              <span className="font-semibold">
-                                {
-                                  redeemAmount
-                                }{" "}
-                                {
-                                  redeemToken
-                                }
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-5">
-                          <label className="mb-2 block text-[14px] text-muted-foreground">
-                            Wallet address to
-                            receive funds
-                          </label>
-
-                          <input
-                            type="text"
-                            value={
-                              redeemRecipient
-                            }
-                            onChange={(
-                              event
-                            ) => {
-                              setRedeemRecipient(
-                                event.target
-                                  .value
-                              );
-
-                              setRedeemError(
-                                ""
-                              );
+                      {!item.redeemed &&
+                        !item.cancelled && (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setCancelHash(item.hash);
+                              setCancelError("");
+                              setExpandedBCodeHash(null);
                             }}
-                            placeholder="0x..."
-                            className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[14px] outline-none placeholder:text-muted-foreground"
-                          />
-                        </div>
-
-                        {redeemError && (
-                          <p className="mt-3 text-[13px] text-destructive">
-                            {
-                              redeemError
-                            }
-                          </p>
+                            className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
+                            aria-label="Cancel B-Code"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
                         )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+</div>
+</section>
 
-                        <div className="mt-5 flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setRedeemStep(
-                                1
-                              )
-                            }
-                            className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
-                          >
-                            Back
-                          </button>
+        {/* ====================================================
+            CANCEL B-CODE CONFIRMATION
+        ==================================================== */}
 
-                          <button
-                            type="button"
-                            onClick={
-                              handleRedeem
-                            }
-                            className="flex h-[56px] flex-[1.7] items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                          >
-                            Redeem B-Code
+        {cancelHash && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-[400px] rounded-[16px] border border-border bg-[#0B0B16] p-5 shadow-2xl sm:p-6">
+              <h2 className="text-[18px] font-semibold">
+                Cancel B-Code?
+              </h2>
+              <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                This will permanently mark the B-Code as cancelled and return the locked tokens to your wallet. You will need to approve a blockchain transaction.
+              </p>
 
-                            <ArrowRight className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </>
-                    )}
-                </>
+              {cancelError && (
+                <div className="mt-4 rounded-[10px] border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[12px] leading-5 text-destructive">
+                  {cancelError}
+                </div>
               )}
+
+              <div className="mt-5 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!cancelLoading) {
+                      setCancelHash(null);
+                      setCancelError("");
+                    }
+                  }}
+                  disabled={cancelLoading}
+                  className="flex h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary disabled:opacity-50"
+                >
+                  Keep B-Code
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCancelBCode}
+                  disabled={cancelLoading}
+                  className="flex h-[48px] flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {cancelLoading && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  {cancelLoading ? "Cancelling..." : "Cancel B-Code"}
+                </button>
+              </div>
             </div>
           </div>
-        </section>
+        )}
       </div>
     </main>
   );
@@ -8405,6 +8698,2550 @@ function loadImage(
   );
 }
 
+/************************************************************
+ * SWAP VIEW
+ ************************************************************/
+
+type SwapNetwork = {
+  chainId: number;
+  slug: string;
+  name: string;
+  symbol: string;
+  nativeToken: {
+    symbol: string;
+    name: string;
+    decimals: number;
+    address: string;
+    logoURI: string;
+    isNative: boolean;
+  };
+};
+
+type SwapToken = {
+  chainId: number;
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  logoURI: string | null;
+  isNative: boolean;
+};
+
+type SwapPriceResponse = {
+  success?: boolean;
+  chainId?: number;
+  sellToken?: string;
+  buyToken?: string;
+  quoteType?: "sell" | "buy";
+  sellAmount?: string | null;
+  buyAmount?: string | null;
+  maxSellAmount?: string | null;
+  liquidityAvailable?: boolean | null;
+  allowanceTarget?: string | null;
+
+  fees?: {
+    integratorFee?: {
+      amount?: string;
+      token?: string;
+      type?: string;
+    } | null;
+  } | null;
+
+  issues?: {
+    allowance?: {
+      actual?: string;
+      spender?: string;
+    } | null;
+
+    balance?: {
+      token?: string;
+      actual?: string;
+      expected?: string;
+    } | null;
+  } | null;
+};
+
+type SwapQuoteResponse = SwapPriceResponse & {
+  minBuyAmount?: string | null;
+
+  transaction?: {
+    to?: string;
+    data?: string;
+    value?: string;
+    gas?: string;
+    gasPrice?: string;
+  } | null;
+};
+
+/************************************************************
+ * SWAP TOKEN LOGO
+ ************************************************************/
+
+function SwapTokenLogo({
+  token,
+  size = 22,
+}: {
+  token: SwapToken | null;
+  size?: number;
+}) {
+  if (!token?.logoURI) {
+    return (
+      <div
+        className="flex shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-bold"
+        style={{
+          width: size,
+          height: size,
+        }}
+      >
+        {token?.symbol?.slice(0, 1) || "?"}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={token.logoURI}
+      alt=""
+      width={size}
+      height={size}
+      className="shrink-0 rounded-full object-contain"
+    />
+  );
+}
+
+/************************************************************
+ * SWAP NETWORK BUTTON
+ ************************************************************/
+
+function SwapNetworkButton({
+  network,
+  networks,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  network?: SwapNetwork | null;
+  networks: SwapNetwork[];
+  value: number | null;
+  onChange: (chainId: number) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  const current =
+    networks.find((item) => item.chainId === value) ?? network;
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      if (ref.current && !ref.current.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        disabled={disabled || networks.length === 0}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        className={`flex h-10 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-2.5 text-[13px] font-medium transition ${
+          disabled
+            ? "cursor-default opacity-60"
+            : "hover:bg-secondary"
+        }`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        {current ? (
+          <img
+            src={
+              current.slug === "base"
+                ? "/base-logo.svg"
+                : "/bsc-logo.svg"
+            }
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
+        ) : (
+          <div className="h-5 w-5 rounded-full bg-secondary" />
+        )}
+
+        <span className="hidden sm:inline">
+          {current?.name || "Network"}
+        </span>
+
+        {!disabled && (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-[80] w-[220px] overflow-hidden rounded-[11px] border border-border bg-[#070812] p-1.5 shadow-2xl">
+          {networks.map((item) => (
+            <button
+              key={item.chainId}
+              type="button"
+              onClick={() => {
+                onChange(item.chainId);
+                setOpen(false);
+              }}
+              className="flex w-full items-center justify-between rounded-[8px] px-3 py-2.5 text-left transition hover:bg-secondary"
+            >
+              <span className="flex items-center gap-2.5">
+                <img
+                  src={
+                    item.slug === "base"
+                      ? "/base-logo.svg"
+                      : "/bsc-logo.svg"
+                  }
+                  alt=""
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
+
+                <span className="text-[13px]">
+                  {item.name}
+                </span>
+              </span>
+
+              {value === item.chainId && (
+                <Check className="h-4 w-4 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/************************************************************
+ * SWAP TOKEN SELECTOR
+ *
+ * Network selector lives INSIDE the dropdown.
+ * SELL: network selector active.
+ * BUY: network selector disabled and follows SELL network.
+ ************************************************************/
+
+function SwapTokenSelector({
+  label,
+  token,
+  tokens,
+  loading,
+  search,
+  onSearchChange,
+  onSelect,
+  networks,
+  selectedNetwork,
+  onNetworkChange,
+  networkDisabled = false,
+  disabled = false,
+}: {
+  label: string;
+  token: SwapToken | null;
+  tokens: SwapToken[];
+  loading: boolean;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onSelect: (token: SwapToken) => void;
+  networks: SwapNetwork[];
+  selectedNetwork: SwapNetwork | null;
+  onNetworkChange?: (chainId: number) => void;
+  networkDisabled?: boolean;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      if (ref.current && !ref.current.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative min-w-0 shrink-0">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        className={`flex h-[52px] items-center gap-2 rounded-[9px] bg-[#10101B] px-3 transition ${
+          disabled
+            ? "cursor-default opacity-60"
+            : "hover:bg-[#151522]"
+        }`}
+        aria-expanded={open}
+      >
+        {token ? <SwapTokenLogo token={token} /> : null}
+
+        <span
+          className={
+            token
+              ? "text-[15px] font-semibold"
+              : "text-[15px] text-muted-foreground"
+          }
+        >
+          {token?.symbol || label}
+        </span>
+
+        {!disabled && (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute left-0 top-[calc(100%+8px)] z-[90] w-[min(390px,calc(100vw-40px))] overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+          {/* SEARCH + NETWORK */}
+          <div className="border-b border-border p-3">
+            <div className="flex items-center gap-2">
+              {/* SEARCH */}
+              <div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+
+                <input
+                  autoFocus
+                  type="text"
+                  value={search}
+                  onChange={(event) =>
+                    onSearchChange(event.target.value)
+                  }
+                  onClick={(event) =>
+                    event.stopPropagation()
+                  }
+                  placeholder="Search token"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+
+              {/* NETWORK */}
+              <SwapNetworkButton
+                networks={
+                  networkDisabled && selectedNetwork
+                    ? [selectedNetwork]
+                    : networks
+                }
+                value={selectedNetwork?.chainId ?? null}
+                network={selectedNetwork}
+                onChange={(chainId) =>
+                  onNetworkChange?.(chainId)
+                }
+                disabled={networkDisabled}
+              />
+            </div>
+          </div>
+
+          {/* TOKEN LIST */}
+          <div className="max-h-[300px] overflow-y-auto p-1.5">
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : tokens.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
+                No tokens found.
+              </div>
+            ) : (
+              tokens.map((item) => (
+                <button
+                  key={`${item.chainId}-${item.address}`}
+                  type="button"
+                  onClick={() => {
+                    onSelect(item);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-[8px] px-3 py-2.5 text-left transition hover:bg-secondary"
+                >
+                  <SwapTokenLogo
+                    token={item}
+                    size={32}
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-[14px] font-semibold">
+                        {item.symbol}
+                      </span>
+
+                      {token?.address?.toLowerCase() ===
+                        item.address.toLowerCase() && (
+                        <Check className="h-4 w-4 shrink-0 text-primary" />
+                      )}
+                    </div>
+
+                    <span className="block truncate text-[12px] text-muted-foreground">
+                      {item.name}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/********************************************************************************
+ * SWAP VIEW
+ ********************************************************************************/
+
+function SwapView({
+  onBackHome,
+}: {
+  onBackHome: () => void;
+}) {
+  const { authenticated } = usePrivy();
+  const { wallets } = useWallets();
+  const { sendTransaction } = useSendTransaction();
+  const wallet = wallets[0];
+
+  const [networks, setNetworks] = useState<SwapNetwork[]>([]);
+  const [networksLoading, setNetworksLoading] = useState(true);
+  const [networkError, setNetworkError] = useState("");
+
+  const [sellNetwork, setSellNetwork] =
+    useState<SwapNetwork | null>(null);
+
+  const [sellToken, setSellToken] =
+    useState<SwapToken | null>(null);
+
+  const [buyToken, setBuyToken] =
+    useState<SwapToken | null>(null);
+
+  const [sellAmount, setSellAmount] = useState("");
+  const [buyAmount, setBuyAmount] = useState("");
+
+  const [sellSearch, setSellSearch] = useState("");
+  const [buySearch, setBuySearch] = useState("");
+
+  const [sellTokens, setSellTokens] =
+    useState<SwapToken[]>([]);
+
+  const [buyTokens, setBuyTokens] =
+    useState<SwapToken[]>([]);
+
+  const [sellTokensLoading, setSellTokensLoading] =
+    useState(false);
+
+  const [buyTokensLoading, setBuyTokensLoading] =
+    useState(false);
+
+  const [price, setPrice] =
+    useState<SwapPriceResponse | null>(null);
+
+  const [priceLoading, setPriceLoading] =
+    useState(false);
+
+  const [priceError, setPriceError] = useState("");
+  const [swapError, setSwapError] = useState("");
+  const [swapLoading, setSwapLoading] = useState(false);
+
+  // ============================================================
+  // SWAP SUCCESS STATE
+  // ============================================================
+
+  const [swapSuccess, setSwapSuccess] =
+    useState(false);
+
+  const [successSellSymbol, setSuccessSellSymbol] =
+    useState("");
+
+  const [successBuySymbol, setSuccessBuySymbol] =
+    useState("");
+
+  const [successTxHash, setSuccessTxHash] =
+    useState("");
+
+  const [successChainId, setSuccessChainId] =
+    useState<number | null>(null);
+
+  // ============================================================
+  // SWAP SETTINGS
+  // ============================================================
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Stored as percentage.
+  // 0.5 = 0.5% = 50 bps.
+  const [slippageTolerance, setSlippageTolerance] =
+    useState("0.5");
+
+  const [slippageDraft, setSlippageDraft] =
+    useState("0.5");
+
+  const settingsRef =
+    useRef<HTMLDivElement | null>(null);
+
+  // ============================================================
+  // SWAP ARROW
+  // ============================================================
+
+  const [isReversing, setIsReversing] =
+    useState(false);
+
+  const lastEditedRef =
+    useRef<"sell" | "buy">("sell");
+
+  const priceRequestRef = useRef(0);
+  const lastPricedKeyRef = useRef("");
+
+  const sellTokenRequestRef = useRef(0);
+  const buyTokenRequestRef = useRef(0);
+
+  /*
+   * BUY network always follows SELL network.
+   */
+  const buyNetwork = sellNetwork;
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  const getTokenAmountUnits = (
+    value: string,
+    decimals: number
+  ) => {
+    if (
+      !value ||
+      !/^\d*(\.\d*)?$/.test(value) ||
+      value === "."
+    ) {
+      return null;
+    }
+
+    try {
+      return parseUnits(
+        value,
+        decimals
+      ).toString();
+    } catch {
+      return null;
+    }
+  };
+
+  const formatTokenAmount = (
+    units: string | null | undefined,
+    decimals: number
+  ) => {
+    if (!units) return "";
+
+    try {
+      const formatted = formatUnits(
+        BigInt(units),
+        decimals
+      );
+
+      const [whole, fraction = ""] =
+        formatted.split(".");
+
+      const trimmedFraction =
+        fraction.replace(/0+$/, "");
+
+      return trimmedFraction
+        ? `${whole}.${trimmedFraction.slice(0, 8)}`
+        : whole;
+    } catch {
+      return "";
+    }
+  };
+
+  /*
+   * Convert percentage into basis points.
+   *
+   * 0.1% = 10 bps
+   * 0.5% = 50 bps
+   * 1%   = 100 bps
+   */
+  const getSlippageBps = () => {
+    const value = Number(
+      slippageTolerance
+    );
+
+    if (!Number.isFinite(value)) {
+      return 50;
+    }
+
+    return Math.round(value * 100);
+  };
+
+  /*
+   * Explorer URL for supported networks.
+   */
+  const getExplorerTxUrl = (
+    chainId: number,
+    hash: string
+  ) => {
+    if (chainId === 8453) {
+      return `https://basescan.org/tx/${hash}`;
+    }
+
+    if (chainId === 56) {
+      return `https://bscscan.com/tx/${hash}`;
+    }
+
+    return "";
+  };
+
+  // ============================================================
+  // SETTINGS
+  // ============================================================
+
+  const openSwapSettings = () => {
+    setSlippageDraft(
+      slippageTolerance
+    );
+
+    setSettingsOpen(true);
+  };
+
+  const handleSlippageDraftChange = (
+    value: string
+  ) => {
+    if (!/^\d*(\.\d{0,2})?$/.test(value)) {
+      return;
+    }
+
+    setSlippageDraft(value);
+    setSwapError("");
+  };
+
+  const applySwapSettings = () => {
+    const value = Number(
+      slippageDraft
+    );
+
+    if (
+      !Number.isFinite(value) ||
+      value < 0.01 ||
+      value > 100
+    ) {
+      setSwapError(
+        "Slippage tolerance must be between 0.01% and 100%."
+      );
+
+      return;
+    }
+
+    const normalizedValue =
+      value.toString();
+
+    const changed =
+      normalizedValue !==
+      slippageTolerance;
+
+    setSlippageTolerance(
+      normalizedValue
+    );
+
+    setSlippageDraft(
+      normalizedValue
+    );
+
+    setSettingsOpen(false);
+
+    /*
+     * Only invalidate the quote if the
+     * slippage setting actually changed.
+     */
+    if (changed) {
+      clearPrice();
+    }
+
+    setSwapError("");
+  };
+
+  /*
+   * Close settings when clicking outside
+   * or pressing Escape.
+   */
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    const handleClickOutside = (
+      event: MouseEvent
+    ) => {
+      const target =
+        event.target as Node;
+
+      if (
+        settingsRef.current &&
+        !settingsRef.current.contains(target)
+      ) {
+        setSettingsOpen(false);
+      }
+    };
+
+    const handleEscape = (
+      event: KeyboardEvent
+    ) => {
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener(
+      "mousedown",
+      handleClickOutside
+    );
+
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClickOutside
+      );
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+    };
+  }, [settingsOpen]);
+
+  // ============================================================
+  // LOAD NETWORKS
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadNetworks = async () => {
+      setNetworksLoading(true);
+      setNetworkError("");
+
+      try {
+        const response = await fetch(
+          "/api/swap/networks",
+          {
+            cache: "no-store",
+          }
+        );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              "Unable to load swap networks."
+          );
+        }
+
+        const loaded =
+          Array.isArray(data?.networks)
+            ? data.networks
+            : [];
+
+        if (!cancelled) {
+          setNetworks(loaded);
+
+          const defaultNetwork =
+            loaded.find(
+              (network: SwapNetwork) =>
+                network.chainId === 8453
+            ) ??
+            loaded[0] ??
+            null;
+
+          setSellNetwork(
+            defaultNetwork
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setNetworkError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load swap networks."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setNetworksLoading(false);
+        }
+      }
+    };
+
+    loadNetworks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ============================================================
+  // LOAD TOKENS
+  // ============================================================
+
+  const loadTokens = async (
+    chainId: number,
+    search: string,
+    side: "sell" | "buy"
+  ) => {
+    const requestRef =
+      side === "sell"
+        ? sellTokenRequestRef
+        : buyTokenRequestRef;
+
+    const requestId =
+      ++requestRef.current;
+
+    if (side === "sell") {
+      setSellTokensLoading(true);
+    } else {
+      setBuyTokensLoading(true);
+    }
+
+    try {
+      const response = await fetch(
+        `/api/swap/tokens?chainId=${chainId}&search=${encodeURIComponent(
+          search
+        )}&limit=100`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to load tokens."
+        );
+      }
+
+      if (
+        requestId !==
+        requestRef.current
+      ) {
+        return;
+      }
+
+      const loaded =
+        Array.isArray(data?.tokens)
+          ? data.tokens
+          : [];
+
+      if (side === "sell") {
+        setSellTokens(loaded);
+      } else {
+        setBuyTokens(loaded);
+      }
+    } catch (error) {
+      if (
+        requestId !==
+        requestRef.current
+      ) {
+        return;
+      }
+
+      if (side === "sell") {
+        setSellTokens([]);
+      } else {
+        setBuyTokens([]);
+      }
+
+      console.error(
+        "SWAP TOKEN LOAD ERROR:",
+        error
+      );
+    } finally {
+      if (
+        requestId ===
+        requestRef.current
+      ) {
+        if (side === "sell") {
+          setSellTokensLoading(false);
+        } else {
+          setBuyTokensLoading(false);
+        }
+      }
+    }
+  };
+
+  // ============================================================
+  // SELL TOKENS
+  // ============================================================
+
+  useEffect(() => {
+    if (!sellNetwork) {
+      setSellTokens([]);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      loadTokens(
+        sellNetwork.chainId,
+        sellSearch,
+        "sell"
+      );
+    }, 250);
+
+    return () =>
+      clearTimeout(timeout);
+  }, [
+    sellNetwork?.chainId,
+    sellSearch,
+  ]);
+
+  // ============================================================
+  // BUY TOKENS
+  // ============================================================
+
+  useEffect(() => {
+    if (!buyNetwork) {
+      setBuyTokens([]);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      loadTokens(
+        buyNetwork.chainId,
+        buySearch,
+        "buy"
+      );
+    }, 250);
+
+    return () =>
+      clearTimeout(timeout);
+  }, [
+    buyNetwork?.chainId,
+    buySearch,
+  ]);
+
+  // ============================================================
+  // CLEAR PRICE
+  // ============================================================
+
+  const clearPrice = () => {
+    setPrice(null);
+    setPriceError("");
+    lastPricedKeyRef.current = "";
+  };
+
+  // ============================================================
+  // REQUEST PRICE
+  // ============================================================
+
+  const requestPrice = async () => {
+    if (
+      !sellNetwork ||
+      !sellToken ||
+      !buyToken
+    ) {
+      return;
+    }
+
+    const activeSide =
+      lastEditedRef.current;
+
+    const activeValue =
+      activeSide === "sell"
+        ? sellAmount
+        : buyAmount;
+
+    const activeToken =
+      activeSide === "sell"
+        ? sellToken
+        : buyToken;
+
+    const units =
+      getTokenAmountUnits(
+        activeValue,
+        activeToken.decimals
+      );
+
+    if (!units || units === "0") {
+      clearPrice();
+      return;
+    }
+
+    const priceKey =
+      `${activeSide}:${sellNetwork.chainId}:${sellToken.address.toLowerCase()}:${buyToken.address.toLowerCase()}:${activeValue}:${slippageTolerance}`;
+
+    if (
+      priceKey ===
+      lastPricedKeyRef.current
+    ) {
+      return;
+    }
+
+    lastPricedKeyRef.current =
+      priceKey;
+
+    const requestId =
+      ++priceRequestRef.current;
+
+    setPriceLoading(true);
+    setPriceError("");
+
+    try {
+      const response = await fetch(
+        "/api/swap/price",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            chainId:
+              sellNetwork.chainId,
+
+            sellToken:
+              sellToken.address,
+
+            buyToken:
+              buyToken.address,
+
+            ...(activeSide === "sell"
+              ? {
+                  sellAmount: units,
+                }
+              : {
+                  buyAmount: units,
+                }),
+
+            taker:
+              wallet?.address,
+          }),
+        }
+      );
+
+      const data: SwapPriceResponse & {
+        error?: string;
+      } = await response.json();
+
+      if (
+        requestId !==
+        priceRequestRef.current
+      ) {
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            "Unable to get swap price."
+        );
+      }
+
+      if (
+        data.liquidityAvailable ===
+        false
+      ) {
+        throw new Error(
+          "No liquidity available for this token pair."
+        );
+      }
+
+      setPrice(data);
+
+      if (activeSide === "sell") {
+        setBuyAmount(
+          formatTokenAmount(
+            data.buyAmount,
+            buyToken.decimals
+          )
+        );
+      } else {
+        setSellAmount(
+          formatTokenAmount(
+            data.maxSellAmount ??
+              data.sellAmount,
+            sellToken.decimals
+          )
+        );
+      }
+    } catch (error) {
+      if (
+        requestId !==
+        priceRequestRef.current
+      ) {
+        return;
+      }
+
+      setPrice(null);
+      lastPricedKeyRef.current = "";
+
+      setPriceError(
+        error instanceof Error
+          ? error.message
+          : "Unable to get swap price."
+      );
+    } finally {
+      if (
+        requestId ===
+        priceRequestRef.current
+      ) {
+        setPriceLoading(false);
+      }
+    }
+  };
+
+  // ============================================================
+  // PRICE EFFECT
+  // ============================================================
+
+  useEffect(() => {
+    if (
+      !sellNetwork ||
+      !sellToken ||
+      !buyToken
+    ) {
+      return;
+    }
+
+    const activeValue =
+      lastEditedRef.current === "sell"
+        ? sellAmount
+        : buyAmount;
+
+    if (
+      !activeValue ||
+      Number(activeValue) <= 0
+    ) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      requestPrice();
+    }, 450);
+
+    return () =>
+      clearTimeout(timeout);
+  }, [
+    sellAmount,
+    buyAmount,
+    sellToken?.address,
+    buyToken?.address,
+    sellNetwork?.chainId,
+    slippageTolerance,
+  ]);
+
+  // ============================================================
+  // SELL NETWORK CHANGE
+  // ============================================================
+
+  const handleSellNetworkChange = (
+    chainId: number
+  ) => {
+    const next =
+      networks.find(
+        (item) =>
+          item.chainId === chainId
+      ) ?? null;
+
+    setSellNetwork(next);
+
+    setSellToken(null);
+    setBuyToken(null);
+
+    setSellAmount("");
+    setBuyAmount("");
+
+    setSellSearch("");
+    setBuySearch("");
+
+    clearPrice();
+    setSwapError("");
+
+    lastEditedRef.current =
+      "sell";
+  };
+
+  // ============================================================
+  // SELL TOKEN CHANGE
+  // ============================================================
+
+  const handleSellTokenSelect = (
+    token: SwapToken
+  ) => {
+    setSellToken(token);
+
+    setBuyToken(null);
+
+    setSellAmount("");
+    setBuyAmount("");
+
+    setSellSearch("");
+    setBuySearch("");
+
+    clearPrice();
+    setSwapError("");
+
+    lastEditedRef.current =
+      "sell";
+  };
+
+  // ============================================================
+  // BUY TOKEN CHANGE
+  // ============================================================
+
+  const handleBuyTokenSelect = (
+    token: SwapToken
+  ) => {
+    setBuyToken(token);
+
+    setBuyAmount("");
+    setBuySearch("");
+
+    clearPrice();
+    setSwapError("");
+
+    if (sellAmount) {
+      lastEditedRef.current =
+        "sell";
+    }
+  };
+
+  // ============================================================
+  // SELL AMOUNT
+  // ============================================================
+
+  const handleSellAmountChange = (
+    value: string
+  ) => {
+    if (
+      !/^\d*(\.\d*)?$/.test(value)
+    ) {
+      return;
+    }
+
+    lastEditedRef.current =
+      "sell";
+
+    setSellAmount(value);
+    setSwapError("");
+
+    if (!value) {
+      setBuyAmount("");
+      clearPrice();
+    }
+  };
+
+  // ============================================================
+  // BUY AMOUNT
+  // ============================================================
+
+  const handleBuyAmountChange = (
+    value: string
+  ) => {
+    if (
+      !/^\d*(\.\d*)?$/.test(value)
+    ) {
+      return;
+    }
+
+    lastEditedRef.current =
+      "buy";
+
+    setBuyAmount(value);
+    setSwapError("");
+
+    if (!value) {
+      setSellAmount("");
+      clearPrice();
+    }
+  };
+
+  // ============================================================
+  // REVERSE SWAP
+  // ============================================================
+
+  const handleReverseSwap = () => {
+    /*
+     * Prevent multiple clicks while the reversal
+     * is being processed.
+     */
+    if (isReversing) {
+      return;
+    }
+
+    /*
+     * There is nothing to reverse if neither token
+     * has been selected.
+     */
+    if (!sellToken && !buyToken) {
+      return;
+    }
+
+    setIsReversing(true);
+
+    /*
+     * Use the currently displayed amounts.
+     */
+    const currentSellToken =
+      sellToken;
+
+    const currentBuyToken =
+      buyToken;
+
+    const currentSellAmount =
+      displayedSellAmount;
+
+    const currentBuyAmount =
+      displayedBuyAmount;
+
+    /*
+     * Swap the tokens.
+     */
+    setSellToken(
+      currentBuyToken
+    );
+
+    setBuyToken(
+      currentSellToken
+    );
+
+    /*
+     * Swap the amounts.
+     */
+    setSellAmount(
+      currentBuyAmount
+    );
+
+    setBuyAmount(
+      currentSellAmount
+    );
+
+    /*
+     * Searches are reset because the selected
+     * tokens have changed sides.
+     */
+    setSellSearch("");
+    setBuySearch("");
+
+    /*
+     * The newly reversed Sell amount is now
+     * the source amount.
+     */
+    lastEditedRef.current =
+      "sell";
+
+    /*
+     * The previous quote is no longer valid.
+     */
+    clearPrice();
+    setPriceError("");
+    setSwapError("");
+
+    /*
+     * Small visual feedback for the arrow.
+     */
+    setTimeout(() => {
+      setIsReversing(false);
+    }, 180);
+  };
+
+  // ============================================================
+  // ACTIVE SELL UNITS
+  // ============================================================
+
+  const getActiveSellUnits = () => {
+    if (!sellToken) {
+      return null;
+    }
+
+    if (
+      lastEditedRef.current === "buy"
+    ) {
+      return (
+        price?.maxSellAmount ??
+        null
+      );
+    }
+
+    return getTokenAmountUnits(
+      sellAmount,
+      sellToken.decimals
+    );
+  };
+
+  // ============================================================
+  // EXECUTE SWAP
+  // ============================================================
+
+  const executeSwap = async () => {
+    if (
+      !sellNetwork ||
+      !sellToken ||
+      !buyToken ||
+      !wallet?.address
+    ) {
+      setSwapError(
+        "Connect your wallet and complete both token fields first."
+      );
+
+      return;
+    }
+
+    if (!price) {
+      setSwapError(
+        "Get a swap price before continuing."
+      );
+
+      return;
+    }
+
+    const activeSellUnits =
+      getActiveSellUnits();
+
+    if (
+      !activeSellUnits ||
+      activeSellUnits === "0"
+    ) {
+      setSwapError(
+        "Enter a valid amount."
+      );
+
+      return;
+    }
+
+    setSwapLoading(true);
+    setSwapError("");
+
+    const slippageBps =
+      getSlippageBps();
+
+    try {
+      /*
+       * Switch wallet to SELL network.
+       */
+      if (wallet.switchChain) {
+        await wallet.switchChain(
+          sellNetwork.chainId
+        );
+      }
+
+      /*
+       * Get the public client for the
+       * current network.
+       *
+       * This is also used later to wait for
+       * the swap transaction to be mined.
+       */
+      const publicClient =
+        getPublicClient(
+          sellNetwork.chainId ===
+            BSC_CHAIN_ID
+            ? "bnb-smart-chain"
+            : "base"
+        );
+
+      /*
+       * Request quote.
+       */
+      const quoteResponse =
+        await fetch(
+          "/api/swap/quote",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              chainId:
+                sellNetwork.chainId,
+
+              sellToken:
+                sellToken.address,
+
+              buyToken:
+                buyToken.address,
+
+              taker:
+                wallet.address,
+
+              slippageBps,
+
+              ...(lastEditedRef.current ===
+              "buy"
+                ? {
+                    buyAmount:
+                      getTokenAmountUnits(
+                        buyAmount,
+                        buyToken.decimals
+                      ),
+                  }
+                : {
+                    sellAmount:
+                      activeSellUnits,
+                  }),
+            }),
+          }
+        );
+
+      const quoteData: SwapQuoteResponse & {
+        error?: string;
+      } = await quoteResponse.json();
+
+      if (!quoteResponse.ok) {
+        throw new Error(
+          quoteData?.error ||
+            "Unable to prepare swap transaction."
+        );
+      }
+
+      /*
+       * Balance check.
+       */
+      const balanceIssue =
+        quoteData.issues?.balance;
+
+      if (balanceIssue) {
+        const actual =
+          formatTokenAmount(
+            balanceIssue.actual,
+            sellToken.decimals
+          );
+
+        const expected =
+          formatTokenAmount(
+            balanceIssue.expected,
+            sellToken.decimals
+          );
+
+        throw new Error(
+          `Insufficient ${sellToken.symbol} balance. Available: ${
+            actual || "0"
+          }. Required: ${
+            expected || "more"
+          }.`
+        );
+      }
+
+      const transaction =
+        quoteData.transaction;
+
+      if (
+        !transaction?.to ||
+        !transaction.data
+      ) {
+        throw new Error(
+          "0x did not return a valid swap transaction."
+        );
+      }
+
+      const requiredSellUnits =
+        lastEditedRef.current === "buy"
+          ? quoteData.maxSellAmount ??
+            activeSellUnits
+          : quoteData.sellAmount ??
+            activeSellUnits;
+
+      /*
+       * ERC-20 approval.
+       */
+      if (!sellToken.isNative) {
+        const spender =
+          quoteData.allowanceTarget ||
+          quoteData.issues?.allowance
+            ?.spender;
+
+        if (!spender) {
+          throw new Error(
+            "0x did not return an allowance target."
+          );
+        }
+
+        const allowance =
+          await publicClient.readContract({
+            address:
+              sellToken.address as `0x${string}`,
+
+            abi: erc20Abi,
+
+            functionName:
+              "allowance",
+
+            args: [
+              wallet.address as `0x${string}`,
+              spender as `0x${string}`,
+            ],
+          });
+
+        if (
+          allowance <
+          BigInt(requiredSellUnits)
+        ) {
+          const approvalData =
+            encodeFunctionData({
+              abi: erc20Abi,
+
+              functionName:
+                "approve",
+
+              args: [
+                spender as `0x${string}`,
+                maxUint256,
+              ],
+            });
+
+          const approvalResult =
+            await sendTransaction(
+              {
+                to: sellToken.address as `0x${string}`,
+
+                data: approvalData,
+
+                value: BigInt(0),
+
+                chainId:
+                  sellNetwork.chainId,
+              },
+              {
+                address:
+                  wallet.address,
+              }
+            );
+
+          if (
+            !approvalResult?.hash
+          ) {
+            throw new Error(
+              "Token approval was not submitted."
+            );
+          }
+
+          /*
+           * Wait for approval to be mined
+           * before continuing.
+           */
+          const approvalReceipt =
+            await publicClient.waitForTransactionReceipt(
+              {
+                hash:
+                  approvalResult.hash,
+
+                confirmations: 1,
+              }
+            );
+
+          if (
+            approvalReceipt.status !==
+            "success"
+          ) {
+            throw new Error(
+              "Token approval transaction failed."
+            );
+          }
+        }
+      }
+
+      /*
+       * Refresh quote after approval.
+       */
+      const finalQuoteResponse =
+        await fetch(
+          "/api/swap/quote",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              chainId:
+                sellNetwork.chainId,
+
+              sellToken:
+                sellToken.address,
+
+              buyToken:
+                buyToken.address,
+
+              taker:
+                wallet.address,
+
+              slippageBps,
+
+              ...(lastEditedRef.current ===
+              "buy"
+                ? {
+                    buyAmount:
+                      getTokenAmountUnits(
+                        buyAmount,
+                        buyToken.decimals
+                      ),
+                  }
+                : {
+                    sellAmount:
+                      getTokenAmountUnits(
+                        sellAmount,
+                        sellToken.decimals
+                      ),
+                  }),
+            }),
+          }
+        );
+
+      const finalQuote:
+        SwapQuoteResponse & {
+          error?: string;
+        } =
+        await finalQuoteResponse.json();
+
+      if (
+        !finalQuoteResponse.ok
+      ) {
+        throw new Error(
+          finalQuote?.error ||
+            "Unable to refresh swap transaction."
+        );
+      }
+
+      if (
+        finalQuote.issues?.balance
+      ) {
+        throw new Error(
+          "Insufficient token balance for this swap."
+        );
+      }
+
+      if (
+        !finalQuote.transaction?.to ||
+        !finalQuote.transaction.data
+      ) {
+        throw new Error(
+          "0x did not return a valid swap transaction."
+        );
+      }
+
+      /*
+       * Capture the symbols before waiting for
+       * the transaction.
+       *
+       * This ensures the success modal always
+       * shows the tokens involved in this swap.
+       */
+      const completedSellSymbol =
+        sellToken.symbol;
+
+      const completedBuySymbol =
+        buyToken.symbol;
+
+      /*
+       * Send swap transaction.
+       */
+      const swapResult =
+        await sendTransaction(
+          {
+            to: finalQuote.transaction
+              .to as `0x${string}`,
+
+            data: finalQuote.transaction
+              .data as `0x${string}`,
+
+            value: BigInt(
+              finalQuote.transaction.value ??
+                "0"
+            ),
+
+            chainId:
+              sellNetwork.chainId,
+          },
+          {
+            address:
+              wallet.address,
+          }
+        );
+
+      const transactionHash =
+        swapResult?.hash;
+
+      if (!transactionHash) {
+        throw new Error(
+          "Swap transaction was not submitted."
+        );
+      }
+
+      /*
+       * IMPORTANT:
+       *
+       * Do NOT show the success modal yet.
+       *
+       * Wait until the transaction has actually
+       * been mined and confirmed.
+       */
+      const swapReceipt =
+        await publicClient.waitForTransactionReceipt(
+          {
+            hash: transactionHash,
+            confirmations: 1,
+          }
+        );
+
+      /*
+       * If the transaction was reverted,
+       * never show the success modal.
+       */
+      if (
+        swapReceipt.status !==
+        "success"
+      ) {
+        throw new Error(
+          "Swap transaction failed."
+        );
+      }
+
+      /*
+       * Transaction is now successfully mined.
+       *
+       * Only now do we switch the existing swap card
+       * into its success state.
+       */
+      setSuccessTxHash(
+        transactionHash
+      );
+
+      setSuccessChainId(
+        sellNetwork.chainId
+      );
+
+      setSuccessSellSymbol(
+        completedSellSymbol
+      );
+
+      setSuccessBuySymbol(
+        completedBuySymbol
+      );
+
+      setPrice(finalQuote);
+      setSwapError("");
+      setSwapSuccess(true);
+    } catch (error) {
+      console.error(
+        "SWAP ERROR:",
+        error
+      );
+
+      setSwapError(
+        error instanceof Error
+          ? error.message
+          : "Swap failed. Please try again."
+      );
+    } finally {
+      setSwapLoading(false);
+    }
+  };
+
+  // ============================================================
+  // DISPLAY VALUES
+  // ============================================================
+
+  const activeSellUnits =
+    getActiveSellUnits();
+
+  const hasAmount = Boolean(
+    activeSellUnits &&
+      activeSellUnits !== "0"
+  );
+
+  const readyForPrice = Boolean(
+    sellNetwork &&
+      sellToken &&
+      buyToken &&
+      hasAmount
+  );
+
+  const canSwap = Boolean(
+    authenticated &&
+      wallet?.address &&
+      readyForPrice &&
+      price &&
+      !priceLoading
+  );
+
+  const displayedSellAmount =
+    lastEditedRef.current === "buy"
+      ? formatTokenAmount(
+          price?.maxSellAmount ??
+            price?.sellAmount,
+          sellToken?.decimals ?? 18
+        )
+      : sellAmount;
+
+  const displayedBuyAmount =
+    lastEditedRef.current === "sell"
+      ? formatTokenAmount(
+          price?.buyAmount,
+          buyToken?.decimals ?? 18
+        ) || buyAmount
+      : buyAmount;
+
+  const rate = (() => {
+    if (
+      !price ||
+      !sellToken ||
+      !buyToken
+    ) {
+      return "";
+    }
+
+    try {
+      const sellUnits =
+        BigInt(
+          price.sellAmount ??
+            price.maxSellAmount ??
+            "0"
+        );
+
+      const buyUnits =
+        BigInt(
+          price.buyAmount ??
+            "0"
+        );
+
+      if (
+        sellUnits === BigInt(0) ||
+        buyUnits === BigInt(0)
+      ) {
+        return "";
+      }
+
+      const sellHuman =
+        Number(
+          formatUnits(
+            sellUnits,
+            sellToken.decimals
+          )
+        );
+
+      const buyHuman =
+        Number(
+          formatUnits(
+            buyUnits,
+            buyToken.decimals
+          )
+        );
+
+      if (
+        !Number.isFinite(
+          sellHuman
+        ) ||
+        sellHuman <= 0
+      ) {
+        return "";
+      }
+
+      return (
+        buyHuman / sellHuman
+      ).toLocaleString(
+        undefined,
+        {
+          maximumFractionDigits: 8,
+        }
+      );
+    } catch {
+      return "";
+    }
+  })();
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-[#050511]">
+      <Background />
+
+      <div className="relative z-10 min-h-screen">
+        <SiteNav
+          activeTab="swap"
+          onQuickPort={onBackHome}
+          onBCodes={onBackHome}
+          onSwap={() => {}}
+        />
+
+        <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
+          <div className="w-full max-w-[590px]">
+            <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
+              {swapSuccess ? (
+                <div
+                  className="flex flex-col items-center justify-center text-center"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                          <Check className="h-6 w-6 text-white" />
+                        </div>
+                      </div>
+
+                  <h2 className="mt-5 text-[24px] font-semibold tracking-[-0.03em]">
+                    Swap success
+                  </h2>
+
+                  <p className="mt-2 max-w-[320px] text-[14px] leading-5 text-muted-foreground">
+                    You have successfully swapped{" "}
+                    <span className="font-medium text-foreground">
+                      {successSellSymbol}
+                    </span>{" "}
+                    for{" "}
+                    <span className="font-medium text-foreground">
+                      {successBuySymbol}
+                    </span>
+                    .
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSwapSuccess(false);
+                      setSuccessTxHash("");
+                      setSuccessChainId(null);
+                      setSuccessSellSymbol("");
+                      setSuccessBuySymbol("");
+
+                      setSellToken(null);
+                      setBuyToken(null);
+                      setSellAmount("");
+                      setBuyAmount("");
+                      setSellSearch("");
+                      setBuySearch("");
+                      setSellTokens([]);
+                      setBuyTokens([]);
+                      clearPrice();
+                      setSwapError("");
+                      setPriceError("");
+                      setSettingsOpen(false);
+
+                      lastEditedRef.current = "sell";
+                    }}
+                    className="mt-7 flex h-11 w-full items-center justify-center rounded-[9px] bg-primary text-[14px] font-semibold text-primary-foreground transition hover:opacity-90"
+                  >
+                    Swap again
+                  </button>
+
+                  {successTxHash && successChainId ? (
+                    <a
+                      href={getExplorerTxUrl(
+                        successChainId,
+                        successTxHash
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 text-[14px] font-medium text-primary transition hover:opacity-80"
+                    >
+                      View on explorer
+                    </a>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+              <div className="mb-6 flex items-center justify-between">
+                <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
+                  Swap
+                </h1>
+
+                <div
+                  ref={settingsRef}
+                  className="relative"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (settingsOpen) {
+                        setSettingsOpen(false);
+                      } else {
+                        openSwapSettings();
+                      }
+                    }}
+                    className={`flex h-9 w-9 items-center justify-center rounded-[9px] transition ${
+                      settingsOpen
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    }`}
+                    aria-label="Swap settings"
+                    title="Swap settings"
+                    aria-expanded={
+                      settingsOpen
+                    }
+                    aria-haspopup="dialog"
+                  >
+                    <Settings className="h-[18px] w-[18px]" />
+                  </button>
+
+                  {settingsOpen ? (
+                    <div
+                      role="dialog"
+                      aria-label="Swap settings"
+                      className="absolute right-0 top-[calc(100%+10px)] z-[70] w-[290px] rounded-[14px] border border-border bg-[#070812] p-4 shadow-2xl"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[14px] font-semibold">
+                            Swap settings
+                          </p>
+
+                          <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+                            Set the maximum price movement you are willing to accept.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSettingsOpen(false)
+                          }
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                          aria-label="Close settings"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="mt-5">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[13px] font-medium">
+                            Slippage tolerance
+                          </span>
+
+                          <span className="text-[12px] text-muted-foreground">
+                            {slippageTolerance}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            "0.1",
+                            "0.5",
+                            "1",
+                          ].map(
+                            (value) => {
+                              const active =
+                                Number(
+                                  slippageDraft
+                                ) ===
+                                Number(
+                                  value
+                                );
+
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => {
+                                    setSlippageDraft(
+                                      value
+                                    );
+                                    setSwapError("");
+                                  }}
+                                  className={`h-9 rounded-[8px] border text-[12px] font-medium transition ${
+                                    active
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-border bg-secondary text-muted-foreground hover:text-foreground"
+                                  }`}
+                                >
+                                  {value}%
+                                </button>
+                              );
+                            }
+                          )}
+                        </div>
+
+                        <div className="relative mt-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={
+                              slippageDraft
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              handleSlippageDraftChange(
+                                event.target
+                                  .value
+                              )
+                            }
+                            placeholder="Custom"
+                            className="h-10 w-full rounded-[8px] border border-border bg-[#050511] px-3 pr-8 text-[13px] outline-none transition focus:border-primary"
+                            aria-label="Custom slippage tolerance"
+                          />
+
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted-foreground">
+                            %
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                          Higher slippage can allow a swap to execute during larger price movements.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={
+                            applySwapSettings
+                          }
+                          className="mt-4 h-10 w-full rounded-[8px] bg-primary text-[13px] font-semibold text-primary-foreground transition hover:opacity-90"
+                        >
+                          Apply settings
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {networkError ? (
+                <div className="mb-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                  {networkError}
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  SELL
+              ================================================== */}
+
+              <div className="rounded-[14px] bg-[#10101B] p-2">
+                <div className="mb-1 flex items-center justify-between px-2 py-1.5">
+                  <span className="text-[14px] font-medium">
+                    Sell
+                  </span>
+
+                  <span className="text-[13px] text-muted-foreground">
+                    {sellToken
+                      ? `Balance: ${sellToken.symbol}`
+                      : "Balance: --"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-[10px] bg-[#050511] p-2">
+                  <SwapTokenSelector
+                    label="Select token"
+                    token={sellToken}
+                    tokens={sellTokens}
+                    loading={
+                      sellTokensLoading ||
+                      networksLoading
+                    }
+                    search={sellSearch}
+                    onSearchChange={
+                      setSellSearch
+                    }
+                    onSelect={
+                      handleSellTokenSelect
+                    }
+                    networks={networks}
+                    selectedNetwork={
+                      sellNetwork
+                    }
+                    onNetworkChange={
+                      handleSellNetworkChange
+                    }
+                    networkDisabled={
+                      networksLoading
+                    }
+                    disabled={
+                      networksLoading
+                    }
+                  />
+
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={
+                      displayedSellAmount
+                    }
+                    onChange={(event) =>
+                      handleSellAmountChange(
+                        event.target.value
+                      )
+                    }
+                    placeholder="0"
+                    className="min-w-0 flex-1 bg-transparent px-2 text-right text-[24px] font-semibold outline-none placeholder:text-muted-foreground/50"
+                  />
+                </div>
+              </div>
+
+              {/* ==================================================
+                  SWAP ARROW
+              ================================================== */}
+
+              <div className="relative z-10 -my-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={
+                    handleReverseSwap
+                  }
+                  disabled={
+                    isReversing ||
+                    (!sellToken &&
+                      !buyToken)
+                  }
+                  aria-label="Reverse swap"
+                  title="Reverse swap"
+                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-border bg-[#10101B] text-foreground transition hover:bg-[#181824] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ArrowLeftRight
+                    className={`h-4 w-4 transition-transform duration-180 ${
+                      isReversing
+                        ? "rotate-180"
+                        : ""
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* ==================================================
+                  BUY
+              ================================================== */}
+
+              <div className="rounded-[14px] bg-[#10101B] p-2">
+                <div className="mb-1 flex items-center justify-between px-2 py-1.5">
+                  <span className="text-[14px] font-medium">
+                    Buy
+                  </span>
+
+                  <span className="text-[13px] text-muted-foreground">
+                    {buyToken
+                      ? `Balance: ${buyToken.symbol}`
+                      : "Balance: --"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-[10px] bg-[#050511] p-2">
+                  <SwapTokenSelector
+                    label="Select token"
+                    token={buyToken}
+                    tokens={buyTokens}
+                    loading={
+                      buyTokensLoading
+                    }
+                    search={buySearch}
+                    onSearchChange={
+                      setBuySearch
+                    }
+                    onSelect={
+                      handleBuyTokenSelect
+                    }
+                    networks={
+                      buyNetwork
+                        ? [buyNetwork]
+                        : []
+                    }
+                    selectedNetwork={
+                      buyNetwork
+                    }
+                    networkDisabled
+                    disabled={
+                      !sellNetwork ||
+                      !sellToken
+                    }
+                  />
+
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={
+                      displayedBuyAmount
+                    }
+                    onChange={(event) =>
+                      handleBuyAmountChange(
+                        event.target.value
+                      )
+                    }
+                    placeholder="0"
+                    className="min-w-0 flex-1 bg-transparent px-2 text-right text-[24px] font-semibold outline-none placeholder:text-muted-foreground/50"
+                  />
+                </div>
+              </div>
+
+              {/* ==================================================
+                  PRICE LOADING
+              ================================================== */}
+
+              {priceLoading &&
+              readyForPrice ? (
+                <div className="mt-4 flex items-center justify-center gap-2 text-[13px] text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Getting best rate...
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  PRICE ERROR
+              ================================================== */}
+
+              {priceError ? (
+                <div className="mt-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                  {priceError}
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  RATE
+              ================================================== */}
+
+              {price &&
+              !priceLoading &&
+              !priceError ? (
+                <div className="mt-4 rounded-[10px] border border-border bg-[#070812] p-3.5">
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="text-muted-foreground">
+                      Rate
+                    </span>
+
+                    <span className="font-medium">
+                      1{" "}
+                      {sellToken?.symbol}{" "}
+                      ≈{" "}
+                      {rate}{" "}
+                      {buyToken?.symbol}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-[13px]">
+                    <span className="text-muted-foreground">
+                      Biyaport fee
+                    </span>
+
+                    <span className="font-medium">
+                      0.25%
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-[13px]">
+                    <span className="text-muted-foreground">
+                      Slippage tolerance
+                    </span>
+
+                    <span className="font-medium">
+                      {slippageTolerance}%
+                    </span>
+                  </div>
+
+                  {price.issues?.balance ? (
+                    <div className="mt-3 text-[12px] text-destructive">
+                      Insufficient{" "}
+                      {sellToken?.symbol}{" "}
+                      balance for this amount.
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  SWAP ERROR
+              ================================================== */}
+
+              {swapError ? (
+                <div className="mt-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                  {swapError}
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  WALLET
+              ================================================== */}
+
+              {!authenticated ||
+              !wallet?.address ? (
+                <div className="mt-5 rounded-[10px] border border-border bg-[#070812] p-3 text-center text-[13px] text-muted-foreground">
+                  Connect your wallet to swap.
+                </div>
+              ) : null}
+
+              {/* ==================================================
+                  SWAP BUTTON
+              ================================================== */}
+
+              <button
+                type="button"
+                disabled={
+                  !canSwap ||
+                  swapLoading
+                }
+                onClick={
+                  executeSwap
+                }
+                className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {swapLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+
+                    {sellToken?.isNative
+                      ? "Confirm swap"
+                      : "Preparing swap"}
+                  </>
+                ) : !sellNetwork ||
+                  !sellToken ||
+                  !buyToken ? (
+                  "Select tokens to swap"
+                ) : !hasAmount ? (
+                  "Enter an amount"
+                ) : !price ? (
+                  "Get swap rate"
+                ) : !authenticated ||
+                  !wallet?.address ? (
+                  "Connect wallet"
+                ) : (
+                  "Swap"
+                )}
+              </button>
+
+              <p className="mt-3 text-center text-[11px] leading-5 text-muted-foreground">
+                Same-network swaps only. The
+                wallet will ask you to approve an
+                ERC-20 token first when required,
+                then sign the swap transaction.
+              </p>
+
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/********************************************************************************
+ * SHARED NETWORK SELECTOR
+ *
+ * IMPORTANT:
+ * Used by Quick Port and B-Codes.
+ ********************************************************************************/
+
 function NetworkSelector({
   value,
   onChange,
@@ -8417,22 +11254,46 @@ function NetworkSelector({
   const current = getNetworkConfig(value);
 
   useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (ref.current && !ref.current.contains(target)) {
+    const handleClick = (
+      event: MouseEvent
+    ) => {
+      const target =
+        event.target as Node;
+
+      if (
+        ref.current &&
+        !ref.current.contains(target)
+      ) {
         setOpen(false);
       }
     };
 
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener(
+      "mousedown",
+      handleClick
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleClick
+      );
+    };
   }, []);
 
   return (
-    <div ref={ref} className="relative shrink-0">
+    <div
+      ref={ref}
+      className="relative shrink-0"
+    >
       <button
         type="button"
-        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        onClick={() =>
+          setOpen(
+            (currentOpen) =>
+              !currentOpen
+          )
+        }
         className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3 text-[14px] font-medium"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -8444,10 +11305,16 @@ function NetworkSelector({
           height={20}
           className="h-5 w-5 object-contain"
         />
-        <span className="hidden sm:inline">{current.shortName}</span>
+
+        <span className="hidden sm:inline">
+          {current.shortName}
+        </span>
+
         <ChevronDown
           className={`h-4 w-4 text-muted-foreground transition-transform ${
-            open ? "rotate-180" : ""
+            open
+              ? "rotate-180"
+              : ""
           }`}
         />
       </button>
@@ -8457,33 +11324,47 @@ function NetworkSelector({
           role="listbox"
           className="absolute right-0 top-[calc(100%+8px)] z-[60] w-[220px] overflow-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 shadow-2xl"
         >
-          {NETWORKS.map((network) => (
-            <button
-              key={network.key}
-              type="button"
-              role="option"
-              aria-selected={value === network.key}
-              onClick={() => {
-                onChange(network.key);
-                setOpen(false);
-              }}
-              className="flex w-full items-center justify-between rounded-[8px] px-3 py-2.5 text-left transition hover:bg-secondary"
-            >
-              <span className="flex items-center gap-2.5">
-                <Image
-                  src={network.logo}
-                  alt=""
-                  width={20}
-                  height={20}
-                  className="h-5 w-5 object-contain"
-                />
-                <span className="text-[13px]">{network.name}</span>
-              </span>
-              {value === network.key && (
-                <Check className="h-4 w-4 text-primary" />
-              )}
-            </button>
-          ))}
+          {NETWORKS.map(
+            (
+              network: NetworkConfig
+            ) => (
+              <button
+                key={network.key}
+                type="button"
+                role="option"
+                aria-selected={
+                  value ===
+                  network.key
+                }
+                onClick={() => {
+                  onChange(
+                    network.key
+                  );
+                  setOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-[8px] px-3 py-2.5 text-left transition hover:bg-secondary"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Image
+                    src={network.logo}
+                    alt=""
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
+
+                  <span className="text-[13px]">
+                    {network.name}
+                  </span>
+                </span>
+
+                {value ===
+                  network.key && (
+                  <Check className="h-4 w-4 text-primary" />
+                )}
+              </button>
+            )
+          )}
         </div>
       )}
     </div>
@@ -8497,15 +11378,19 @@ function NetworkSelector({
  */
 
 function SiteNav({
+  activeTab = "quick-port",
   onQuickPort,
   onBCodes,
+  onSwap,
 }: {
+  activeTab?: "quick-port" | "b-codes" | "swap" | "history";
   onQuickPort?: () => void;
   onBCodes?: () => void;
+  onSwap?: () => void;
 }) {
   const [activeMobileTab, setActiveMobileTab] = useState<
     "quick-port" | "b-codes" | "swap" | "history"
-  >("quick-port");
+  >(activeTab);
 
   return (
     <>
@@ -8551,8 +11436,11 @@ function SiteNav({
 
             <button
               type="button"
-              disabled
-              className="cursor-default rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground"
+              onClick={() => {
+                setActiveMobileTab("swap");
+                onSwap?.();
+              }}
+              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             >
               Swap
             </button>
@@ -8633,7 +11521,7 @@ function SiteNav({
             type="button"
             onClick={() => {
               setActiveMobileTab("swap");
-              // Empty modal for now.
+              onSwap?.();
             }}
             className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
               activeMobileTab === "swap"
@@ -8697,10 +11585,12 @@ function PaymentShell({
   children,
   onQuickPort,
   onBCodes,
+  onSwap,
 }: {
   children: React.ReactNode;
   onQuickPort?: () => void;
   onBCodes?: () => void;
+  onSwap?: () => void;
 }) {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#050511]">
@@ -8712,6 +11602,7 @@ function PaymentShell({
         <SiteNav
           onQuickPort={onQuickPort}
           onBCodes={onBCodes}
+          onSwap={onSwap}
         />
 
         <section className="min-h-screen overflow-y-auto px-4 pb-12 pt-[112px] sm:px-6 sm:pt-[128px]">

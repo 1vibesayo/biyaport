@@ -8,7 +8,7 @@ import {
   getAddress,
   isAddress,
 } from "viem";
-import { baseSepolia } from "viem/chains";
+import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
 const CONTRACT_ADDRESS =
@@ -20,7 +20,7 @@ const RELAYER_PRIVATE_KEY =
 const BASE_RPC_URL =
   process.env.BASE_RPC_URL;
 
-const CHAIN_ID = 84532;
+const CHAIN_ID = 8453;
 
 const contractAbi = [
   {
@@ -76,6 +76,18 @@ const contractAbi = [
       {
         name: "",
         type: "uint256",
+      },
+    ],
+  },
+  {
+    type: "function",
+    name: "trustedSigner",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      {
+        name: "",
+        type: "address",
       },
     ],
   },
@@ -153,10 +165,14 @@ export async function POST(
      * ========================================
      */
 
-    const body = await request.json();
+    const body =
+      await request.json();
 
-    const rawCode = body?.code;
-    const rawRecipient = body?.recipient;
+    const rawCode =
+      body?.code;
+
+    const rawRecipient =
+      body?.recipient;
 
     if (
       typeof rawCode !== "string" ||
@@ -182,16 +198,12 @@ export async function POST(
     const code =
       normalizeBCode(rawCode);
 
-    /*
-     * Expected:
-     *
-     * B-XXXX-XXXX
-     */
-
     const bCodePattern =
       /^B-[A-Z2-9]{4}-[A-Z2-9]{4}$/;
 
-    if (!bCodePattern.test(code)) {
+    if (
+      !bCodePattern.test(code)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -209,7 +221,9 @@ export async function POST(
      * ========================================
      */
 
-    if (!isAddress(rawRecipient)) {
+    if (
+      !isAddress(rawRecipient)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -235,18 +249,24 @@ export async function POST(
 
     /*
      * ========================================
-     * 6. CREATE BASE SEPOLIA CLIENTS
+     * 6. CREATE BASE MAINNET CLIENTS
      * ========================================
      */
 
     const publicClient =
       createPublicClient({
-        chain: baseSepolia,
+        chain: base,
         transport: http(
           BASE_RPC_URL
         ),
       });
 
+    /*
+     * The same wallet is used for:
+     *
+     * 1. EIP-712 trusted signing
+     * 2. Relaying the redemption transaction
+     */
     const relayerAccount =
       privateKeyToAccount(
         RELAYER_PRIVATE_KEY
@@ -254,8 +274,9 @@ export async function POST(
 
     const walletClient =
       createWalletClient({
-        account: relayerAccount,
-        chain: baseSepolia,
+        account:
+          relayerAccount,
+        chain: base,
         transport: http(
           BASE_RPC_URL
         ),
@@ -263,26 +284,92 @@ export async function POST(
 
     /*
      * ========================================
-     * 7. READ B-CODE
+     * 7. VERIFY TRUSTED SIGNER
      * ========================================
+     *
+     * The contract requires:
+     *
+     * recovered signer == trustedSigner
+     *
+     * Since BCODE_RELAYER_PRIVATE_KEY is also
+     * the trusted signer, these addresses must
+     * match.
      */
 
-    const bcode = await publicClient.readContract({
-      address: CONTRACT_ADDRESS,
-      abi: contractAbi,
-      functionName: "getBCode",
-      args: [codeHash],
-    });
+    const trustedSigner =
+      await publicClient.readContract({
+        address:
+          CONTRACT_ADDRESS,
+        abi: contractAbi,
+        functionName:
+          "trustedSigner",
+      });
 
-    const creator = bcode.creator;
-    const token = bcode.token;
-    const amount = bcode.amount;
-    const redeemed = bcode.redeemed;
-    const cancelled = bcode.cancelled;
+    if (
+      getAddress(
+        trustedSigner
+      ) !==
+      getAddress(
+        relayerAccount.address
+      )
+    ) {
+      console.error(
+        "[B-CODE] Trusted signer mismatch:",
+        {
+          contractTrustedSigner:
+            trustedSigner,
+          relayerAddress:
+            relayerAccount.address,
+        }
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "B-Code redemption signer is not configured correctly.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
 
     /*
      * ========================================
-     * 8. CHECK EXISTENCE
+     * 8. READ B-CODE
+     * ========================================
+     */
+
+    const bcode =
+      await publicClient.readContract({
+        address:
+          CONTRACT_ADDRESS,
+        abi: contractAbi,
+        functionName:
+          "getBCode",
+        args: [
+          codeHash,
+        ],
+      });
+
+    const creator =
+      bcode.creator;
+
+    const token =
+      bcode.token;
+
+    const amount =
+      bcode.amount;
+
+    const redeemed =
+      bcode.redeemed;
+
+    const cancelled =
+      bcode.cancelled;
+
+    /*
+     * ========================================
+     * 9. CHECK EXISTENCE
      * ========================================
      */
 
@@ -303,7 +390,7 @@ export async function POST(
 
     /*
      * ========================================
-     * 9. CHECK STATUS
+     * 10. CHECK STATUS
      * ========================================
      */
 
@@ -333,39 +420,59 @@ export async function POST(
 
     /*
      * ========================================
-     * 10. GET NONCE
+     * 11. GET REDEMPTION NONCE
      * ========================================
      */
 
     const nonce =
       await publicClient.readContract({
-        address: CONTRACT_ADDRESS,
+        address:
+          CONTRACT_ADDRESS,
         abi: contractAbi,
         functionName:
           "redemptionNonces",
-        args: [codeHash],
+        args: [
+          codeHash,
+        ],
       });
 
     /*
      * ========================================
-     * 11. CREATE SHORT DEADLINE
+     * 12. CREATE DEADLINE
      * ========================================
+     *
+     * Give the signature 10 minutes of validity.
      */
 
     const latestBlock =
       await publicClient.getBlock();
 
     const deadline =
-      BigInt(
-        Number(
-          latestBlock.timestamp
-        ) + 10 * 60
-      );
+      latestBlock.timestamp +
+      600n;
 
     /*
      * ========================================
-     * 12. SIGN EIP-712
+     * 13. SIGN EIP-712 REDEMPTION
      * ========================================
+     *
+     * This MUST exactly match:
+     *
+     * EIP712(
+     *   "Biyaport B-Codes",
+     *   "1"
+     * )
+     *
+     * and:
+     *
+     * Redeem(
+     *   bytes32 codeHash,
+     *   address recipient,
+     *   uint256 nonce,
+     *   uint256 deadline
+     * )
+     *
+     * in the Solidity contract.
      */
 
     const signature =
@@ -376,8 +483,10 @@ export async function POST(
         domain: {
           name:
             "Biyaport B-Codes",
-          version: "1",
-          chainId: CHAIN_ID,
+          version:
+            "1",
+          chainId:
+            CHAIN_ID,
           verifyingContract:
             CONTRACT_ADDRESS,
         },
@@ -387,22 +496,26 @@ export async function POST(
             {
               name:
                 "codeHash",
-              type: "bytes32",
+              type:
+                "bytes32",
             },
             {
               name:
                 "recipient",
-              type: "address",
+              type:
+                "address",
             },
             {
               name:
                 "nonce",
-              type: "uint256",
+              type:
+                "uint256",
             },
             {
               name:
                 "deadline",
-              type: "uint256",
+              type:
+                "uint256",
             },
           ],
         },
@@ -420,8 +533,13 @@ export async function POST(
 
     /*
      * ========================================
-     * 13. SUBMIT GASLESS REDEMPTION
+     * 14. SUBMIT GASLESS REDEMPTION
      * ========================================
+     *
+     * The relayer pays gas.
+     *
+     * The recipient does not need to connect
+     * a wallet or pay gas for this transaction.
      */
 
     const txHash =
@@ -429,7 +547,8 @@ export async function POST(
         address:
           CONTRACT_ADDRESS,
 
-        abi: contractAbi,
+        abi:
+          contractAbi,
 
         functionName:
           "redeemBCode",
@@ -445,18 +564,19 @@ export async function POST(
 
     /*
      * ========================================
-     * 14. WAIT FOR CONFIRMATION
+     * 15. WAIT FOR CONFIRMATION
      * ========================================
      */
 
     const receipt =
       await publicClient.waitForTransactionReceipt({
-        hash: txHash,
+        hash:
+          txHash,
       });
 
     /*
      * ========================================
-     * 15. VERIFY TRANSACTION
+     * 16. VERIFY TRANSACTION
      * ========================================
      */
 
@@ -478,12 +598,13 @@ export async function POST(
 
     /*
      * ========================================
-     * 16. RETURN RESULT
+     * 17. RETURN RESULT
      * ========================================
      */
 
     return NextResponse.json({
-      success: true,
+      success:
+        true,
 
       code,
 

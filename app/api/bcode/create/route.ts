@@ -9,13 +9,15 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { baseSepolia } from "viem/chains";
+import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
 /*
  * ====================================================
  * B-CODE CREATE RELAYER
  * ====================================================
+ *
+ * BASE MAINNET
  *
  * Flow:
  *
@@ -29,26 +31,65 @@ import { privateKeyToAccount } from "viem/accounts";
  *              ↓
  * BiyaportBCodes.createBCodeWithSignature()
  *              ↓
- * Contract pulls USDC from creator
+ * Contract pulls ERC20 tokens from creator
  *              ↓
  * B-Code created
  *
- * The relayer pays gas.
+ * Supported ERC20 tokens:
+ *
+ * - Base USDC
+ * - Base USDT
+ *
+ * ETH is intentionally NOT handled by this route.
+ * Native ETH creation must be submitted directly by
+ * the user's wallet because the contract requires
+ * msg.value.
  */
 
 // ====================================================
 // CONFIG
 // ====================================================
 
-const CHAIN = baseSepolia;
+const CHAIN = base;
 
-const CHAIN_ID = 84532;
+const CHAIN_ID = 8453;
+
+// IMPORTANT:
+// Set this to your DEPLOYED BASE MAINNET B-CODE CONTRACT
+// address in your environment variables.
+//
+// .env.local:
+//
+// BCODE_CONTRACT_ADDRESS=0xYourBaseMainnetContract
+//
+const rawContractAddress =
+  process.env.BCODE_CONTRACT_ADDRESS?.trim();
+
+if (
+  !rawContractAddress ||
+  !/^0x[a-fA-F0-9]{40}$/.test(
+    rawContractAddress
+  )
+) {
+  throw new Error(
+    "BCODE_CONTRACT_ADDRESS is not configured with a valid Base Mainnet contract address."
+  );
+}
 
 const B_CODE_CONTRACT_ADDRESS =
-  "0x8a7826FDBBE26CB8Fced97893A4144997F0fE74D" as Address;
+  rawContractAddress as Address;
 
+// Base Mainnet USDC
 const USDC_ADDRESS =
-  "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address;
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
+
+// Base Mainnet USDT
+const USDT_ADDRESS =
+  "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as Address;
+
+// Native ETH
+const ZERO_ADDRESS =
+  "0x0000000000000000000000000000000000000000" as Address;
 
 // ====================================================
 // ABI
@@ -182,6 +223,12 @@ export async function POST(
 
         hasBaseRpc:
           Boolean(rpcUrl),
+
+        chainId:
+          CHAIN_ID,
+
+        contract:
+          B_CODE_CONTRACT_ADDRESS,
       }
     );
 
@@ -358,19 +405,54 @@ export async function POST(
     // TOKEN VALIDATION
     // ==================================================
 
+    const normalizedToken =
+      token.toLowerCase();
+
+    const normalizedUSDC =
+      USDC_ADDRESS.toLowerCase();
+
+    const normalizedUSDT =
+      USDT_ADDRESS.toLowerCase();
+
+    const normalizedZeroAddress =
+      ZERO_ADDRESS.toLowerCase();
+
+    // ETH is NOT handled by the relayer route.
     if (
-      token.toLowerCase() !==
-      USDC_ADDRESS.toLowerCase()
+      normalizedToken ===
+      normalizedZeroAddress
     ) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Unsupported token. Only Base Sepolia USDC is supported.",
+            "Native ETH B-Code creation must be submitted directly from the creator wallet.",
         },
         { status: 400 }
       );
     }
+
+    // Only Base Mainnet USDC and USDT
+    if (
+      normalizedToken !==
+        normalizedUSDC &&
+      normalizedToken !==
+        normalizedUSDT
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Unsupported token. Only Base Mainnet USDC and USDT are supported.",
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log(
+      "[B-CODE CREATE] Supported Base Mainnet token:",
+      token
+    );
 
     // ==================================================
     // CODE HASH VALIDATION
@@ -485,7 +567,8 @@ export async function POST(
       "[B-CODE CREATE] Code hash check:",
       {
         supplied: codeHash,
-        calculated: calculatedCodeHash,
+        calculated:
+          calculatedCodeHash,
       }
     );
 
@@ -520,7 +603,8 @@ export async function POST(
     try {
       recoveredSigner =
         await recoverTypedDataAddress({
-          domain: BCODE_DOMAIN,
+          domain:
+            BCODE_DOMAIN,
 
           types:
             BCODE_CREATE_TYPES,
@@ -655,7 +739,7 @@ export async function POST(
     // ==================================================
 
     console.log(
-      "[B-CODE CREATE] Simulating contract call..."
+      "[B-CODE CREATE] Simulating Base Mainnet contract call..."
     );
 
     const {
@@ -752,15 +836,26 @@ export async function POST(
 
     console.log(
       "[B-CODE CREATE] B-Code created successfully:",
-      txHash
+      {
+        txHash,
+        chainId: CHAIN_ID,
+        contract:
+          B_CODE_CONTRACT_ADDRESS,
+        token,
+        creator,
+      }
     );
 
     return NextResponse.json({
       success: true,
       txHash,
+      chainId: CHAIN_ID,
+      contract:
+        B_CODE_CONTRACT_ADDRESS,
       relayer:
         relayerAccount.address,
       creator,
+      token,
     });
   } catch (error) {
     console.error(

@@ -42,9 +42,7 @@ import {
   keccak256,
   stringToHex,
 } from "viem";
-
-import { base, baseSepolia, bsc } from "viem/chains";
-
+import { base, bsc } from "viem/chains";
 import QRCode from "qrcode";
 
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
@@ -90,16 +88,20 @@ const RECEIPT_FONT = '"DM Sans", sans-serif';
  * B-CODES
  * ====================================================
  *
- * B-Codes are currently being integrated/tested on Base
- * Sepolia. Quick Port keeps its existing Base/BSC config.
+ * B-Codes run on Base Mainnet.
+ * Quick Port keeps its existing Base/BSC config.
  */
-const BCODE_CHAIN_ID = 84532;
+const BCODE_CHAIN_ID = 8453;
+
 const BCODE_CONTRACT_ADDRESS =
-  "0x8a7826FDBBE26CB8Fced97893A4144997F0fE74D" as `0x${string}`;
-const BCODE_BASE_SEPOLIA_USDT =
-  "0x2C6c7c00ACa9B9D8446d107367485079b0471706" as `0x${string}`;
-const BCODE_BASE_SEPOLIA_USDC =
-  "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`;
+  "0x142827f136215800a72Bd3608D7D52b71f7174e4" as `0x${string}`;
+
+const BCODE_BASE_USDT =
+  "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`;
+
+const BCODE_BASE_USDC =
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
+
 const BCODE_TOKEN_DECIMALS = 6;
 const BCODE_FEE_BPS = 200;
 const BCODE_BPS_DENOMINATOR = 10_000;
@@ -108,42 +110,42 @@ const BCODE_APP_PARAM = "bcode";
 
 const BCODE_CONTRACT_ABI = [
   {
-  type: "function",
-  name: "getBCode",
-  stateMutability: "view",
-  inputs: [
-    {
-      name: "codeHash",
-      type: "bytes32",
-    },
-  ],
-  outputs: [
-    {
-      name: "creator",
-      type: "address",
-    },
-    {
-      name: "token",
-      type: "address",
-    },
-    {
-      name: "amount",
-      type: "uint256",
-    },
-    {
-      name: "redeemed",
-      type: "bool",
-    },
-    {
-      name: "cancelled",
-      type: "bool",
-    },
-    {
-      name: "code",
-      type: "string",
-    },
-  ],
-},
+    type: "function",
+    name: "getBCode",
+    stateMutability: "view",
+    inputs: [
+      {
+        name: "codeHash",
+        type: "bytes32",
+      },
+    ],
+    outputs: [
+      {
+        name: "creator",
+        type: "address",
+      },
+      {
+        name: "token",
+        type: "address",
+      },
+      {
+        name: "amount",
+        type: "uint256",
+      },
+      {
+        name: "redeemed",
+        type: "bool",
+      },
+      {
+        name: "cancelled",
+        type: "bool",
+      },
+      {
+        name: "code",
+        type: "string",
+      },
+    ],
+  },
 
   {
     type: "function",
@@ -193,24 +195,75 @@ const BCODE_CONTRACT_ABI = [
     ],
     outputs: [],
   },
+
+  {
+    type: "function",
+    name: "getBCodeHashCountByCreator",
+    stateMutability: "view",
+    inputs: [{ name: "creator", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+
+  {
+    type: "function",
+    name: "getBCodeHashAt",
+    stateMutability: "view",
+    inputs: [
+      { name: "creator", type: "address" },
+      { name: "index", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bytes32" }],
+  },
+
+  {
+    type: "function",
+    name: "bCodeExists",
+    stateMutability: "view",
+    inputs: [{ name: "codeHash", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+
+  {
+    type: "function",
+    name: "isSupportedToken",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+
+  {
+    type: "function",
+    name: "calculateFee",
+    stateMutability: "pure",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+
+  {
+    type: "function",
+    name: "calculateTotal",
+    stateMutability: "pure",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 const BCODE_PUBLIC_CLIENT = createPublicClient({
-  chain: baseSepolia,
-  transport: http(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL),
+  chain: base,
+  transport: http(),
 });
 
 const getBCodeTokenConfig = (symbol: "USDT" | "USDC") =>
   symbol === "USDT"
     ? {
-        address: BCODE_BASE_SEPOLIA_USDT,
+        address: BCODE_BASE_USDT,
         decimals: BCODE_TOKEN_DECIMALS,
         logo: "/usdt-logo.svg",
         name: "Tether USD",
         symbol: "USDT" as const,
       }
     : {
-        address: BCODE_BASE_SEPOLIA_USDC,
+        address: BCODE_BASE_USDC,
         decimals: BCODE_TOKEN_DECIMALS,
         logo: "/usdc-logo.svg",
         name: "USD Coin",
@@ -242,8 +295,7 @@ function isValidBCodeFormat(code: string) {
   );
 }
 
-
-type NetworkKey = "base" | "bnb-smart-chain" | "base-sepolia";
+type NetworkKey = "base" | "bnb-smart-chain";
 
 type NetworkConfig = {
   key: NetworkKey;
@@ -4789,9 +4841,43 @@ function BCodeView({
   type RedeemState = "idle" | "processing" | "success" | "error";
   type BCodeStage = 1 | 2 | 3;
 
-  const [mode, setMode] = useState<BCodeMode>(
-    initialRedeemCode ? "redeem" : "generate"
-  );
+  type GenerateToken = "USDT" | "USDC" | "ETH";
+  type RedeemToken = "USDT" | "USDC" | "ETH" | "";
+
+  /*
+   * ====================================================
+   * BASE MAINNET ONLY
+   * ====================================================
+   */
+
+  const BASE_CHAIN_ID = 8453;
+
+  const BASE_EXPLORER_URL =
+    "https://basescan.org/tx/";
+
+  const NATIVE_ETH =
+    "0x0000000000000000000000000000000000000000" as `0x${string}`;
+
+  /*
+   * ====================================================
+   * TOKEN CONFIG
+   * ====================================================
+   */
+
+  const getGenerateTokenConfig = (
+    symbol: GenerateToken
+  ) => {
+    if (symbol === "ETH") {
+      return {
+        symbol: "ETH" as const,
+        address: NATIVE_ETH,
+        decimals: 18,
+        logo: "/eth-logo.svg",
+      };
+    }
+
+    return getBCodeTokenConfig(symbol);
+  };
 
   /*
    * ====================================================
@@ -4799,14 +4885,16 @@ function BCodeView({
    * ====================================================
    */
 
+  const [mode, setMode] = useState<BCodeMode>(
+    initialRedeemCode ? "redeem" : "generate"
+  );
+
   const [generateStep, setGenerateStep] =
     useState<GenerateStep>(1);
 
-  const [generateNetwork, setGenerateNetwork] =
-    useState<NetworkKey>("base-sepolia");
+  const generateNetwork = "base" as const;
 
-  const [generateToken, setGenerateToken] =
-    useState<"USDT" | "USDC">("USDC");
+  const [generateToken, setGenerateToken] = useState<GenerateToken | "">("");
 
   const [
     generateCryptoDropdownOpen,
@@ -4861,22 +4949,33 @@ function BCodeView({
 
   const [myBCodesOpen, setMyBCodesOpen] =
     useState(false);
+
   const [myBCodesFilter, setMyBCodesFilter] =
-    useState<"all" | "active" | "cancelled" | "redeemed">("all");
+    useState<
+      "all" | "active" | "cancelled" | "redeemed"
+    >("all");
+
   const [expandedBCodeHash, setExpandedBCodeHash] =
     useState<`0x${string}` | null>(null);
+
   const [myBCodes, setMyBCodes] =
     useState<BCodeHistoryItem[]>([]);
+
   const [myBCodesLoading, setMyBCodesLoading] =
     useState(false);
+
   const [myBCodesError, setMyBCodesError] =
     useState("");
+
   const [copiedBCode, setCopiedBCode] =
     useState<string | null>(null);
+
   const [cancelHash, setCancelHash] =
     useState<`0x${string}` | null>(null);
+
   const [cancelLoading, setCancelLoading] =
     useState(false);
+
   const [cancelError, setCancelError] =
     useState("");
 
@@ -4922,7 +5021,7 @@ function BCodeView({
     useState("");
 
   const [redeemToken, setRedeemToken] =
-    useState<"USDT" | "USDC" | "">("");
+    useState<RedeemToken>("");
 
   const [redeemAmount, setRedeemAmount] =
     useState("");
@@ -4935,33 +5034,43 @@ function BCodeView({
 
   /*
    * ====================================================
-   * GENERATE CRYPTO SEARCH
+   * CRYPTO OPTIONS
    * ====================================================
    */
 
-  const filteredGenerateCryptoOptions = (
-    ["USDT", "USDC"] as const
-  ).filter((symbol) =>
-    symbol
-      .toLowerCase()
-      .includes(
-        generateCryptoSearch.trim().toLowerCase()
-      )
-  );
+  const generateCryptoOptions: GenerateToken[] = [
+    "USDC",
+    "USDT",
+    "ETH",
+  ];
+
+  const filteredGenerateCryptoOptions =
+    generateCryptoOptions.filter((symbol) =>
+      symbol
+        .toLowerCase()
+        .includes(
+          generateCryptoSearch.trim().toLowerCase()
+        )
+    );
 
   /*
    * ====================================================
-   * CLOSE CRYPTO DROPDOWN ON OUTSIDE CLICK
+   * CLOSE CRYPTO DROPDOWN
    * ====================================================
    */
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
+    const handleClickOutside = (
+      event: MouseEvent
+    ) => {
+      const target =
+        event.target as Node;
 
       if (
         generateCryptoDropdownRef.current &&
-        !generateCryptoDropdownRef.current.contains(target)
+        !generateCryptoDropdownRef.current.contains(
+          target
+        )
       ) {
         setGenerateCryptoDropdownOpen(false);
       }
@@ -4989,7 +5098,9 @@ function BCodeView({
   useEffect(() => {
     if (initialRedeemCode) {
       const code =
-        initialRedeemCode.trim().toUpperCase();
+        initialRedeemCode
+          .trim()
+          .toUpperCase();
 
       setRedeemCode(code);
 
@@ -5007,8 +5118,30 @@ function BCodeView({
    * ====================================================
    */
 
-  const generateNetworkLabel =
-    getNetworkConfig(generateNetwork).name;
+  const generateNetworkLabel = "Base";
+
+  /*
+   * ====================================================
+   * TOKEN DECIMALS
+   * ====================================================
+   */
+
+  const getTokenDecimals = (
+    symbol: GenerateToken | RedeemToken
+  ) => {
+    if (symbol === "ETH") {
+      return 18;
+    }
+
+    if (
+      symbol === "USDC" ||
+      symbol === "USDT"
+    ) {
+      return getBCodeTokenConfig(symbol).decimals;
+    }
+
+    return 18;
+  };
 
   /*
    * ====================================================
@@ -5020,13 +5153,15 @@ function BCodeView({
     generateAmount &&
     Number(generateAmount) > 0
       ? Number(generateAmount) *
-        (BCODE_FEE_BPS / BCODE_BPS_DENOMINATOR)
+        (BCODE_FEE_BPS /
+          BCODE_BPS_DENOMINATOR)
       : 0;
 
   const generateTotal =
     generateAmount &&
     Number(generateAmount) > 0
-      ? Number(generateAmount) + generateFee
+      ? Number(generateAmount) +
+        generateFee
       : 0;
 
   /*
@@ -5035,7 +5170,9 @@ function BCodeView({
    * ====================================================
    */
 
-  const switchMode = (nextMode: BCodeMode) => {
+  const switchMode = (
+    nextMode: BCodeMode
+  ) => {
     setMode(nextMode);
 
     setGenerateState("idle");
@@ -5051,7 +5188,9 @@ function BCodeView({
       initialRedeemCode
     ) {
       setRedeemCode(
-        initialRedeemCode.trim().toUpperCase()
+        initialRedeemCode
+          .trim()
+          .toUpperCase()
       );
     }
   };
@@ -5064,7 +5203,9 @@ function BCodeView({
 
   const validateBCode = async () => {
     const code =
-      redeemCode.trim().toUpperCase();
+      redeemCode
+        .trim()
+        .toUpperCase();
 
     setRedeemError("");
 
@@ -5077,86 +5218,95 @@ function BCodeView({
     }
 
     try {
-  const codeHash =
-    hashBCodeForClient(code);
+      const codeHash =
+        hashBCodeForClient(code);
 
-  const bcode =
-    await BCODE_PUBLIC_CLIENT.readContract({
-      address:
-        BCODE_CONTRACT_ADDRESS,
-      abi:
-        BCODE_CONTRACT_ABI,
-      functionName:
-        "getBCode",
-      args: [
-        codeHash,
-      ],
-    });
+      const bcode =
+        await BCODE_PUBLIC_CLIENT.readContract({
+          address:
+            BCODE_CONTRACT_ADDRESS,
+          abi:
+            BCODE_CONTRACT_ABI,
+          functionName:
+            "getBCode",
+          args: [
+            codeHash,
+          ],
+        });
 
-  const [
-    creator,
-    tokenAddress,
-    amount,
-    redeemed,
-    cancelled,
-  ] = bcode;
+      const [
+        creator,
+        tokenAddress,
+        amount,
+        redeemed,
+        cancelled,
+      ] = bcode;
 
-  if (
-    creator ===
-    "0x0000000000000000000000000000000000000000"
-  ) {
-    setRedeemError(
-      "This B-Code does not exist."
-    );
+      if (
+        creator ===
+        "0x0000000000000000000000000000000000000000"
+      ) {
+        setRedeemError(
+          "This B-Code does not exist."
+        );
 
-    return false;
-  }
+        return false;
+      }
 
-  if (redeemed) {
-    setRedeemError(
-      "This B-Code has already been redeemed."
-    );
+      if (redeemed) {
+        setRedeemError(
+          "This B-Code has already been redeemed."
+        );
 
-    return false;
-  }
+        return false;
+      }
 
-  if (cancelled) {
-    setRedeemError(
-      "This B-Code has been cancelled."
-    );
+      if (cancelled) {
+        setRedeemError(
+          "This B-Code has been cancelled."
+        );
 
-    return false;
-  }
+        return false;
+      }
 
-  const token =
-    tokenAddress.toLowerCase();
+      const token =
+        tokenAddress.toLowerCase();
 
-  if (
-    token ===
-    BCODE_BASE_SEPOLIA_USDC.toLowerCase()
-  ) {
-    setRedeemToken("USDC");
-  } else if (
-    token ===
-    BCODE_BASE_SEPOLIA_USDT.toLowerCase()
-  ) {
-    setRedeemToken("USDT");
-  } else {
-    setRedeemToken("");
+      if (
+        token ===
+        BCODE_BASE_USDC.toLowerCase()
+      ) {
+        setRedeemToken("USDC");
+      } else if (
+        token ===
+        BCODE_BASE_USDT.toLowerCase()
+      ) {
+        setRedeemToken("USDT");
+      } else if (
+        token ===
+        NATIVE_ETH.toLowerCase()
+      ) {
+        setRedeemToken("ETH");
+      } else {
+        setRedeemToken("");
 
-    setRedeemError(
-      "This B-Code contains an unsupported token."
-    );
+        setRedeemError(
+          "This B-Code contains an unsupported token."
+        );
 
-    return false;
-  }
+        return false;
+      }
 
-  // Continue with the rest of your redeem logic here...
+      const decimals =
+        token ===
+        NATIVE_ETH.toLowerCase()
+          ? 18
+          : BCODE_TOKEN_DECIMALS;
 
       setRedeemAmount(
         formatUnits(
           amount,
-          BCODE_TOKEN_DECIMALS
+          decimals
         )
       );
 
@@ -5186,65 +5336,76 @@ function BCodeView({
    * ====================================================
    */
 
-  const handleGenerateContinue = async () => {
-    if (
-      !authenticated ||
-      !wallet?.address
-    ) {
-      setGenerateError(
-        "Connect your wallet first."
-      );
+  const handleGenerateContinue =
+    async () => {
+      if (
+        !authenticated ||
+        !wallet?.address
+      ) {
+        setGenerateError(
+          "Connect your wallet first."
+        );
 
-      return;
-    }
+        return;
+      }
 
-    const numericAmount =
-      Number(generateAmount);
+      if (!generateToken) {
+        setGenerateError(
+          "Select a crypto first."
+        );
 
-    if (
-      !Number.isFinite(
-        numericAmount
-      ) ||
-      numericAmount <= 0
-    ) {
-      setGenerateError(
-        "Enter an amount greater than zero."
-      );
+        return;
+      }
 
-      return;
-    }
+      const numericAmount =
+        Number(generateAmount);
 
-    const token =
-      getBCodeTokenConfig(
-        generateToken
-      );
+      if (
+        !Number.isFinite(
+          numericAmount
+        ) ||
+        numericAmount <= 0
+      ) {
+        setGenerateError(
+          "Enter an amount greater than zero."
+        );
 
-    const amountUnits =
-      parseUnits(
-        numericAmount.toFixed(
-          BCODE_TOKEN_DECIMALS
-        ),
-        token.decimals
-      );
+        return;
+      }
 
-    const feeUnits =
-      (amountUnits *
-        BigInt(BCODE_FEE_BPS)) /
-      BigInt(
-        BCODE_BPS_DENOMINATOR
-      );
+      const token =
+        getGenerateTokenConfig(
+          generateToken
+        );
 
-    if (feeUnits <= 0n) {
-      setGenerateError(
-        "Amount is too small to cover the 2% creation fee."
-      );
+      const amountUnits =
+        parseUnits(
+          numericAmount.toFixed(
+            token.decimals
+          ),
+          token.decimals
+        );
 
-      return;
-    }
+      const feeUnits =
+        (amountUnits *
+          BigInt(
+            BCODE_FEE_BPS
+          )) /
+        BigInt(
+          BCODE_BPS_DENOMINATOR
+        );
 
-    setGenerateError("");
-    setGenerateStep(2);
-  };
+      if (feeUnits <= 0n) {
+        setGenerateError(
+          "Amount is too small to cover the 2% creation fee."
+        );
+
+        return;
+      }
+
+      setGenerateError("");
+      setGenerateStep(2);
+    };
 
   /*
    * ====================================================
@@ -5252,28 +5413,35 @@ function BCodeView({
    * ====================================================
    */
 
-  const checkTokenAllowance = async ({
-    tokenAddress,
-    owner,
-    requiredAmount,
-  }: {
-    tokenAddress: `0x${string}`;
-    owner: `0x${string}`;
-    requiredAmount: bigint;
-  }) => {
-    const allowance =
-      await BCODE_PUBLIC_CLIENT.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [
-          owner,
-          BCODE_CONTRACT_ADDRESS,
-        ],
-      });
+  const checkTokenAllowance =
+    async ({
+      tokenAddress,
+      owner,
+      requiredAmount,
+    }: {
+      tokenAddress: `0x${string}`;
+      owner: `0x${string}`;
+      requiredAmount: bigint;
+    }) => {
+      const allowance =
+        await BCODE_PUBLIC_CLIENT.readContract({
+          address:
+            tokenAddress,
+          abi:
+            erc20Abi,
+          functionName:
+            "allowance",
+          args: [
+            owner,
+            BCODE_CONTRACT_ADDRESS,
+          ],
+        });
 
-    return allowance >= requiredAmount;
-  };
+      return (
+        allowance >=
+        requiredAmount
+      );
+    };
 
   /*
    * ====================================================
@@ -5281,57 +5449,66 @@ function BCodeView({
    * ====================================================
    */
 
-  const enableBCodeToken = async ({
-    tokenAddress,
-  }: {
-    tokenAddress: `0x${string}`;
-  }) => {
-    if (!wallet?.address) {
-      throw new Error(
-        "Connect your wallet first."
-      );
-    }
+  const enableBCodeToken =
+    async ({
+      tokenAddress,
+    }: {
+      tokenAddress: `0x${string}`;
+    }) => {
+      if (!wallet?.address) {
+        throw new Error(
+          "Connect your wallet first."
+        );
+      }
 
-    const approvalData =
-      encodeFunctionData({
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [
-          BCODE_CONTRACT_ADDRESS,
-          maxUint256,
-        ],
-      });
+      const approvalData =
+        encodeFunctionData({
+          abi:
+            erc20Abi,
+          functionName:
+            "approve",
+          args: [
+            BCODE_CONTRACT_ADDRESS,
+            maxUint256,
+          ],
+        });
 
-    const approvalResult =
-      await sendTransaction(
+      const approvalResult =
+        await sendTransaction(
+          {
+            to:
+              tokenAddress,
+            data:
+              approvalData,
+            value:
+              0n,
+            chainId:
+              BASE_CHAIN_ID,
+          },
+          {
+            address:
+              wallet.address,
+          }
+        );
+
+      if (
+        !approvalResult?.hash
+      ) {
+        throw new Error(
+          "Token approval was not submitted."
+        );
+      }
+
+      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
         {
-          to: tokenAddress,
-          data: approvalData,
-          value: 0n,
-          chainId: BCODE_CHAIN_ID,
-        },
-        {
-          address:
-            wallet.address,
+          hash:
+            approvalResult.hash as `0x${string}`,
+          confirmations: 1,
         }
       );
 
-    if (!approvalResult?.hash) {
-      throw new Error(
-        "Token approval was not submitted."
-      );
-    }
-
-    await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
-      {
-        hash:
-          approvalResult.hash as `0x${string}`,
-        confirmations: 1,
-      }
-    );
-
-    return approvalResult.hash;
-  };
+      return approvalResult.hash;
+    };
 
   /*
    * ====================================================
@@ -5339,550 +5516,617 @@ function BCodeView({
    * ====================================================
    */
 
-  const signBCodeCreation = async ({
-    codeHash,
-    tokenAddress,
-    amount,
-    nonce,
-    deadline,
-  }: {
-    codeHash: `0x${string}`;
-    tokenAddress: `0x${string}`;
-    amount: bigint;
-    nonce: bigint;
-    deadline: bigint;
-  }) => {
-    if (!wallet?.address) {
-      throw new Error(
-        "Connect your wallet first."
-      );
-    }
-
-    const provider =
-      await wallet.getEthereumProvider();
-
-    const typedData = {
-  types: {
-    EIP712Domain: [
-      {
-        name: "name",
-        type: "string",
-      },
-      {
-        name: "version",
-        type: "string",
-      },
-      {
-        name: "chainId",
-        type: "uint256",
-      },
-      {
-        name: "verifyingContract",
-        type: "address",
-      },
-    ],
-
-    CreateBCode: [
-      {
-        name: "creator",
-        type: "address",
-      },
-      {
-        name: "codeHash",
-        type: "bytes32",
-      },
-      {
-        name: "token",
-        type: "address",
-      },
-      {
-        name: "amount",
-        type: "uint256",
-      },
-      {
-        name: "nonce",
-        type: "uint256",
-      },
-      {
-        name: "deadline",
-        type: "uint256",
-      },
-    ],
-  },
-
-  primaryType: "CreateBCode",
-
-  domain: {
-    name: "Biyaport B-Codes",
-    version: "1",
-    chainId: BCODE_CHAIN_ID,
-    verifyingContract: BCODE_CONTRACT_ADDRESS,
-  },
-
-  message: {
-    creator: wallet.address,
-    codeHash,
-    token: tokenAddress,
-    amount: amount.toString(),
-    nonce: nonce.toString(),
-    deadline: deadline.toString(),
-  },
-};
-
-    const signature =
-      await provider.request({
-        method:
-          "eth_signTypedData_v4",
-        params: [
-          wallet.address,
-          JSON.stringify(
-            typedData
-          ),
-        ],
-      });
-
-    return signature as `0x${string}`;
-  };
-
-  /*
- * ====================================================
- * CREATE B-CODE
- * ====================================================
- */
-
-const handleCreateBCode = async () => {
-  if (
-    !authenticated ||
-    !wallet?.address
-  ) {
-    setGenerateError(
-      "Connect your wallet first."
-    );
-
-    return;
-  }
-
-  /*
-   * ====================================================
-   * CURRENT TEST NETWORK
-   * ====================================================
-   */
-
-  if (
-    generateNetwork !==
-    "base-sepolia"
-  ) {
-    setGenerateError(
-      "B-Codes are currently only available on Base Sepolia."
-    );
-
-    return;
-  }
-
-  const numericAmount =
-    Number(generateAmount);
-
-  if (
-    !Number.isFinite(
-      numericAmount
-    ) ||
-    numericAmount <= 0
-  ) {
-    setGenerateError(
-      "Enter an amount greater than zero."
-    );
-
-    return;
-  }
-
-  const token =
-    getBCodeTokenConfig(
-      generateToken
-    );
-
-  const amountUnits =
-    parseUnits(
-      numericAmount.toFixed(
-        BCODE_TOKEN_DECIMALS
-      ),
-      token.decimals
-    );
-
-  const feeUnits =
-    (amountUnits *
-      BigInt(
-        BCODE_FEE_BPS
-      )) /
-    BigInt(
-      BCODE_BPS_DENOMINATOR
-    );
-
-  if (feeUnits <= 0n) {
-    setGenerateError(
-      "Amount is too small to cover the 2% creation fee."
-    );
-
-    return;
-  }
-
-  /*
-   * The contract pulls:
-   *
-   * B-Code amount + 2% creation fee
-   */
-  const totalRequired =
-    amountUnits +
-    feeUnits;
-
-  setGenerateState(
-    "processing"
-  );
-
-  setGenerateStage(1);
-  setGenerateError("");
-
-  try {
-    /*
-     * ====================================================
-     * SWITCH WALLET TO B-CODE NETWORK
-     * ====================================================
-     */
-
-    if (wallet.switchChain) {
-      await wallet.switchChain(
-        BCODE_CHAIN_ID
-      );
-    }
-
-      /*
-     * ====================================================
-     * GENERATE UNIQUE B-CODE
-     * ====================================================
-     */
-
-    let code =
-      generateBCodeValue();
-
-    let codeHash =
-      hashBCodeForClient(
-        code
-      );
-
-    let codeIsAvailable =
-      false;
-
-    for (
-      let attempt = 0;
-      attempt < 5;
-      attempt += 1
-    ) {
-      const existing =
-  await BCODE_PUBLIC_CLIENT.readContract({
-    address:
-      BCODE_CONTRACT_ADDRESS,
-    abi:
-      BCODE_CONTRACT_ABI,
-    functionName:
-      "getBCode",
-    args: [
+  const signBCodeCreation =
+    async ({
       codeHash,
-    ],
-  });
+      tokenAddress,
+      amount,
+      nonce,
+      deadline,
+    }: {
+      codeHash: `0x${string}`;
+      tokenAddress: `0x${string}`;
+      amount: bigint;
+      nonce: bigint;
+      deadline: bigint;
+    }) => {
+      if (!wallet?.address) {
+        throw new Error(
+          "Connect your wallet first."
+        );
+      }
 
-const [creator] =
-  existing;
+      const provider =
+        await wallet.getEthereumProvider();
 
-if (
-  creator ===
-  "0x0000000000000000000000000000000000000000"
-) {
-  codeIsAvailable =
-    true;
-
-  break;
-}
-
-code =
-  generateBCodeValue();
-
-codeHash =
-  hashBCodeForClient(
-    code
-  );
-}
-
-if (!codeIsAvailable) {
-  throw new Error(
-    "Unable to generate a unique B-Code. Please try again."
-  );
-}
-
-    /*
-     * Keep these available for the success screen.
-     */
-
-    setGeneratedCode(
-      code
-    );
-
-    setGeneratedHash(
-      codeHash
-    );
-
-    /*
-     * ====================================================
-     * CHECK ALLOWANCE
-     * ====================================================
-     *
-     * The contract requires:
-     *
-     * amount + 2% fee
-     *
-     * If allowance is already sufficient,
-     * the user does not see another approval.
-     */
-
-    const allowanceSufficient =
-      await checkTokenAllowance({
-        tokenAddress:
-          token.address,
-        owner:
-          wallet.address as `0x${string}`,
-        requiredAmount:
-          totalRequired,
-      });
-
-    /*
-     * ====================================================
-     * ONE-TIME APPROVAL
-     * ====================================================
-     *
-     * Only happens when the current allowance
-     * is insufficient.
-     */
-
-    if (!allowanceSufficient) {
-      await enableBCodeToken({
-        tokenAddress:
-          token.address,
-      });
-    }
-
-    /*
-     * ====================================================
-     * GET CREATION NONCE
-     * ====================================================
-     */
-
-    const nonce =
-      await BCODE_PUBLIC_CLIENT.readContract(
-        {
-          address:
-            BCODE_CONTRACT_ADDRESS,
-          abi:
-            BCODE_CONTRACT_ABI,
-          functionName:
-            "creationNonces",
-          args: [
-            wallet.address as `0x${string}`,
+      const typedData = {
+        types: {
+          EIP712Domain: [
+            {
+              name: "name",
+              type: "string",
+            },
+            {
+              name: "version",
+              type: "string",
+            },
+            {
+              name: "chainId",
+              type: "uint256",
+            },
+            {
+              name: "verifyingContract",
+              type: "address",
+            },
           ],
-        }
-      );
 
-    /*
-     * ====================================================
-     * CREATE SIGNATURE DEADLINE
-     * ====================================================
-     *
-     * IMPORTANT:
-     *
-     * This does NOT make the B-Code expire.
-     *
-     * It only limits how long the signed
-     * creation authorization can be submitted.
-     */
+          CreateBCode: [
+            {
+              name: "creator",
+              type: "address",
+            },
+            {
+              name: "codeHash",
+              type: "bytes32",
+            },
+            {
+              name: "token",
+              type: "address",
+            },
+            {
+              name: "amount",
+              type: "uint256",
+            },
+            {
+              name: "nonce",
+              type: "uint256",
+            },
+            {
+              name: "deadline",
+              type: "uint256",
+            },
+          ],
+        },
 
-    const deadline =
-      BigInt(
-        Math.floor(
-          Date.now() /
-            1000
-        ) + 10 * 60
-      );
+        primaryType:
+          "CreateBCode",
 
-      /*
-       * ====================================================
-       * STAGE 2
-       * ====================================================
-       */
+        domain: {
+          name:
+            "Biyaport B-Codes",
+          version:
+            "1",
+          chainId:
+            BASE_CHAIN_ID,
+          verifyingContract:
+            BCODE_CONTRACT_ADDRESS,
+        },
 
-      setGenerateStage(2);
-
-      /*
-       * ====================================================
-       * SIGN EIP-712 AUTHORIZATION
-       * ====================================================
-       */
+        message: {
+          creator:
+            wallet.address,
+          codeHash,
+          token:
+            tokenAddress,
+          amount:
+            amount.toString(),
+          nonce:
+            nonce.toString(),
+          deadline:
+            deadline.toString(),
+        },
+      };
 
       const signature =
-        await signBCodeCreation({
-          codeHash,
-          tokenAddress:
-            token.address,
-          amount:
-            amountUnits,
-          nonce,
-          deadline,
+        await provider.request({
+          method:
+            "eth_signTypedData_v4",
+          params: [
+            wallet.address,
+            JSON.stringify(
+              typedData
+            ),
+          ],
         });
 
-      /*
-       * ====================================================
-       * STAGE 3
-       * ====================================================
-       */
+      return signature as `0x${string}`;
+    };
 
-      setGenerateStage(3);
+  /*
+   * ====================================================
+   * CREATE B-CODE
+   * ====================================================
+   *
+   * USDC / USDT:
+   *   approval -> EIP712 -> server relayer
+   *
+   * ETH:
+   *   EIP712 -> direct wallet transaction
+   *
+   * ETH cannot use the ERC20 approval flow because
+   * native ETH is supplied through msg.value.
+   * ====================================================
+   */
 
-      /*
-       * ====================================================
-       * SEND SIGNED AUTHORIZATION TO SERVER
-       * ====================================================
-       *
-       * The server/relayer submits the actual
-       * createBCodeWithSignature transaction.
-       *
-       * The user's wallet does NOT sign another
-       * transaction here.
-       */
+  const handleCreateBCode =
+    async () => {
+      if (
+        !authenticated ||
+        !wallet?.address
+      ) {
+        setGenerateError(
+          "Connect your wallet first."
+        );
 
-      const response =
-        await fetch(
-          "/api/bcode/create",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body:
-              JSON.stringify({
-                creator:
-                  wallet.address,
+        return;
+      }
+
+      if (!generateToken) {
+        setGenerateError(
+          "Select a crypto first."
+        );
+
+        return;
+      }
+
+      const numericAmount =
+        Number(generateAmount);
+
+      if (
+        !Number.isFinite(
+          numericAmount
+        ) ||
+        numericAmount <= 0
+      ) {
+        setGenerateError(
+          "Enter an amount greater than zero."
+        );
+
+        return;
+      }
+
+      const token =
+        getGenerateTokenConfig(
+          generateToken
+        );
+
+      const amountUnits =
+        parseUnits(
+          numericAmount.toFixed(
+            token.decimals
+          ),
+          token.decimals
+        );
+
+      const feeUnits =
+        (amountUnits *
+          BigInt(
+            BCODE_FEE_BPS
+          )) /
+        BigInt(
+          BCODE_BPS_DENOMINATOR
+        );
+
+      if (feeUnits <= 0n) {
+        setGenerateError(
+          "Amount is too small to cover the 2% creation fee."
+        );
+
+        return;
+      }
+
+      const totalRequired =
+        amountUnits +
+        feeUnits;
+
+      setGenerateState(
+        "processing"
+      );
+
+      setGenerateStage(1);
+      setGenerateError("");
+
+      try {
+        /*
+         * ====================================================
+         * FORCE BASE MAINNET
+         * ====================================================
+         */
+
+        if (
+          wallet.switchChain
+        ) {
+          await wallet.switchChain(
+            BASE_CHAIN_ID
+          );
+        }
+
+        /*
+         * ====================================================
+         * GENERATE UNIQUE B-CODE
+         * ====================================================
+         */
+
+        let code =
+          generateBCodeValue();
+
+        let codeHash =
+          hashBCodeForClient(
+            code
+          );
+
+        let codeIsAvailable =
+          false;
+
+        for (
+          let attempt = 0;
+          attempt < 5;
+          attempt += 1
+        ) {
+          const existing =
+            await BCODE_PUBLIC_CLIENT.readContract(
+              {
+                address:
+                  BCODE_CONTRACT_ADDRESS,
+                abi:
+                  BCODE_CONTRACT_ABI,
+                functionName:
+                  "getBCode",
+                args: [
+                  codeHash,
+                ],
+              }
+            );
+
+          const [
+            creator,
+          ] = existing;
+
+          if (
+            creator ===
+            "0x0000000000000000000000000000000000000000"
+          ) {
+            codeIsAvailable =
+              true;
+
+            break;
+          }
+
+          code =
+            generateBCodeValue();
+
+          codeHash =
+            hashBCodeForClient(
+              code
+            );
+        }
+
+        if (!codeIsAvailable) {
+          throw new Error(
+            "Unable to generate a unique B-Code. Please try again."
+          );
+        }
+
+        setGeneratedCode(
+          code
+        );
+
+        setGeneratedHash(
+          codeHash
+        );
+
+        /*
+         * ====================================================
+         * ERC20 APPROVAL
+         * ====================================================
+         */
+
+        if (
+          generateToken !==
+          "ETH"
+        ) {
+          const allowanceSufficient =
+            await checkTokenAllowance(
+              {
+                tokenAddress:
+                  token.address,
+                owner:
+                  wallet.address as `0x${string}`,
+                requiredAmount:
+                  totalRequired,
+              }
+            );
+
+          if (
+            !allowanceSufficient
+          ) {
+            await enableBCodeToken(
+              {
+                tokenAddress:
+                  token.address,
+              }
+            );
+          }
+        }
+
+        /*
+         * ====================================================
+         * CREATION NONCE
+         * ====================================================
+         */
+
+        const nonce =
+          await BCODE_PUBLIC_CLIENT.readContract(
+            {
+              address:
+                BCODE_CONTRACT_ADDRESS,
+              abi:
+                BCODE_CONTRACT_ABI,
+              functionName:
+                "creationNonces",
+              args: [
+                wallet.address as `0x${string}`,
+              ],
+            }
+          );
+
+        /*
+         * ====================================================
+         * SIGNATURE DEADLINE
+         * ====================================================
+         */
+
+        const deadline =
+          BigInt(
+            Math.floor(
+              Date.now() /
+                1000
+            ) +
+              10 * 60
+          );
+
+        /*
+         * ====================================================
+         * SIGN EIP-712
+         * ====================================================
+         */
+
+        setGenerateStage(2);
+
+        const signature =
+          await signBCodeCreation({
+            codeHash,
+            tokenAddress:
+              token.address,
+            amount:
+              amountUnits,
+            nonce,
+            deadline,
+          });
+
+        /*
+         * ====================================================
+         * ETH CREATION
+         * ====================================================
+         *
+         * Native ETH must be sent with the actual
+         * blockchain transaction because the contract
+         * requires msg.value == amount + fee.
+         * ====================================================
+         */
+
+        if (
+          generateToken ===
+          "ETH"
+        ) {
+          setGenerateStage(3);
+
+          const data =
+            encodeFunctionData({
+              abi:
+                BCODE_CONTRACT_ABI,
+              functionName:
+                "createBCodeWithSignature",
+              args: [
+                wallet.address as `0x${string}`,
                 codeHash,
                 code,
-                token:
-                  token.address,
-                amount:
-                  amountUnits.toString(),
-                nonce:
-                  nonce.toString(),
-                deadline:
-                  deadline.toString(),
+                token.address,
+                amountUnits,
+                nonce,
+                deadline,
                 signature,
-              }),
+              ],
+            });
+
+          const result =
+            await sendTransaction(
+              {
+                to:
+                  BCODE_CONTRACT_ADDRESS,
+                data,
+                value:
+                  totalRequired,
+                chainId:
+                  BASE_CHAIN_ID,
+              },
+              {
+                address:
+                  wallet.address,
+              }
+            );
+
+          if (
+            !result?.hash
+          ) {
+            throw new Error(
+              "B-Code transaction was not submitted."
+            );
           }
-        );
 
-      const data =
-        await response.json();
+          setGenerateTxHash(
+            result.hash
+          );
 
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            "Unable to create B-Code."
-        );
-      }
+          await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+            {
+              hash:
+                result.hash as `0x${string}`,
+              confirmations: 1,
+            }
+          );
 
-      /*
-       * ====================================================
-       * SAVE RELAYER TRANSACTION HASH
-       * ====================================================
-       */
+          /*
+           * Generate QR.
+           */
 
-      const txHash =
-        data?.txHash ||
-        data?.hash ||
-        "";
+          const deepLink =
+            `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
+              code
+            )}`;
 
-      if (!txHash) {
-        throw new Error(
-          "B-Code transaction was submitted without a transaction hash."
-        );
-      }
+          const qr =
+            await QRCode.toDataURL(
+              deepLink,
+              {
+                width: 480,
+                margin: 2,
+                errorCorrectionLevel:
+                  "H",
+              }
+            );
 
-      setGenerateTxHash(
-        txHash
-      );
+          setGeneratedQr(
+            qr
+          );
 
-      /*
-       * ====================================================
-       * WAIT FOR RELAYER TRANSACTION
-       * ====================================================
-       */
+          setGenerateState(
+            "success"
+          );
 
-      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
-        {
-          hash:
-            txHash as `0x${string}`,
-          confirmations: 1,
+          return;
         }
-      );
 
-      /*
-       * ====================================================
-       * GENERATE DEEP LINK
-       * ====================================================
-       */
+        /*
+         * ====================================================
+         * ERC20 CREATION
+         * ====================================================
+         *
+         * Keep the existing gasless relayer flow.
+         * ====================================================
+         */
 
-      const deepLink =
-        `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
-          code
-        )}`;
+        setGenerateStage(3);
 
-      const qr =
-        await QRCode.toDataURL(
-          deepLink,
+        const response =
+          await fetch(
+            "/api/bcode/create",
+            {
+              method:
+                "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify({
+                  creator:
+                    wallet.address,
+                  codeHash,
+                  code,
+                  token:
+                    token.address,
+                  amount:
+                    amountUnits.toString(),
+                  nonce:
+                    nonce.toString(),
+                  deadline:
+                    deadline.toString(),
+                  signature,
+                }),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              "Unable to create B-Code."
+          );
+        }
+
+        const txHash =
+          data?.txHash ||
+          data?.hash ||
+          "";
+
+        if (!txHash) {
+          throw new Error(
+            "B-Code transaction was submitted without a transaction hash."
+          );
+        }
+
+        setGenerateTxHash(
+          txHash
+        );
+
+        await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
           {
-            width: 480,
-            margin: 2,
-            errorCorrectionLevel:
-              "H",
+            hash:
+              txHash as `0x${string}`,
+            confirmations: 1,
           }
         );
 
-      setGeneratedQr(
-        qr
-      );
+        /*
+         * ====================================================
+         * GENERATE QR
+         * ====================================================
+         */
 
-      /*
-       * ====================================================
-       * SUCCESS
-       * ====================================================
-       */
+        const deepLink =
+          `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
+            code
+          )}`;
 
-      setGenerateState(
-        "success"
-      );
+        const qr =
+          await QRCode.toDataURL(
+            deepLink,
+            {
+              width: 480,
+              margin: 2,
+              errorCorrectionLevel:
+                "H",
+            }
+          );
 
-      setGenerateStage(3);
-    } catch (error) {
-      console.error(
-        "B-CODE CREATION ERROR:",
-        error
-      );
+        setGeneratedQr(
+          qr
+        );
 
-      setGenerateState(
-        "error"
-      );
+        setGenerateState(
+          "success"
+        );
+      } catch (error) {
+        console.error(
+          "B-CODE CREATION ERROR:",
+          error
+        );
 
-      setGenerateError(
-        error instanceof Error
-          ? error.message
-          : "Unable to create B-Code."
-      );
-    }
-  };
+        setGenerateState(
+          "error"
+        );
+
+        setGenerateError(
+          error instanceof Error
+            ? error.message
+            : "Unable to create B-Code."
+        );
+      }
+    };
 
   /*
    * ====================================================
@@ -5913,474 +6157,1070 @@ if (!codeIsAvailable) {
   };
 
   /*
-   * ====================================================
-   * DOWNLOAD SHARE IMAGE
-   * ====================================================
-   */
+ * ====================================================
+ * DOWNLOAD / SHARE B-CODE IMAGE
+ * ====================================================
+ */
 
-  const downloadShareImage =
-    async () => {
-      if (
-        !generatedCode ||
-        !generatedQr
-      ) {
-        return;
+const downloadShareImage =
+  async () => {
+    if (
+      !generatedCode ||
+      !generatedQr
+    ) {
+      return;
+    }
+
+    try {
+      const qrImage =
+        await loadImage(
+          generatedQr
+        );
+
+      const logoImage =
+        await loadImage(
+          "/biyaport_logo.svg"
+        );
+
+      const canvas =
+        document.createElement(
+          "canvas"
+        );
+
+      const exportScale = 3;
+
+      const designWidth = 558;
+      const designHeight = 288;
+
+      canvas.width =
+        designWidth *
+        exportScale;
+
+      canvas.height =
+        designHeight *
+        exportScale;
+
+      canvas.style.width =
+        `${designWidth}px`;
+
+      canvas.style.height =
+        `${designHeight}px`;
+
+      const ctx =
+        canvas.getContext(
+          "2d"
+        );
+
+      if (!ctx) {
+        throw new Error(
+          "Unable to create share image."
+        );
       }
 
-      try {
-        const qrImage =
-          await loadImage(
-            generatedQr
-          );
+      ctx.scale(
+        exportScale,
+        exportScale
+      );
 
-        const logoImage =
-          await loadImage(
-            "/biyaport_logo.svg"
-          );
+      const padding = 30;
+      const radius = 20;
 
-        const canvas =
-          document.createElement(
-            "canvas"
-          );
+      ctx.save();
 
-        /*
-         * ====================================================
-         * EXPORT SCALE
-         * ====================================================
-         *
-         * Design size: 558 × 288
-         * Export size: 1674 × 864
-         */
+      ctx.beginPath();
 
-        const exportScale = 3;
+      ctx.roundRect(
+        0,
+        0,
+        designWidth,
+        designHeight,
+        radius
+      );
 
-        const designWidth = 558;
-        const designHeight = 288;
+      ctx.clip();
 
-        canvas.width =
-          designWidth *
-          exportScale;
+      ctx.fillStyle =
+        "#050511";
 
-        canvas.height =
-          designHeight *
-          exportScale;
+      ctx.fillRect(
+        0,
+        0,
+        designWidth,
+        designHeight
+      );
 
-        canvas.style.width =
-          `${designWidth}px`;
+      const glow =
+        ctx.createRadialGradient(
+          designWidth / 2,
+          -20,
+          0,
+          designWidth / 2,
+          -20,
+          260
+        );
 
-        canvas.style.height =
-          `${designHeight}px`;
+      glow.addColorStop(
+        0,
+        "rgba(21, 87, 232, 0.16)"
+      );
 
-        const ctx =
-          canvas.getContext(
-            "2d"
-          );
+      glow.addColorStop(
+        0.28,
+        "rgba(21, 87, 232, 0.07)"
+      );
 
-        if (!ctx) {
-          throw new Error(
-            "Unable to create share image."
+      glow.addColorStop(
+        0.68,
+        "rgba(21, 87, 232, 0)"
+      );
+
+      ctx.fillStyle =
+        glow;
+
+      ctx.fillRect(
+        0,
+        0,
+        designWidth,
+        designHeight
+      );
+
+      ctx.save();
+
+      ctx.translate(
+        designWidth / 2,
+        -145
+      );
+
+      ctx.scale(
+        1,
+        0.45
+      );
+
+      ctx.beginPath();
+
+      ctx.arc(
+        0,
+        0,
+        185,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.strokeStyle =
+        "rgba(21, 87, 232, 0.16)";
+
+      ctx.lineWidth = 2;
+
+      ctx.stroke();
+
+      ctx.restore();
+
+      ctx.save();
+
+      ctx.translate(
+        designWidth / 2,
+        -165
+      );
+
+      ctx.scale(
+        1,
+        0.45
+      );
+
+      ctx.beginPath();
+
+      ctx.arc(
+        0,
+        0,
+        250,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.strokeStyle =
+        "rgba(21, 87, 232, 0.14)";
+
+      ctx.lineWidth = 1;
+
+      ctx.stroke();
+
+      ctx.restore();
+
+      ctx.drawImage(
+        logoImage,
+        padding,
+        padding,
+        138,
+        44
+      );
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.font =
+        "700 32px DM Sans, Arial, sans-serif";
+
+      ctx.textBaseline =
+        "alphabetic";
+
+      ctx.fillText(
+        generatedCode,
+        padding,
+        228
+      );
+
+      const amountText =
+        `${Number(
+          generateAmount
+        ).toLocaleString(
+          undefined,
+          {
+            maximumFractionDigits: 6,
+          }
+        )} ${generateToken}`;
+
+      const networkText =
+        generateNetworkLabel;
+
+      ctx.font =
+        "700 16px DM Sans, Arial, sans-serif";
+
+      const amountWidth =
+        ctx.measureText(
+          amountText
+        ).width;
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.fillText(
+        amountText,
+        padding,
+        254
+      );
+
+      ctx.fillStyle =
+        "#9B9BAC";
+
+      ctx.font =
+        "400 16px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        networkText,
+        padding +
+          amountWidth +
+          8,
+        254
+      );
+
+      const containerX = 346;
+      const containerY = padding;
+
+      const containerWidth = 182;
+      const containerHeight = 228;
+
+      ctx.fillStyle =
+        "#0F0F1B";
+
+      ctx.beginPath();
+
+      roundRect(
+        ctx,
+        containerX,
+        containerY,
+        containerWidth,
+        containerHeight,
+        16
+      );
+
+      ctx.fill();
+
+      const qrSize = 150;
+
+      const qrX =
+        containerX +
+        (containerWidth -
+          qrSize) /
+          2;
+
+      const qrY =
+        containerY + 12;
+
+      ctx.drawImage(
+        qrImage,
+        qrX,
+        qrY,
+        qrSize,
+        qrSize
+      );
+
+      const dividerY =
+        qrY +
+        qrSize +
+        10;
+
+      ctx.beginPath();
+
+      ctx.setLineDash([
+        4,
+        4,
+      ]);
+
+      ctx.moveTo(
+        containerX + 16,
+        dividerY
+      );
+
+      ctx.lineTo(
+        containerX +
+          containerWidth -
+          16,
+        dividerY
+      );
+
+      ctx.strokeStyle =
+        "#20202B";
+
+      ctx.lineWidth = 1;
+
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+
+      const centerX =
+        containerX +
+        containerWidth / 2;
+
+      ctx.textAlign =
+        "center";
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.font =
+        "500 12px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        "Scan to redeem",
+        centerX,
+        dividerY + 19
+      );
+
+      ctx.fillStyle =
+        "#9B9BAC";
+
+      ctx.font =
+        "400 12px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        "Or visit biyaport.app",
+        centerX,
+        dividerY + 37
+      );
+
+      ctx.textAlign =
+        "left";
+
+      ctx.restore();
+
+      // ==================================================
+      // CREATE PNG BLOB
+      // ==================================================
+
+      const blob =
+        await new Promise<Blob | null>(
+          (resolve) => {
+            canvas.toBlob(
+              resolve,
+              "image/png",
+              1
+            );
+          }
+        );
+
+      if (!blob) {
+        throw new Error(
+          "Unable to generate B-Code image."
+        );
+      }
+
+      const fileName =
+        `${generatedCode}.png`;
+
+      const file =
+        new File(
+          [blob],
+          fileName,
+          {
+            type: "image/png",
+          }
+        );
+
+      // ==================================================
+      // DETECT MOBILE / TABLET
+      // ==================================================
+
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+
+      // ==================================================
+      // MOBILE: NATIVE SHARE
+      // ==================================================
+
+      if (
+        isMobile &&
+        typeof navigator.share ===
+          "function"
+      ) {
+        const shareText =
+          `I just generated a ${amountText} B-code! 🎊\n\n` +
+          `Visit biyaport.app or scan the QR code attached to redeem and withdraw to your wallet.`;
+
+        try {
+          const canShareFile =
+            typeof navigator.canShare ===
+              "function" &&
+            navigator.canShare({
+              files: [file],
+            });
+
+          if (canShareFile) {
+            await navigator.share({
+              text: shareText,
+              files: [file],
+            });
+
+            return;
+          }
+
+          /*
+           * If the mobile browser supports sharing
+           * but not file sharing, download the image.
+           */
+        } catch (shareError) {
+          /*
+           * User cancelled the native share sheet.
+           */
+          if (
+            shareError instanceof
+              DOMException &&
+            shareError.name ===
+              "AbortError"
+          ) {
+            return;
+          }
+
+          console.error(
+            "[B-CODE NATIVE SHARE ERROR]",
+            shareError
           );
         }
+      }
 
-        ctx.scale(
-          exportScale,
-          exportScale
+      // ==================================================
+      // DESKTOP / FALLBACK: DOWNLOAD
+      // ==================================================
+
+      const imageUrl =
+        URL.createObjectURL(
+          blob
         );
 
-        /*
-         * ====================================================
-         * MAIN IMAGE
-         * ====================================================
-         */
-
-        const padding = 30;
-        const radius = 20;
-
-        ctx.save();
-
-        ctx.beginPath();
-
-        ctx.roundRect(
-          0,
-          0,
-          designWidth,
-          designHeight,
-          radius
+      const link =
+        document.createElement(
+          "a"
         );
 
-        ctx.clip();
+      link.href =
+        imageUrl;
 
-        /*
-         * ====================================================
-         * BACKGROUND
-         * ====================================================
-         */
+      link.download =
+        fileName;
 
-        ctx.fillStyle =
-          "#050511";
+      link.style.display =
+        "none";
 
-        ctx.fillRect(
-          0,
-          0,
-          designWidth,
-          designHeight
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      document.body.removeChild(
+        link
+      );
+
+      setTimeout(() => {
+        URL.revokeObjectURL(
+          imageUrl
+        );
+      }, 1000);
+    } catch (error) {
+      console.error(
+        "[B-CODE SHARE IMAGE ERROR]",
+        error
+      );
+    }
+  };
+
+/*
+ * ====================================================
+ * DOWNLOAD MY B-CODE IMAGE
+ * ====================================================
+ */
+
+const downloadMyBCodeImage =
+  async (
+    item: BCodeHistoryItem
+  ) => {
+    if (!item.code) {
+      return;
+    }
+
+    try {
+      /*
+       * ==================================================
+       * GENERATE QR FOR THIS B-CODE
+       * ==================================================
+       */
+
+      const deepLink =
+        `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
+          item.code
+        )}`;
+
+      const qrDataUrl =
+        await QRCode.toDataURL(
+          deepLink,
+          {
+            width: 480,
+            margin: 2,
+            errorCorrectionLevel:
+              "H",
+          }
         );
 
-        /*
-         * ====================================================
-         * BLUE RADIAL GLOW
-         * ====================================================
-         */
-
-        const glow =
-          ctx.createRadialGradient(
-            designWidth / 2,
-            -20,
-            0,
-            designWidth / 2,
-            -20,
-            260
-          );
-
-        glow.addColorStop(
-          0,
-          "rgba(21, 87, 232, 0.16)"
+      const qrImage =
+        await loadImage(
+          qrDataUrl
         );
 
-        glow.addColorStop(
-          0.28,
-          "rgba(21, 87, 232, 0.07)"
+      const logoImage =
+        await loadImage(
+          "/biyaport_logo.svg"
         );
 
-        glow.addColorStop(
-          0.68,
-          "rgba(21, 87, 232, 0)"
+      /*
+       * ==================================================
+       * CANVAS
+       * ==================================================
+       */
+
+      const canvas =
+        document.createElement(
+          "canvas"
         );
 
-        ctx.fillStyle =
-          glow;
+      const exportScale = 3;
 
-        ctx.fillRect(
-          0,
-          0,
-          designWidth,
-          designHeight
+      const designWidth = 558;
+      const designHeight = 288;
+
+      canvas.width =
+        designWidth *
+        exportScale;
+
+      canvas.height =
+        designHeight *
+        exportScale;
+
+      canvas.style.width =
+        `${designWidth}px`;
+
+      canvas.style.height =
+        `${designHeight}px`;
+
+      const ctx =
+        canvas.getContext(
+          "2d"
         );
 
-        /*
-         * ====================================================
-         * OUTER ELLIPSE RINGS
-         * ====================================================
-         */
-
-        ctx.save();
-
-        ctx.translate(
-          designWidth / 2,
-          -145
-        );
-
-        ctx.scale(
-          1,
-          0.45
-        );
-
-        ctx.beginPath();
-
-        ctx.arc(
-          0,
-          0,
-          185,
-          0,
-          Math.PI * 2
-        );
-
-        ctx.strokeStyle =
-          "rgba(21, 87, 232, 0.16)";
-
-        ctx.lineWidth = 2;
-
-        ctx.stroke();
-
-        ctx.restore();
-
-        ctx.save();
-
-        ctx.translate(
-          designWidth / 2,
-          -165
-        );
-
-        ctx.scale(
-          1,
-          0.45
-        );
-
-        ctx.beginPath();
-
-        ctx.arc(
-          0,
-          0,
-          250,
-          0,
-          Math.PI * 2
-        );
-
-        ctx.strokeStyle =
-          "rgba(21, 87, 232, 0.14)";
-
-        ctx.lineWidth = 1;
-
-        ctx.stroke();
-
-        ctx.restore();
-
-        /*
-         * ====================================================
-         * LEFT SIDE
-         * ====================================================
-         */
-
-        ctx.drawImage(
-          logoImage,
-          padding,
-          padding,
-          138,
-          44
-        );
-
-        /*
-         * ====================================================
-         * B-CODE
-         * ====================================================
-         */
-
-        ctx.fillStyle =
-          "#FFFFFF";
-
-        ctx.font =
-          "700 32px DM Sans, Arial, sans-serif";
-
-        ctx.textBaseline =
-          "alphabetic";
-
-        ctx.fillText(
-          generatedCode,
-          padding,
-          228
-        );
-
-        /*
-         * ====================================================
-         * AMOUNT + NETWORK
-         * ====================================================
-         */
-
-        const amountText =
-          `${Number(
-            generateAmount
-          ).toLocaleString(
-            undefined,
-            {
-              maximumFractionDigits: 6,
-            }
-          )} ${generateToken}`;
-
-        const networkText =
-          generateNetworkLabel;
-
-        ctx.font =
-          "700 16px DM Sans, Arial, sans-serif";
-
-        const amountWidth =
-          ctx.measureText(
-            amountText
-          ).width;
-
-        ctx.fillStyle =
-          "#FFFFFF";
-
-        ctx.fillText(
-          amountText,
-          padding,
-          254
-        );
-
-        ctx.fillStyle =
-          "#9B9BAC";
-
-        ctx.font =
-          "400 16px DM Sans, Arial, sans-serif";
-
-        ctx.fillText(
-          networkText,
-          padding +
-            amountWidth +
-            8,
-          254
-        );
-
-        /*
-         * ====================================================
-         * RIGHT CONTAINER
-         * ====================================================
-         */
-
-        const containerX = 346;
-        const containerY = padding;
-
-        const containerWidth = 182;
-        const containerHeight = 228;
-
-        ctx.fillStyle =
-          "#0F0F1B";
-
-        ctx.beginPath();
-
-        roundRect(
-          ctx,
-          containerX,
-          containerY,
-          containerWidth,
-          containerHeight,
-          16
-        );
-
-        ctx.fill();
-
-        /*
-         * ====================================================
-         * QR CODE
-         * ====================================================
-         */
-
-        const qrSize = 150;
-
-        const qrX =
-          containerX +
-          (containerWidth -
-            qrSize) /
-            2;
-
-        const qrY =
-          containerY + 12;
-
-        ctx.drawImage(
-          qrImage,
-          qrX,
-          qrY,
-          qrSize,
-          qrSize
-        );
-
-        /*
-         * ====================================================
-         * DASHED DIVIDER
-         * ====================================================
-         */
-
-        const dividerY =
-          qrY +
-          qrSize +
-          10;
-
-        ctx.beginPath();
-
-        ctx.setLineDash([
-          4,
-          4,
-        ]);
-
-        ctx.moveTo(
-          containerX + 16,
-          dividerY
-        );
-
-        ctx.lineTo(
-          containerX +
-            containerWidth -
-            16,
-          dividerY
-        );
-
-        ctx.strokeStyle =
-          "#20202B";
-
-        ctx.lineWidth = 1;
-
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-
-        /*
-         * ====================================================
-         * INSTRUCTIONS
-         * ====================================================
-         */
-
-        const centerX =
-          containerX +
-          containerWidth / 2;
-
-        ctx.textAlign =
-          "center";
-
-        ctx.fillStyle =
-          "#FFFFFF";
-
-        ctx.font =
-          "500 12px DM Sans, Arial, sans-serif";
-
-        ctx.fillText(
-          "Scan to redeem",
-          centerX,
-          dividerY + 19
-        );
-
-        ctx.fillStyle =
-          "#9B9BAC";
-
-        ctx.font =
-          "400 12px DM Sans, Arial, sans-serif";
-
-        ctx.fillText(
-          "Or visit biyaport.app",
-          centerX,
-          dividerY + 37
-        );
-
-        ctx.textAlign =
-          "left";
-
-        ctx.restore();
-
-        /*
-         * ====================================================
-         * DOWNLOAD
-         * ====================================================
-         */
-
-        const link =
-          document.createElement(
-            "a"
-          );
-
-        link.download =
-          `${generatedCode}.png`;
-
-        link.href =
-          canvas.toDataURL(
-            "image/png"
-          );
-
-        link.click();
-      } catch (error) {
-        console.error(
-          "[B-CODE SHARE IMAGE ERROR]",
-          error
+      if (!ctx) {
+        throw new Error(
+          "Unable to create B-Code image."
         );
       }
-    };
+
+      ctx.scale(
+        exportScale,
+        exportScale
+      );
+
+      const padding = 30;
+      const radius = 20;
+
+      /*
+       * ==================================================
+       * BACKGROUND
+       * ==================================================
+       */
+
+      ctx.save();
+
+      ctx.beginPath();
+
+      ctx.roundRect(
+        0,
+        0,
+        designWidth,
+        designHeight,
+        radius
+      );
+
+      ctx.clip();
+
+      ctx.fillStyle =
+        "#050511";
+
+      ctx.fillRect(
+        0,
+        0,
+        designWidth,
+        designHeight
+      );
+
+      /*
+       * ==================================================
+       * GLOW
+       * ==================================================
+       */
+
+      const glow =
+        ctx.createRadialGradient(
+          designWidth / 2,
+          -20,
+          0,
+          designWidth / 2,
+          -20,
+          260
+        );
+
+      glow.addColorStop(
+        0,
+        "rgba(21, 87, 232, 0.16)"
+      );
+
+      glow.addColorStop(
+        0.28,
+        "rgba(21, 87, 232, 0.07)"
+      );
+
+      glow.addColorStop(
+        0.68,
+        "rgba(21, 87, 232, 0)"
+      );
+
+      ctx.fillStyle =
+        glow;
+
+      ctx.fillRect(
+        0,
+        0,
+        designWidth,
+        designHeight
+      );
+
+      /*
+       * ==================================================
+       * DECORATIVE ARC 1
+       * ==================================================
+       */
+
+      ctx.save();
+
+      ctx.translate(
+        designWidth / 2,
+        -145
+      );
+
+      ctx.scale(
+        1,
+        0.45
+      );
+
+      ctx.beginPath();
+
+      ctx.arc(
+        0,
+        0,
+        185,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.strokeStyle =
+        "rgba(21, 87, 232, 0.16)";
+
+      ctx.lineWidth = 2;
+
+      ctx.stroke();
+
+      ctx.restore();
+
+      /*
+       * ==================================================
+       * DECORATIVE ARC 2
+       * ==================================================
+       */
+
+      ctx.save();
+
+      ctx.translate(
+        designWidth / 2,
+        -165
+      );
+
+      ctx.scale(
+        1,
+        0.45
+      );
+
+      ctx.beginPath();
+
+      ctx.arc(
+        0,
+        0,
+        250,
+        0,
+        Math.PI * 2
+      );
+
+      ctx.strokeStyle =
+        "rgba(21, 87, 232, 0.14)";
+
+      ctx.lineWidth = 1;
+
+      ctx.stroke();
+
+      ctx.restore();
+
+      /*
+       * ==================================================
+       * LOGO
+       * ==================================================
+       */
+
+      ctx.drawImage(
+        logoImage,
+        padding,
+        padding,
+        138,
+        44
+      );
+
+      /*
+       * ==================================================
+       * B-CODE
+       * ==================================================
+       */
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.font =
+        "700 32px DM Sans, Arial, sans-serif";
+
+      ctx.textBaseline =
+        "alphabetic";
+
+      ctx.fillText(
+        item.code,
+        padding,
+        228
+      );
+
+      /*
+       * ==================================================
+       * TOKEN + AMOUNT
+       * ==================================================
+       */
+
+      const token =
+        getHistoryToken(
+          item.token
+        );
+
+      const decimals =
+        item.token.toLowerCase() ===
+        NATIVE_ETH.toLowerCase()
+          ? 18
+          : BCODE_TOKEN_DECIMALS;
+
+      const amount =
+        formatUnits(
+          item.amount,
+          decimals
+        );
+
+      const displayAmount =
+        Number(
+          amount
+        ).toLocaleString(
+          undefined,
+          {
+            maximumFractionDigits: 6,
+          }
+        );
+
+      const amountText =
+        `${displayAmount} ${
+          token?.symbol ??
+          "TOKEN"
+        }`;
+
+      const networkText =
+        "Base";
+
+      ctx.font =
+        "700 16px DM Sans, Arial, sans-serif";
+
+      const amountWidth =
+        ctx.measureText(
+          amountText
+        ).width;
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.fillText(
+        amountText,
+        padding,
+        254
+      );
+
+      ctx.fillStyle =
+        "#9B9BAC";
+
+      ctx.font =
+        "400 16px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        networkText,
+        padding +
+          amountWidth +
+          8,
+        254
+      );
+
+      /*
+       * ==================================================
+       * QR CONTAINER
+       * ==================================================
+       */
+
+      const containerX = 346;
+      const containerY = padding;
+
+      const containerWidth = 182;
+      const containerHeight = 228;
+
+      ctx.fillStyle =
+        "#0F0F1B";
+
+      ctx.beginPath();
+
+      roundRect(
+        ctx,
+        containerX,
+        containerY,
+        containerWidth,
+        containerHeight,
+        16
+      );
+
+      ctx.fill();
+
+      /*
+       * ==================================================
+       * QR CODE
+       * ==================================================
+       */
+
+      const qrSize = 150;
+
+      const qrX =
+        containerX +
+        (containerWidth -
+          qrSize) /
+          2;
+
+      const qrY =
+        containerY + 12;
+
+      ctx.drawImage(
+        qrImage,
+        qrX,
+        qrY,
+        qrSize,
+        qrSize
+      );
+
+      /*
+       * ==================================================
+       * DIVIDER
+       * ==================================================
+       */
+
+      const dividerY =
+        qrY +
+        qrSize +
+        10;
+
+      ctx.beginPath();
+
+      ctx.setLineDash([
+        4,
+        4,
+      ]);
+
+      ctx.moveTo(
+        containerX + 16,
+        dividerY
+      );
+
+      ctx.lineTo(
+        containerX +
+          containerWidth -
+          16,
+        dividerY
+      );
+
+      ctx.strokeStyle =
+        "#20202B";
+
+      ctx.lineWidth = 1;
+
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+
+      /*
+       * ==================================================
+       * QR LABEL
+       * ==================================================
+       */
+
+      const centerX =
+        containerX +
+        containerWidth / 2;
+
+      ctx.textAlign =
+        "center";
+
+      ctx.fillStyle =
+        "#FFFFFF";
+
+      ctx.font =
+        "500 12px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        "Scan to redeem",
+        centerX,
+        dividerY + 19
+      );
+
+      ctx.fillStyle =
+        "#9B9BAC";
+
+      ctx.font =
+        "400 12px DM Sans, Arial, sans-serif";
+
+      ctx.fillText(
+        "Or visit biyaport.app",
+        centerX,
+        dividerY + 37
+      );
+
+      ctx.textAlign =
+        "left";
+
+      ctx.restore();
+
+      /*
+       * ==================================================
+       * CREATE PNG
+       * ==================================================
+       */
+
+      const blob =
+        await new Promise<Blob | null>(
+          (resolve) => {
+            canvas.toBlob(
+              resolve,
+              "image/png",
+              1
+            );
+          }
+        );
+
+      if (!blob) {
+        throw new Error(
+          "Unable to generate B-Code image."
+        );
+      }
+
+      /*
+       * ==================================================
+       * DOWNLOAD
+       * ==================================================
+       */
+
+      const fileName =
+        `${item.code}.png`;
+
+      const imageUrl =
+        URL.createObjectURL(
+          blob
+        );
+
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href =
+        imageUrl;
+
+      link.download =
+        fileName;
+
+      link.style.display =
+        "none";
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      document.body.removeChild(
+        link
+      );
+
+      setTimeout(() => {
+        URL.revokeObjectURL(
+          imageUrl
+        );
+      }, 1000);
+    } catch (error) {
+      console.error(
+        "[MY B-CODE DOWNLOAD ERROR]",
+        error
+      );
+    }
+  };
 
   /*
    * ====================================================
@@ -6388,99 +7228,103 @@ if (!codeIsAvailable) {
    * ====================================================
    */
 
-  const handleRedeem = async () => {
-    const code =
-      redeemCode.trim().toUpperCase();
+  const handleRedeem =
+    async () => {
+      const code =
+        redeemCode
+          .trim()
+          .toUpperCase();
 
-    if (
-      !isValidBCodeFormat(code)
-    ) {
-      setRedeemError(
-        "Enter a valid B-Code in the format B-XXXX-XXXX."
-      );
-
-      setRedeemStep(1);
-
-      return;
-    }
-
-    if (
-      !/^0x[a-fA-F0-9]{40}$/.test(
-        redeemRecipient.trim()
-      )
-    ) {
-      setRedeemError(
-        "Enter a valid wallet address."
-      );
-
-      return;
-    }
-
-    setRedeemState(
-      "processing"
-    );
-
-    setRedeemStage(1);
-    setRedeemError("");
-
-    try {
-      setRedeemStage(2);
-
-      const response =
-        await fetch(
-          "/api/bcode/redeem",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body:
-              JSON.stringify({
-                code,
-                recipient:
-                  redeemRecipient.trim(),
-              }),
-          }
+      if (
+        !isValidBCodeFormat(code)
+      ) {
+        setRedeemError(
+          "Enter a valid B-Code in the format B-XXXX-XXXX."
         );
 
-      const data =
-        await response.json();
+        setRedeemStep(1);
 
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            "Unable to redeem B-Code."
-        );
+        return;
       }
 
-      setRedeemStage(3);
+      if (
+        !/^0x[a-fA-F0-9]{40}$/.test(
+          redeemRecipient.trim()
+        )
+      ) {
+        setRedeemError(
+          "Enter a valid wallet address."
+        );
 
-      setRedeemTxHash(
-        data.txHash || ""
-      );
-
-      setRedeemState(
-        "success"
-      );
-    } catch (error) {
-      console.error(
-        "B-CODE REDEMPTION ERROR:",
-        error
-      );
+        return;
+      }
 
       setRedeemState(
-        "error"
+        "processing"
       );
 
-      setRedeemError(
-        error instanceof Error
-          ? error.message
-          : "Unable to redeem B-Code."
-      );
-    }
-  };
+      setRedeemStage(1);
+      setRedeemError("");
+
+      try {
+        setRedeemStage(2);
+
+        const response =
+          await fetch(
+            "/api/bcode/redeem",
+            {
+              method:
+                "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body:
+                JSON.stringify({
+                  code,
+                  recipient:
+                    redeemRecipient.trim(),
+                }),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              "Unable to redeem B-Code."
+          );
+        }
+
+        setRedeemStage(3);
+
+        setRedeemTxHash(
+          data.txHash || ""
+        );
+
+        setRedeemState(
+          "success"
+        );
+      } catch (error) {
+        console.error(
+          "B-CODE REDEMPTION ERROR:",
+          error
+        );
+
+        setRedeemState(
+          "error"
+        );
+
+        setRedeemError(
+          error instanceof Error
+            ? error.message
+            : "Unable to redeem B-Code."
+        );
+      }
+    };
 
   /*
    * ====================================================
@@ -6488,186 +7332,345 @@ if (!codeIsAvailable) {
    * ====================================================
    */
 
-  const getHistoryToken = (address: `0x${string}`) => {
-    if (address.toLowerCase() === BCODE_BASE_SEPOLIA_USDT.toLowerCase()) {
-      return getBCodeTokenConfig("USDT");
+  const getHistoryToken = (
+    address: `0x${string}`
+  ) => {
+    if (
+      address.toLowerCase() ===
+      BCODE_BASE_USDT.toLowerCase()
+    ) {
+      return getBCodeTokenConfig(
+        "USDT"
+      );
     }
 
-    if (address.toLowerCase() === BCODE_BASE_SEPOLIA_USDC.toLowerCase()) {
-      return getBCodeTokenConfig("USDC");
+    if (
+      address.toLowerCase() ===
+      BCODE_BASE_USDC.toLowerCase()
+    ) {
+      return getBCodeTokenConfig(
+        "USDC"
+      );
+    }
+
+    if (
+      address.toLowerCase() ===
+      NATIVE_ETH.toLowerCase()
+    ) {
+      return {
+        symbol: "ETH",
+        decimals: 18,
+        logo: "/eth-logo.svg",
+      };
     }
 
     return null;
   };
 
-  const fetchMyBCodes = async () => {
-    if (!wallet?.address) {
-      setMyBCodes([]);
-      return;
-    }
-
-    setMyBCodesLoading(true);
-    setMyBCodesError("");
-
-    try {
-      const hashes = await BCODE_PUBLIC_CLIENT.readContract({
-        address: BCODE_CONTRACT_ADDRESS,
-        abi: BCODE_CONTRACT_ABI,
-        functionName: "getBCodeHashesByCreator",
-        args: [wallet.address as `0x${string}`],
-      });
-
-      if (hashes.length === 0) {
+  const fetchMyBCodes =
+    async () => {
+      if (!wallet?.address) {
         setMyBCodes([]);
         return;
       }
 
-      const records = await Promise.all(
-        hashes.map(async (hash) => {
-          const result = await BCODE_PUBLIC_CLIENT.readContract({
-            address: BCODE_CONTRACT_ADDRESS,
-            abi: BCODE_CONTRACT_ABI,
-            functionName: "getBCode",
-            args: [hash],
-          });
+      setMyBCodesLoading(true);
+      setMyBCodesError("");
 
-          const [creator, token, amount, redeemed, cancelled, code] = result;
+      try {
+        const hashes =
+          await BCODE_PUBLIC_CLIENT.readContract(
+            {
+              address:
+                BCODE_CONTRACT_ADDRESS,
+              abi:
+                BCODE_CONTRACT_ABI,
+              functionName:
+                "getBCodeHashesByCreator",
+              args: [
+                wallet.address as `0x${string}`,
+              ],
+            }
+          );
 
-          return {
-            hash,
-            creator,
-            token,
-            amount,
-            redeemed,
-            cancelled,
-            code,
-          } satisfies BCodeHistoryItem;
-        })
-      );
+        if (
+          hashes.length === 0
+        ) {
+          setMyBCodes([]);
+          return;
+        }
 
-      setMyBCodes(records.reverse());
-    } catch (error) {
-      console.error("MY B-CODES ERROR:", error);
-      setMyBCodes([]);
-      setMyBCodesError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load your B-Codes."
-      );
-    } finally {
-      setMyBCodesLoading(false);
-    }
-  };
+        const records =
+          await Promise.all(
+            hashes.map(
+              async (
+                hash
+              ) => {
+                const result =
+                  await BCODE_PUBLIC_CLIENT.readContract(
+                    {
+                      address:
+                        BCODE_CONTRACT_ADDRESS,
+                      abi:
+                        BCODE_CONTRACT_ABI,
+                      functionName:
+                        "getBCode",
+                      args: [
+                        hash,
+                      ],
+                    }
+                  );
+
+                const [
+                  creator,
+                  token,
+                  amount,
+                  redeemed,
+                  cancelled,
+                  code,
+                ] = result;
+
+                return {
+                  hash,
+                  creator,
+                  token,
+                  amount,
+                  redeemed,
+                  cancelled,
+                  code,
+                } satisfies BCodeHistoryItem;
+              }
+            )
+          );
+
+        setMyBCodes(
+          records.reverse()
+        );
+      } catch (error) {
+        console.error(
+          "MY B-CODES ERROR:",
+          error
+        );
+
+        setMyBCodes([]);
+
+        setMyBCodesError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load your B-Codes."
+        );
+      } finally {
+        setMyBCodesLoading(
+          false
+        );
+      }
+    };
 
   const openMyBCodes = () => {
     setMyBCodesOpen(true);
-    setMyBCodesFilter("all");
-    setExpandedBCodeHash(null);
-    setCancelHash(null);
+    setMyBCodesFilter(
+      "all"
+    );
+    setExpandedBCodeHash(
+      null
+    );
+    setCancelHash(
+      null
+    );
     setCancelError("");
     setMyBCodesError("");
 
-    // Fetch immediately when the user clicks My B-Codes.
-    // The effect below also retries automatically if the wallet address
-    // becomes available after the view has opened.
-    if (wallet?.address) {
+    if (
+      wallet?.address
+    ) {
       void fetchMyBCodes();
     } else {
       setMyBCodes([]);
-      setMyBCodesError("Connect your wallet to view your B-Codes.");
+      setMyBCodesError(
+        "Connect your wallet to view your B-Codes."
+      );
     }
   };
 
   useEffect(() => {
-    if (myBCodesOpen && wallet?.address) {
+    if (
+      myBCodesOpen &&
+      wallet?.address
+    ) {
       void fetchMyBCodes();
     }
-  }, [myBCodesOpen, wallet?.address]);
+  }, [
+    myBCodesOpen,
+    wallet?.address,
+  ]);
 
   const closeMyBCodes = () => {
-    if (cancelLoading) return;
-    setMyBCodesOpen(false);
-    setExpandedBCodeHash(null);
-    setCancelHash(null);
-    setCancelError("");
-  };
-
-  const getHistoryStatus = (item: BCodeHistoryItem) =>
-    item.cancelled ? "cancelled" : item.redeemed ? "redeemed" : "active";
-
-  const filteredMyBCodes = myBCodes.filter((item) =>
-    myBCodesFilter === "all"
-      ? true
-      : getHistoryStatus(item) === myBCodesFilter
-  );
-
-  const copyMyBCode = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopiedBCode(code);
-      window.setTimeout(() => {
-        setCopiedBCode((current) =>
-          current === code ? null : current
-        );
-      }, 1500);
-    } catch (error) {
-      console.error("B-CODE COPY ERROR:", error);
-    }
-  };
-
-  const handleCancelBCode = async () => {
-    if (!cancelHash || !wallet?.address) {
+    if (cancelLoading) {
       return;
     }
 
-    setCancelLoading(true);
+    setMyBCodesOpen(false);
+    setExpandedBCodeHash(
+      null
+    );
+    setCancelHash(
+      null
+    );
     setCancelError("");
-
-    try {
-      if (wallet.switchChain) {
-        await wallet.switchChain(BCODE_CHAIN_ID);
-      }
-
-      const data = encodeFunctionData({
-        abi: BCODE_CONTRACT_ABI,
-        functionName: "cancelBCode",
-        args: [cancelHash],
-      });
-
-      const result = await sendTransaction(
-        {
-          to: BCODE_CONTRACT_ADDRESS,
-          data,
-          value: 0n,
-          chainId: BCODE_CHAIN_ID,
-        },
-        {
-          address: wallet.address,
-        }
-      );
-
-      if (!result?.hash) {
-        throw new Error("Cancellation transaction was not submitted.");
-      }
-
-      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt({
-        hash: result.hash as `0x${string}`,
-        confirmations: 1,
-      });
-
-      setCancelHash(null);
-      await fetchMyBCodes();
-    } catch (error) {
-      console.error("B-CODE CANCELLATION ERROR:", error);
-      setCancelError(
-        error instanceof Error
-          ? error.message
-          : "Unable to cancel this B-Code."
-      );
-    } finally {
-      setCancelLoading(false);
-    }
   };
+
+  const getHistoryStatus = (
+    item: BCodeHistoryItem
+  ) =>
+    item.cancelled
+      ? "cancelled"
+      : item.redeemed
+      ? "redeemed"
+      : "active";
+
+  const filteredMyBCodes =
+    myBCodes.filter(
+      (item) =>
+        myBCodesFilter ===
+        "all"
+          ? true
+          : getHistoryStatus(
+              item
+            ) ===
+            myBCodesFilter
+    );
+
+  const copyMyBCode =
+    async (
+      code: string
+    ) => {
+      try {
+        await navigator.clipboard.writeText(
+          code
+        );
+
+        setCopiedBCode(
+          code
+        );
+
+        window.setTimeout(
+          () => {
+            setCopiedBCode(
+              (
+                current
+              ) =>
+                current ===
+                code
+                  ? null
+                  : current
+            );
+          },
+          1500
+        );
+      } catch (error) {
+        console.error(
+          "B-CODE COPY ERROR:",
+          error
+        );
+      }
+    };
+
+  /*
+   * ====================================================
+   * CANCEL B-CODE
+   * ====================================================
+   */
+
+  const handleCancelBCode =
+    async () => {
+      if (
+        !cancelHash ||
+        !wallet?.address
+      ) {
+        return;
+      }
+
+      setCancelLoading(
+        true
+      );
+
+      setCancelError("");
+
+      try {
+        if (
+          wallet.switchChain
+        ) {
+          await wallet.switchChain(
+            BASE_CHAIN_ID
+          );
+        }
+
+        const data =
+          encodeFunctionData({
+            abi:
+              BCODE_CONTRACT_ABI,
+            functionName:
+              "cancelBCode",
+            args: [
+              cancelHash,
+            ],
+          });
+
+        const result =
+          await sendTransaction(
+            {
+              to:
+                BCODE_CONTRACT_ADDRESS,
+              data,
+              value:
+                0n,
+              chainId:
+                BASE_CHAIN_ID,
+            },
+            {
+              address:
+                wallet.address,
+            }
+          );
+
+        if (
+          !result?.hash
+        ) {
+          throw new Error(
+            "Cancellation transaction was not submitted."
+          );
+        }
+
+        await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+          {
+            hash:
+              result.hash as `0x${string}`,
+            confirmations: 1,
+          }
+        );
+
+        setCancelHash(
+          null
+        );
+
+        await fetchMyBCodes();
+      } catch (error) {
+        console.error(
+          "B-CODE CANCELLATION ERROR:",
+          error
+        );
+
+        setCancelError(
+          error instanceof Error
+            ? error.message
+            : "Unable to cancel this B-Code."
+        );
+      } finally {
+        setCancelLoading(
+          false
+        );
+      }
+    };
 
   /*
    * ====================================================
@@ -6677,7 +7680,9 @@ if (!codeIsAvailable) {
 
   const resetGenerate = () => {
     setGenerateStep(1);
-    setGenerateState("idle");
+    setGenerateState(
+      "idle"
+    );
     setGenerateStage(1);
     setGenerateError("");
     setGenerateTxHash("");
@@ -6685,7 +7690,13 @@ if (!codeIsAvailable) {
     setGeneratedHash("");
     setGeneratedQr("");
     setGenerateCryptoSearch("");
-    setGenerateCryptoDropdownOpen(false);
+    setGenerateCryptoDropdownOpen(
+      false
+    );
+    setGenerateToken(
+      ""
+    );
+    setGenerateAmount("");
   };
 
   /*
@@ -6696,7 +7707,9 @@ if (!codeIsAvailable) {
 
   const resetRedeem = () => {
     setRedeemStep(1);
-    setRedeemState("idle");
+    setRedeemState(
+      "idle"
+    );
     setRedeemStage(1);
     setRedeemError("");
     setRedeemToken("");
@@ -6711,19 +7724,11 @@ if (!codeIsAvailable) {
    * ====================================================
    */
 
-  const explorerBase =
-    generateNetwork === "base"
-      ? "https://basescan.org/tx/"
-      : generateNetwork ===
-        "bnb-smart-chain"
-      ? "https://bscscan.com/tx/"
-      : "https://sepolia.basescan.org/tx/";
-
   const explorerUrl =
     generateTxHash
-      ? `${explorerBase}${generateTxHash}`
+      ? `${BASE_EXPLORER_URL}${generateTxHash}`
       : redeemTxHash
-      ? `${explorerBase}${redeemTxHash}`
+      ? `${BASE_EXPLORER_URL}${redeemTxHash}`
       : "";
 
   /*
@@ -6737,935 +7742,1210 @@ if (!codeIsAvailable) {
       <Background />
 
       <div className="relative z-10 min-h-screen">
-        {/* ====================================================
-            HEADER
-        ==================================================== */}
 
         <SiteNav
-          onQuickPort={onBackHome}
+          onQuickPort={
+            onBackHome
+          }
           onBCodes={() => {}}
         />
 
-        {/* ====================================================
-            MAIN
-        ==================================================== */}
-
         <section className="min-h-screen overflow-y-auto px-4 pb-28 pt-[112px] sm:px-6 sm:pb-12 sm:pt-[128px]">
           <div className="mx-auto w-full max-w-[590px]">
-  <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
-    {/* ====================================================
-        TITLE
-    ==================================================== */}
 
-    {!(
-      (mode === "generate" &&
-        generateState === "success") ||
-      (mode === "redeem" &&
-        redeemState === "success")
-    ) && (
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
-          B-Codes
-        </h1>
+            <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
 
-        {myBCodesOpen ? (
-          <button
-            type="button"
-            onClick={closeMyBCodes}
-            disabled={cancelLoading}
-            className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground disabled:opacity-50"
-          >
-            Back
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={openMyBCodes}
-            className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground"
-          >
-            My B-Codes
-          </button>
-        )}
-      </div>
-    )}
+              {!(
+                (
+                  mode ===
+                    "generate" &&
+                  generateState ===
+                    "success"
+                ) ||
+                (
+                  mode ===
+                    "redeem" &&
+                  redeemState ===
+                    "success"
+                )
+              ) && (
+                <div className="mb-6 flex items-center justify-between gap-4">
+                  <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
+                    B-Codes
+                  </h1>
 
-    {!myBCodesOpen && (
-      <>
-        {/* ====================================================
-            GENERATE / REDEEM SWITCH
-        ==================================================== */}
-
-        {(
-          (mode === "generate" &&
-            generateState === "idle" &&
-            generateStep === 1) ||
-          (mode === "redeem" &&
-            redeemState === "idle" &&
-            redeemStep === 1)
-        ) && (
-          <div className="mb-6 flex h-[52px] rounded-[12px] bg-input p-1">
-            <button
-              type="button"
-              onClick={() => {
-                switchMode("generate");
-                setGenerateStep(1);
-              }}
-              className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
-                mode === "generate"
-                  ? "bg-[#050511] text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Generate
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                switchMode("redeem");
-                setRedeemStep(1);
-              }}
-              className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
-                mode === "redeem"
-                  ? "bg-[#050511] text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Redeem
-            </button>
-          </div>
-        )}
-
-        {/* ====================================================
-            GENERATE
-        ==================================================== */}
-
-        {mode === "generate" && (
-          <>
-            {generateState === "processing" && (
-              <BCodeProgress
-                title="Generating B-Code"
-                stage={generateStage}
-                labels={[
-                  "Preparing B-Code",
-                  "Signing authorization",
-                  "Submitting B-Code",
-                ]}
-              />
-            )}
-
-            {generateState === "success" && (
-              <div className="text-center">
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-                    <Check className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-
-                <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
-                  B-Code Generated
-                </h2>
-
-                <p className="mt-2 text-[14px] text-muted-foreground">
-                  Anyone with this B-Code can withdraw the funds to their wallet.
-                </p>
-
-                <div className="mx-auto mt-6 w-fit rounded-[12px] border border-dashed border-border bg-input px-5 py-4">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-[27px] font-bold tracking-[0.08em]">
-                      {generatedCode}
-                    </span>
-
-                    <CopyButton value={generatedCode} />
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <button
-                    type="button"
-                    onClick={downloadShareImage}
-                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
-                  >
-                    Share B-Code
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={resetGenerate}
-                    className="mx-auto mt-5 block text-[13px] font-medium text-muted-foreground underline underline-offset-4 transition hover:text-foreground"
-                  >
-                    Generate new B-Code
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {generateState === "error" && (
-              <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                <p className="text-[14px] text-destructive">
-                  {generateError || "B-Code creation failed."}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGenerateState("idle");
-                    setGenerateStage(1);
-                  }}
-                  className="mt-4 text-[14px] font-medium underline underline-offset-4"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-
-            {generateState === "idle" &&
-              generateStep === 1 && (
-                <>
-                  <div
-                    ref={generateCryptoDropdownRef}
-                    className="relative"
-                  >
+                  {myBCodesOpen ? (
                     <button
                       type="button"
-                      onClick={() =>
-                        setGenerateCryptoDropdownOpen(
-                          (open) => !open
-                        )
+                      onClick={
+                        closeMyBCodes
                       }
-                      className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4"
+                      disabled={
+                        cancelLoading
+                      }
+                      className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground disabled:opacity-50"
                     >
-                      <div className="flex items-center gap-3">
-                        <Image
-                          src={
-                            getBCodeTokenConfig(
-                              generateToken
-                            ).logo
+                      Back
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={
+                        openMyBCodes
+                      }
+                      className="shrink-0 rounded-[9px] bg-secondary px-3 py-2 text-[13px] font-medium text-muted-foreground transition hover:bg-input hover:text-foreground"
+                    >
+                      My B-Codes
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {!myBCodesOpen && (
+                <>
+                  {(
+                    (
+                      mode ===
+                        "generate" &&
+                      generateState ===
+                        "idle" &&
+                      generateStep ===
+                        1
+                    ) ||
+                    (
+                      mode ===
+                        "redeem" &&
+                      redeemState ===
+                        "idle" &&
+                      redeemStep ===
+                        1
+                    )
+                  ) && (
+                    <div className="mb-6 flex h-[52px] rounded-[12px] bg-input p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          switchMode(
+                            "generate"
+                          );
+                          setGenerateStep(
+                            1
+                          );
+                        }}
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                          mode ===
+                          "generate"
+                            ? "bg-[#050511] text-foreground shadow-sm"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        Generate
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          switchMode(
+                            "redeem"
+                          );
+                          setRedeemStep(
+                            1
+                          );
+                        }}
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                          mode ===
+                          "redeem"
+                            ? "bg-[#050511] text-foreground shadow-sm"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        Redeem
+                      </button>
+                    </div>
+                  )}
+
+                  {mode ===
+                    "generate" && (
+                    <>
+                      {generateState ===
+                        "processing" && (
+                        <BCodeProgress
+                          title="Generating B-Code"
+                          stage={
+                            generateStage
                           }
-                          alt=""
-                          width={38}
-                          height={38}
-                          className="h-9 w-9 object-contain"
+                          labels={[
+                            "Preparing B-Code",
+                            "Signing authorization",
+                            "Submitting B-Code",
+                          ]}
                         />
+                      )}
 
-                        <div className="text-left">
-                          <p className="text-[15px] font-semibold">
-                            {generateToken}
+                      {generateState ===
+                        "success" && (
+                        <div className="text-center">
+                          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                              <Check className="h-6 w-6 text-white" />
+                            </div>
+                          </div>
+
+                          <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                            B-Code Generated
+                          </h2>
+
+                          <p className="mt-2 text-[14px] text-muted-foreground">
+                            Anyone with this B-Code can withdraw the funds to their wallet.
                           </p>
 
-                          <p className="text-[12px] text-muted-foreground">
-                            {generateNetworkLabel}
-                          </p>
+                          <div className="mx-auto mt-6 w-fit rounded-[12px] border border-dashed border-border bg-input px-5 py-4">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="text-[27px] font-bold tracking-[0.08em]">
+                                {
+                                  generatedCode
+                                }
+                              </span>
+
+                              <CopyButton
+                                value={
+                                  generatedCode
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-5 flex w-full gap-2.5">
+  <button
+    type="button"
+    onClick={resetGenerate}
+    className="flex h-[52px] shrink-0 items-center justify-center rounded-[10px] border border-border bg-[#0f0f1B] px-4 text-[14px] font-medium text-foreground transition hover:bg-[#151522]"
+  >
+    New B-Code
+  </button>
+
+  <button
+    type="button"
+    onClick={downloadShareImage}
+    className="flex h-[52px] flex-1 items-center justify-center rounded-[10px] bg-primary px-4 text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
+  >
+    Share B-Code
+  </button>
+</div>
                         </div>
+                      )}
+
+                      {generateState ===
+                        "error" && (
+                        <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                          <p className="text-[14px] text-destructive">
+                            {
+                              generateError ||
+                              "B-Code creation failed."
+                            }
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGenerateState(
+                                "idle"
+                              );
+                              setGenerateStage(
+                                1
+                              );
+                            }}
+                            className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                          >
+                            Try again
+                          </button>
+                        </div>
+                      )}
+
+                      {generateState ===
+                        "idle" &&
+                        generateStep ===
+                          1 && (
+                          <>
+                            <div
+                              ref={
+                                generateCryptoDropdownRef
+                              }
+                              className="relative"
+                            >
+                              <button
+    type="button"
+    onClick={() =>
+      setGenerateCryptoDropdownOpen(
+        (open) => !open
+      )
+    }
+    className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4"
+  >
+    <div className="flex items-center gap-3">
+      {generateToken ? (
+        <>
+          <Image
+            src={
+              getGenerateTokenConfig(
+                generateToken
+              ).logo
+            }
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
+
+          <div className="flex items-center gap-2 text-left">
+            <p className="text-[15px] font-semibold">
+              {generateToken}
+            </p>
+
+            <span className="text-muted-foreground">
+              ·
+            </span>
+
+            <span className="text-[13px] text-muted-foreground">
+              Base
+            </span>
+          </div>
+        </>
+      ) : (
+        <p className="text-[15px] text-muted-foreground">
+          Select crypto
+        </p>
+      )}
+    </div>
+
+    <ChevronDown
+      className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+        generateCryptoDropdownOpen
+          ? "rotate-180"
+          : ""
+      }`}
+    />
+  </button>
+
+  {generateCryptoDropdownOpen && (
+    <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+      <div className="flex items-center gap-2 border-b border-border p-3">
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+
+          <input
+            type="text"
+            value={
+              generateCryptoSearch
+            }
+            onChange={(event) =>
+              setGenerateCryptoSearch(
+                event.target.value
+              )
+            }
+            placeholder="Search supported crypto"
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+            autoFocus
+          />
+        </div>
+
+        <div className="flex h-11 shrink-0 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
+          <Image
+            src="/base-logo.svg"
+            alt=""
+            width={20}
+            height={20}
+            className="h-5 w-5 object-contain"
+          />
+
+          <span className="text-[13px] font-medium">
+            Base
+          </span>
+        </div>
+      </div>
+
+      <div className="max-h-[260px] overflow-y-auto p-1.5">
+        {filteredGenerateCryptoOptions.length >
+        0 ? (
+          filteredGenerateCryptoOptions.map(
+            (symbol) => {
+              const token =
+                getGenerateTokenConfig(
+                  symbol
+                );
+
+              return (
+                <button
+                  key={symbol}
+                  type="button"
+                  onClick={() => {
+                    setGenerateToken(
+                      symbol
+                    );
+
+                    setGenerateCryptoDropdownOpen(
+                      false
+                    );
+
+                    setGenerateCryptoSearch(
+                      ""
+                    );
+                  }}
+                  className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
+                >
+                  <div className="flex items-center gap-3">
+                    <Image
+                      src={token.logo}
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                    />
+
+                    <div>
+                      <div className="text-[14px] font-medium">
+                        {symbol}
                       </div>
 
-                      <ChevronDown
-                        className={`h-4 w-4 text-muted-foreground transition-transform ${
-                          generateCryptoDropdownOpen
-                            ? "rotate-180"
-                            : ""
-                        }`}
-                      />
-                    </button>
+                      <div className="text-[12px] text-muted-foreground">
+                        {symbol ===
+                        "USDC"
+                          ? "USD Coin"
+                          : symbol ===
+                            "USDT"
+                          ? "Tether USD"
+                          : "Ethereum"}
+                      </div>
+                    </div>
+                  </div>
 
-                    {generateCryptoDropdownOpen && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-                        <div className="border-b border-border p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
-                              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  {generateToken ===
+                    symbol && (
+                    <Check className="h-4 w-4 text-primary" />
+                  )}
+                </button>
+              );
+            }
+          )
+        ) : (
+          <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+            No supported crypto found.
+          </div>
+        )}
+      </div>
+    </div>
+  )}
+</div>
+
+                            <div className="mt-4">
+                              <label className="mb-2 block text-[13px] text-muted-foreground">
+                                Amount recipient receives
+                              </label>
+
+                              <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={
+                                    generateAmount
+                                  }
+                                  onChange={(
+                                    event
+                                  ) => {
+                                    setGenerateAmount(
+                                      event.target.value.replace(
+                                        /[^0-9.]/g,
+                                        ""
+                                      )
+                                    );
+
+                                    setGenerateError(
+                                      ""
+                                    );
+                                  }}
+                                  placeholder="0.00"
+                                  className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted-foreground"
+                                />
+
+                                <span className="font-semibold">
+                                  {
+                                    generateToken
+                                  }
+                                </span>
+                              </div>
+                            </div>
+
+                            {generateError && (
+                              <p className="mt-3 text-[13px] text-destructive">
+                                {
+                                  generateError
+                                }
+                              </p>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={
+                                handleGenerateContinue
+                              }
+                              className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                            >
+                              Continue
+                            </button>
+                          </>
+                        )}
+
+                      {generateState ===
+                        "idle" &&
+                        generateStep ===
+                          2 && (
+                          <>
+                            <div className="rounded-[12px] bg-input p-5">
+                              <div className="space-y-3 text-[14px]">
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Network
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    Base
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Token
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {
+                                      generateToken
+                                    }
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Recipient receives
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {Number(
+                                      generateAmount
+                                    ).toLocaleString(
+                                      undefined,
+                                      {
+                                        maximumFractionDigits:
+                                          6,
+                                      }
+                                    )}{" "}
+                                    {
+                                      generateToken
+                                    }
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Creation fee
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {generateFee}{" "}
+                                    {
+                                      generateToken
+                                    }
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4 border-t border-border pt-3">
+                                  <span className="text-muted-foreground">
+                                    Total wallet spend
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {generateTotal}{" "}
+                                    {
+                                      generateToken
+                                    }
+                                  </span>
+                                </div>
+
+                              </div>
+                            </div>
+
+                            {generateError && (
+                              <p className="mt-3 text-[13px] text-destructive">
+                                {
+                                  generateError
+                                }
+                              </p>
+                            )}
+
+                            <div className="mt-5 flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setGenerateStep(
+                                    1
+                                  )
+                                }
+                                className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                              >
+                                Back
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={
+                                  handleCreateBCode
+                                }
+                                className="flex h-[56px] flex-[1.7] items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                              >
+                                Create B-Code
+                              </button>
+                            </div>
+                          </>
+                        )}
+                    </>
+                  )}
+
+                  {mode ===
+                    "redeem" && (
+                    <>
+                      {redeemState ===
+                        "processing" && (
+                        <BCodeProgress
+                          title="Redeeming B-Code"
+                          stage={
+                            redeemStage
+                          }
+                          labels={[
+                            "Validating redemption",
+                            "Authorizing redemption",
+                            "Confirming redemption",
+                          ]}
+                        />
+                      )}
+
+                      {redeemState ===
+                        "success" && (
+                        <div className="text-center">
+                          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+                              <Check className="h-6 w-6 text-white" />
+                            </div>
+                          </div>
+
+                          <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                            Redemption Successful
+                          </h2>
+
+                          <p className="mt-2 text-[14px] text-muted-foreground">
+                            {
+                              redeemAmount
+                            }{" "}
+                            {
+                              redeemToken
+                            }{" "}
+                            has been sent to your wallet.
+                          </p>
+
+                          <div className="mt-6 rounded-[12px] bg-input p-4 text-left text-[14px]">
+                            <div className="flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                B-Code
+                              </span>
+
+                              <span className="font-semibold">
+                                {
+                                  redeemCode
+                                }
+                              </span>
+                            </div>
+
+                            <div className="mt-3 flex justify-between gap-4">
+                              <span className="text-muted-foreground">
+                                Recipient
+                              </span>
+
+                              <span className="max-w-[260px] truncate font-semibold">
+                                {
+                                  redeemRecipient
+                                }
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-6 flex gap-3">
+                            <button
+                              type="button"
+                              onClick={
+                                onBackHome
+                              }
+                              className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
+                            >
+                              Port to naira
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resetRedeem();
+                                setRedeemCode(
+                                  ""
+                                );
+                                setRedeemInput(
+                                  ""
+                                );
+                              }}
+                              className="flex h-[52px] w-full items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary"
+                            >
+                              New B-code
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {redeemState ===
+                        "error" && (
+                        <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
+                          <p className="text-[14px] text-destructive">
+                            {
+                              redeemError
+                            }
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRedeemState(
+                                "idle"
+                              );
+                              setRedeemStage(
+                                1
+                              );
+                            }}
+                            className="mt-4 text-[14px] font-medium underline underline-offset-4"
+                          >
+                            Try again
+                          </button>
+                        </div>
+                      )}
+
+                      {redeemState ===
+                        "idle" &&
+                        redeemStep ===
+                          1 && (
+                          <>
+                            <label className="mb-2 block text-[13px] text-muted-foreground">
+                              Input B-Code
+                            </label>
+
+                            <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
+                              <span className="shrink-0 text-[17px] font-medium tracking-[0.06em]">
+                                B-
+                              </span>
 
                               <input
                                 type="text"
-                                value={generateCryptoSearch}
-                                onChange={(event) =>
-                                  setGenerateCryptoSearch(
-                                    event.target.value
+                                value={
+                                  redeemInput
+                                }
+                                onChange={(
+                                  e
+                                ) =>
+                                  handleRedeemInput(
+                                    e.target.value
                                   )
                                 }
-                                placeholder="Search supported crypto"
-                                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
-                                autoFocus
+                                placeholder="XXXX-XXXX"
+                                className="min-w-0 flex-1 bg-transparent text-[17px] tracking-[0.06em] outline-none placeholder:text-muted-foreground"
                               />
                             </div>
 
-                            <NetworkSelector
-                              value={generateNetwork}
-                              onChange={(network) => {
-                                setGenerateNetwork(network);
-                              }}
-                            />
-                          </div>
-                        </div>
+                            {redeemError && (
+                              <p className="mt-3 text-[13px] text-destructive">
+                                {
+                                  redeemError
+                                }
+                              </p>
+                            )}
 
-                        <div className="max-h-[220px] overflow-y-auto p-1.5">
-                          {filteredGenerateCryptoOptions.length >
-                          0 ? (
-                            filteredGenerateCryptoOptions.map(
-                              (symbol) => {
-                                const token =
-                                  getBCodeTokenConfig(
-                                    symbol
+                            <button
+                              type="button"
+                              onClick={
+                                validateBCode
+                              }
+                              className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                            >
+                              Validate B-Code
+                            </button>
+                          </>
+                        )}
+
+                      {redeemState ===
+                        "idle" &&
+                        redeemStep ===
+                          2 && (
+                          <>
+                            <div className="rounded-[12px] bg-input p-5">
+                              <div className="space-y-3 text-[14px]">
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    B-Code
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {
+                                      redeemCode
+                                    }
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Network
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    Base
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4">
+                                  <span className="text-muted-foreground">
+                                    Token
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {
+                                      redeemToken
+                                    }
+                                  </span>
+                                </div>
+
+                                <div className="flex justify-between gap-4 border-t border-border pt-3">
+                                  <span className="text-muted-foreground">
+                                    You receive
+                                  </span>
+
+                                  <span className="font-semibold">
+                                    {
+                                      redeemAmount
+                                    }{" "}
+                                    {
+                                      redeemToken
+                                    }
+                                  </span>
+                                </div>
+
+                              </div>
+                            </div>
+
+                            <div className="mt-5">
+                              <label className="mb-2 block text-[14px] text-muted-foreground">
+                                Wallet address to receive funds
+                              </label>
+
+                              <input
+                                type="text"
+                                value={
+                                  redeemRecipient
+                                }
+                                onChange={(
+                                  event
+                                ) => {
+                                  setRedeemRecipient(
+                                    event
+                                      .target
+                                      .value
                                   );
 
-                                return (
-                                  <button
-                                    key={`${generateNetwork}-${symbol}`}
-                                    type="button"
-                                    onClick={() => {
-                                      setGenerateToken(symbol);
-                                      setGenerateCryptoDropdownOpen(
-                                        false
-                                      );
-                                      setGenerateCryptoSearch("");
-                                    }}
-                                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <Image
-                                        src={token.logo}
-                                        alt=""
-                                        width={32}
-                                        height={32}
-                                        className="h-8 w-8 object-contain"
-                                      />
-
-                                      <div>
-                                        <div className="text-[14px] font-medium">
-                                          {symbol}
-                                        </div>
-
-                                        <div className="text-[12px] text-muted-foreground">
-                                          {symbol === "USDC"
-                                            ? "USD Coin"
-                                            : "Tether USD"}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {generateToken ===
-                                      symbol && (
-                                      <Check className="h-4 w-4 text-primary" />
-                                    )}
-                                  </button>
-                                );
-                              }
-                            )
-                          ) : (
-                            <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
-                              No supported crypto found.
+                                  setRedeemError(
+                                    ""
+                                  );
+                                }}
+                                placeholder="0x..."
+                                className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[14px] outline-none placeholder:text-muted-foreground"
+                              />
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="mt-4">
-                    <label className="mb-2 block text-[13px] text-muted-foreground">
-                      Amount recipient receives
-                    </label>
+                            {redeemError && (
+                              <p className="mt-3 text-[13px] text-destructive">
+                                {
+                                  redeemError
+                                }
+                              </p>
+                            )}
 
-                    <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={generateAmount}
-                        onChange={(event) => {
-                          setGenerateAmount(
-                            event.target.value.replace(
-                              /[^0-9.]/g,
-                              ""
-                            )
-                          );
+                            <div className="mt-5 flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRedeemStep(
+                                    1
+                                  )
+                                }
+                                className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
+                              >
+                                Back
+                              </button>
 
-                          setGenerateError("");
-                        }}
-                        placeholder="0.00"
-                        className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted-foreground"
-                      />
-
-                      <span className="font-semibold">
-                        {generateToken}
-                      </span>
-                    </div>
-                  </div>
-
-                  {generateError && (
-                    <p className="mt-3 text-[13px] text-destructive">
-                      {generateError}
-                    </p>
+                              <button
+                                type="button"
+                                onClick={
+                                  handleRedeem
+                                }
+                                className="flex h-[56px] flex-[1.7] items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                              >
+                                Redeem B-Code
+                                <ArrowRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                    </>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={handleGenerateContinue}
-                    className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                  >
-                    Continue
-                  </button>
                 </>
               )}
 
-            {generateState === "idle" &&
-              generateStep === 2 && (
-                <>
-                  <div className="rounded-[12px] bg-input p-5">
-                    <div className="space-y-3 text-[14px]">
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Network
-                        </span>
+              {myBCodesOpen && (
+  <div className="mt-1">
 
-                        <span className="font-semibold">
-                          {generateNetworkLabel}
-                        </span>
-                      </div>
+    <div className="mb-4 flex w-full gap-1 rounded-[10px] bg-input p-1">
+      {([
+        [
+          "all",
+          "All",
+        ],
+        [
+          "active",
+          "Active",
+        ],
+        [
+          "cancelled",
+          "Canceled",
+        ],
+        [
+          "redeemed",
+          "Redeemed",
+        ],
+      ] as const).map(
+        ([
+          value,
+          label,
+        ]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() =>
+              setMyBCodesFilter(
+                value
+              )
+            }
+            className={`min-w-0 flex-1 rounded-[8px] px-2 py-2 text-center text-[12px] font-medium transition ${
+              myBCodesFilter ===
+              value
+                ? "bg-[#050511] text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        )
+      )}
+    </div>
 
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Token
-                        </span>
+    {myBCodesLoading ? (
+      <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
 
-                        <span className="font-semibold">
-                          {generateToken}
-                        </span>
-                      </div>
+        <p className="mt-4 text-[14px] text-muted-foreground">
+          Loading your B-Codes...
+        </p>
+      </div>
+    ) : myBCodesError ? (
+      <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-5 text-center">
+        <p className="text-[14px] text-destructive">
+          {myBCodesError}
+        </p>
 
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Recipient receives
-                        </span>
+        <button
+          type="button"
+          onClick={
+            fetchMyBCodes
+          }
+          className="mt-4 text-[13px] font-medium underline underline-offset-4"
+        >
+          Try again
+        </button>
+      </div>
+    ) : filteredMyBCodes.length ===
+      0 ? (
+      <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-input">
+          <Coins className="h-5 w-5 text-muted-foreground" />
+        </div>
 
-                        <span className="font-semibold">
-                          {Number(
-                            generateAmount
-                          ).toLocaleString(
-                            undefined,
-                            {
-                              maximumFractionDigits: 6,
-                            }
-                          )}{" "}
-                          {generateToken}
-                        </span>
-                      </div>
+        <p className="mt-4 text-[15px] font-medium">
+          {myBCodes.length ===
+          0
+            ? "No B-Codes yet"
+            : "No matching B-Codes"}
+        </p>
 
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Creation fee
-                        </span>
-
-                        <span className="font-semibold">
-                          {generateFee} {generateToken}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between gap-4 border-t border-border pt-3">
-                        <span className="text-muted-foreground">
-                          Total wallet spend
-                        </span>
-
-                        <span className="font-semibold">
-                          {generateTotal} {generateToken}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {generateNetwork !== "base-sepolia" && (
-                    <div className="mt-4 rounded-[10px] border border-primary/20 bg-primary/5 p-4 text-[13px] text-muted-foreground">
-                      B-Codes on{" "}
-                      <span className="font-medium text-foreground">
-                        {generateNetworkLabel}
-                      </span>{" "}
-                      are not available yet. Base Sepolia is currently
-                      being used for testing.
-                    </div>
-                  )}
-
-                  {generateError && (
-                    <p className="mt-3 text-[13px] text-destructive">
-                      {generateError}
-                    </p>
-                  )}
-
-                  <div className="mt-5 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setGenerateStep(1)}
-                      className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
-                    >
-                      Back
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCreateBCode}
-                      className="flex h-[56px] flex-[1.7] items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                    >
-                      Create B-Code
-                    </button>
-                  </div>
-                </>
-              )}
-          </>
-        )}
-
-        {/* ====================================================
-            REDEEM
-        ==================================================== */}
-
-        {mode === "redeem" && (
-          <>
-            {redeemState === "processing" && (
-              <BCodeProgress
-                title="Redeeming B-Code"
-                stage={redeemStage}
-                labels={[
-                  "Validating redemption",
-                  "Authorizing redemption",
-                  "Confirming redemption",
-                ]}
-              />
-            )}
-
-            {redeemState === "success" && (
-              <div className="text-center">
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-primary">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-                    <Check className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-
-                <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
-                  Redemption Successful
-                </h2>
-
-                <p className="mt-2 text-[14px] text-muted-foreground">
-                  {redeemAmount} {redeemToken} has been sent to your wallet.
-                </p>
-
-                <div className="mt-6 rounded-[12px] bg-input p-4 text-left text-[14px]">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">
-                      B-Code
-                    </span>
-
-                    <span className="font-semibold">
-                      {redeemCode}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex justify-between gap-4">
-                    <span className="text-muted-foreground">
-                      Recipient
-                    </span>
-
-                    <span className="max-w-[260px] truncate font-semibold">
-                      {redeemRecipient}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={onBackHome}
-                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90"
-                  >
-                    Port to naira
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRedeemStep(1);
-                      setRedeemState("idle");
-                      setRedeemStage(1);
-                      setRedeemError("");
-                      setRedeemCode("");
-                      setRedeemInput("");
-                    }}
-                    className="flex h-[52px] w-full items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary"
-                  >
-                    New B-code
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {redeemState === "error" && (
-              <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                <p className="text-[14px] text-destructive">
-                  {redeemError}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRedeemState("idle");
-                    setRedeemStage(1);
-                  }}
-                  className="mt-4 text-[14px] font-medium underline underline-offset-4"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-
-            {redeemState === "idle" &&
-              redeemStep === 1 && (
-                <>
-                  <label className="mb-2 block text-[13px] text-muted-foreground">
-                    Input B-Code
-                  </label>
-
-                  <div className="flex h-[56px] items-center rounded-[10px] border border-border bg-input px-4">
-                    <span className="shrink-0 text-[17px] font-medium tracking-[0.06em]">
-                      B-
-                    </span>
-
-                    <input
-                      type="text"
-                      value={redeemInput}
-                      onChange={(e) =>
-                        handleRedeemInput(e.target.value)
-                      }
-                      placeholder="XXXX-XXXX"
-                      className="min-w-0 flex-1 bg-transparent text-[17px] tracking-[0.06em] outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-
-                  {redeemError && (
-                    <p className="mt-3 text-[13px] text-destructive">
-                      {redeemError}
-                    </p>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={validateBCode}
-                    className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                  >
-                    Validate B-Code
-                  </button>
-                </>
-              )}
-
-            {redeemState === "idle" &&
-              redeemStep === 2 && (
-                <>
-                  <div className="rounded-[12px] bg-input p-5">
-                    <div className="space-y-3 text-[14px]">
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          B-Code
-                        </span>
-
-                        <span className="font-semibold">
-                          {redeemCode}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">
-                          Token
-                        </span>
-
-                        <span className="font-semibold">
-                          {redeemToken}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between gap-4 border-t border-border pt-3">
-                        <span className="text-muted-foreground">
-                          You receive
-                        </span>
-
-                        <span className="font-semibold">
-                          {redeemAmount} {redeemToken}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5">
-                    <label className="mb-2 block text-[14px] text-muted-foreground">
-                      Wallet address to receive funds
-                    </label>
-
-                    <input
-                      type="text"
-                      value={redeemRecipient}
-                      onChange={(event) => {
-                        setRedeemRecipient(event.target.value);
-                        setRedeemError("");
-                      }}
-                      placeholder="0x..."
-                      className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[14px] outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-
-                  {redeemError && (
-                    <p className="mt-3 text-[13px] text-destructive">
-                      {redeemError}
-                    </p>
-                  )}
-
-                  <div className="mt-5 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setRedeemStep(1)}
-                      className="flex h-[56px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[15px] font-medium transition hover:bg-secondary"
-                    >
-                      Back
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleRedeem}
-                      className="flex h-[56px] flex-[1.7] items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                    >
-                      Redeem B-Code
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </>
-              )}
-          </>
-        )}
-      </>
-    )}
-
-    {myBCodesOpen && (
-      <div className="mt-1">
-
-        <div className="mb-4 flex w-full gap-1 rounded-[10px] bg-input p-1">
-  {([
-    ["all", "All"],
-    ["active", "Active"],
-    ["cancelled", "Canceled"],
-    ["redeemed", "Redeemed"],
-  ] as const).map(([value, label]) => (
-    <button
-      key={value}
-      type="button"
-      onClick={() => setMyBCodesFilter(value)}
-      className={`min-w-0 flex-1 rounded-[8px] px-2 py-2 text-center text-[12px] font-medium transition ${
-        myBCodesFilter === value
-          ? "bg-[#050511] text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {label}
-    </button>
-  ))}
-</div>
-
-        {myBCodesLoading ? (
-          <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-
-            <p className="mt-4 text-[14px] text-muted-foreground">
-              Loading your B-Codes...
-            </p>
-          </div>
-        ) : myBCodesError ? (
-          <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-5 text-center">
-            <p className="text-[14px] text-destructive">
-              {myBCodesError}
-            </p>
-
-            <button
-              type="button"
-              onClick={fetchMyBCodes}
-              className="mt-4 text-[13px] font-medium underline underline-offset-4"
-            >
-              Try again
-            </button>
-          </div>
-        ) : filteredMyBCodes.length === 0 ? (
-          <div className="flex min-h-[220px] flex-col items-center justify-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-input">
-              <Coins className="h-5 w-5 text-muted-foreground" />
-            </div>
-
-            <p className="mt-4 text-[15px] font-medium">
-              {myBCodes.length === 0
-                ? "No B-Codes yet"
-                : "No matching B-Codes"}
-            </p>
-
-            <p className="mt-1 max-w-[280px] text-[13px] leading-5 text-muted-foreground">
-              {myBCodes.length === 0
-                ? "B-Codes you create will appear here."
-                : "Try another filter to see your B-Codes."}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filteredMyBCodes.map((item) => {
-              const token = getHistoryToken(item.token);
-              const amount = formatUnits(
-                item.amount,
-                BCODE_TOKEN_DECIMALS
+        <p className="mt-1 max-w-[280px] text-[13px] leading-5 text-muted-foreground">
+          {myBCodes.length ===
+          0
+            ? "B-Codes you create will appear here."
+            : "Try another filter to see your B-Codes."}
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-2">
+        {filteredMyBCodes.map(
+          (
+            item
+          ) => {
+            const token =
+              getHistoryToken(
+                item.token
               );
 
-              const displayAmount =
-                Number(amount).toLocaleString(
-                  undefined,
-                  {
-                    maximumFractionDigits: 6,
-                  }
-                );
+            const decimals =
+              item.token.toLowerCase() ===
+              NATIVE_ETH.toLowerCase()
+                ? 18
+                : BCODE_TOKEN_DECIMALS;
 
-              const status = item.cancelled
+            const amount =
+              formatUnits(
+                item.amount,
+                decimals
+              );
+
+            const displayAmount =
+              Number(
+                amount
+              ).toLocaleString(
+                undefined,
+                {
+                  maximumFractionDigits:
+                    6,
+                }
+              );
+
+            const status =
+              item.cancelled
                 ? "Canceled"
                 : item.redeemed
                 ? "Redeemed"
                 : "Active";
 
-              const isExpanded =
-                expandedBCodeHash === item.hash;
+            const isExpanded =
+              expandedBCodeHash ===
+              item.hash;
 
-              return (
+            return (
+              <div
+                key={
+                  item.hash
+                }
+                className="overflow-hidden rounded-[12px] border border-border bg-input"
+              >
                 <div
-                  key={item.hash}
-                  className="overflow-hidden rounded-[12px] border border-border bg-input"
+                  className={`group relative flex items-center gap-3 px-3 py-3 sm:px-4 ${
+                    isExpanded
+                      ? "-translate-x-[166px] sm:translate-x-0"
+                      : "translate-x-0"
+                  } transition-transform duration-200 sm:transform-none`}
+                  onClick={() => {
+                    if (
+                      window.matchMedia(
+                        "(max-width: 639px)"
+                      ).matches
+                    ) {
+                      setExpandedBCodeHash(
+                        isExpanded
+                          ? null
+                          : item.hash
+                      );
+                    }
+                  }}
                 >
-                  <div
-                    className={`group flex items-center gap-3 px-3 py-3 sm:px-4 ${
-                      isExpanded
-                        ? "-translate-x-[126px] sm:translate-x-0"
-                        : "translate-x-0"
-                    } transition-transform duration-200 sm:transform-none`}
-                    onClick={() => {
-                      if (
-                        window.matchMedia(
-                          "(max-width: 639px)"
-                        ).matches
-                      ) {
-                        setExpandedBCodeHash(
-                          isExpanded
-                            ? null
-                            : item.hash
-                        );
-                      }
-                    }}
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                      {token ? (
-                        <Image
-                          src={token.logo}
-                          alt=""
-                          width={34}
-                          height={34}
-                          className="h-[34px] w-[34px] shrink-0 object-contain"
-                        />
-                      ) : (
-                        <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold">
-                          ?
-                        </div>
-                      )}
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
 
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-[14px] font-semibold">
-                            {displayAmount}{" "}
-                            {token?.symbol ?? "TOKEN"}
-                          </span>
+                    {token ? (
+                      <Image
+                        src={
+                          token.logo
+                        }
+                        alt=""
+                        width={
+                          34
+                        }
+                        height={
+                          34
+                        }
+                        className="h-[34px] w-[34px] shrink-0 object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold">
+                        ?
+                      </div>
+                    )}
 
-                          <span
-                            className={`shrink-0 text-[11px] ${
-                              item.cancelled ||
-                              item.redeemed
-                                ? "text-muted-foreground"
-                                : "text-primary"
-                            }`}
-                          >
-                            {status}
-                          </span>
-                        </div>
+                    <div className="min-w-0">
 
-                        <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                      {/* AMOUNT + NETWORK */}
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[14px] font-semibold">
+                          {displayAmount}{" "}
+                          {token?.symbol ??
+                            "TOKEN"}
+                        </span>
+
+                        <span className="shrink-0 text-[12px] text-muted-foreground">
+                          ·
+                        </span>
+
+                        <span className="shrink-0 text-[12px] text-muted-foreground">
+                          Base
+                        </span>
+                      </div>
+
+                      {/* B-CODE + STATUS */}
+                      <div className="mt-1 flex min-w-0 items-center gap-2">
+                        <p className="truncate text-[12px] text-muted-foreground">
                           {item.code}
                         </p>
 
-                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
-                          Base Sepolia
-                        </p>
+                        <span
+                          className={`shrink-0 text-[11px] ${
+                            item.cancelled ||
+                            item.redeemed
+                              ? "text-muted-foreground"
+                              : "text-primary"
+                          }`}
+                        >
+                          {status}
+                        </span>
                       </div>
                     </div>
+                  </div>
 
-                    <div
-                      className={`absolute right-3 flex shrink-0 items-center gap-1 sm:static sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 ${
-                        isExpanded
-                          ? "opacity-100"
-                          : "opacity-0 sm:opacity-0"
-                      }`}
+                  {/* HOVER / MOBILE ACTIONS */}
+                  <div
+                    className={`absolute right-3 flex shrink-0 items-center gap-1 sm:static sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 ${
+                      isExpanded
+                        ? "opacity-100"
+                        : "opacity-0 sm:opacity-0"
+                    }`}
+                  >
+
+                    {/* COPY */}
+                    <button
+                      type="button"
+                      onClick={(
+                        event
+                      ) => {
+                        event.stopPropagation();
+
+                        copyMyBCode(
+                          item.code
+                        );
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
+                      aria-label="Copy B-Code"
                     >
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          copyMyBCode(item.code);
-                        }}
-                        className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
-                        aria-label="Copy B-Code"
-                      >
-                        {copiedBCode === item.code ? (
-                          <Check className="h-4 w-4 text-primary" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </button>
+                      {copiedBCode ===
+                      item.code ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
 
-                      {!item.redeemed &&
-                        !item.cancelled && (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setCancelHash(item.hash);
-                              setCancelError("");
-                              setExpandedBCodeHash(null);
-                            }}
-                            className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
-                            aria-label="Cancel B-Code"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                    </div>
+                    {/* DOWNLOAD */}
+                    <button
+                      type="button"
+                      onClick={(
+                        event
+                      ) => {
+                        event.stopPropagation();
+
+                        downloadMyBCodeImage(
+                          item
+                        );
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
+                      aria-label="Download B-Code image"
+                    >
+                      <Download className="h-4 w-4" />
+                    </button>
+
+                    {/* CANCEL */}
+                    {!item.redeemed &&
+                      !item.cancelled && (
+                        <button
+                          type="button"
+                          onClick={(
+                            event
+                          ) => {
+                            event.stopPropagation();
+
+                            setCancelHash(
+                              item.hash
+                            );
+
+                            setCancelError(
+                              ""
+                            );
+
+                            setExpandedBCodeHash(
+                              null
+                            );
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
+                          aria-label="Cancel B-Code"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          }
         )}
       </div>
     )}
   </div>
-</div>
-</section>
-
-        {/* ====================================================
-            CANCEL B-CODE CONFIRMATION
-        ==================================================== */}
+)}
+            </div>
+          </div>
+        </section>
 
         {cancelHash && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
             <div className="w-full max-w-[400px] rounded-[16px] border border-border bg-[#0B0B16] p-5 shadow-2xl sm:p-6">
+
               <h2 className="text-[18px] font-semibold">
                 Cancel B-Code?
               </h2>
+
               <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
                 This will permanently mark the B-Code as cancelled and return the locked tokens to your wallet. You will need to approve a blockchain transaction.
               </p>
 
               {cancelError && (
                 <div className="mt-4 rounded-[10px] border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[12px] leading-5 text-destructive">
-                  {cancelError}
+                  {
+                    cancelError
+                  }
                 </div>
               )}
 
@@ -7673,12 +8953,21 @@ if (!codeIsAvailable) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (!cancelLoading) {
-                      setCancelHash(null);
-                      setCancelError("");
+                    if (
+                      !cancelLoading
+                    ) {
+                      setCancelHash(
+                        null
+                      );
+
+                      setCancelError(
+                        ""
+                      );
                     }
                   }}
-                  disabled={cancelLoading}
+                  disabled={
+                    cancelLoading
+                  }
                   className="flex h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border bg-input text-[14px] font-medium transition hover:bg-secondary disabled:opacity-50"
                 >
                   Keep B-Code
@@ -7686,14 +8975,21 @@ if (!codeIsAvailable) {
 
                 <button
                   type="button"
-                  onClick={handleCancelBCode}
-                  disabled={cancelLoading}
+                  onClick={
+                    handleCancelBCode
+                  }
+                  disabled={
+                    cancelLoading
+                  }
                   className="flex h-[48px] flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-[14px] font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {cancelLoading && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  {cancelLoading ? "Cancelling..." : "Cancel B-Code"}
+
+                  {cancelLoading
+                    ? "Cancelling..."
+                    : "Cancel B-Code"}
                 </button>
               </div>
             </div>

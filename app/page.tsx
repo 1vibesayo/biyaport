@@ -515,6 +515,65 @@ const CURRENCIES: {
 
 /*
  * ====================================================
+ * PAYCREST AMOUNT LIMITS
+ * ====================================================
+ */
+
+const PAYCREST_MIN_USDC = 0.5;
+const PAYCREST_MAX_USDC = 2000;
+
+const getPaycrestAmountError = (
+  amountInUsdc: number
+) => {
+  if (
+    Number.isFinite(amountInUsdc) &&
+    amountInUsdc < PAYCREST_MIN_USDC
+  ) {
+    return "amount too small";
+  }
+
+  if (
+    Number.isFinite(amountInUsdc) &&
+    amountInUsdc > PAYCREST_MAX_USDC
+  ) {
+    return "amount too much";
+  }
+
+  return "";
+};
+
+const getPaycrestErrorMessage = (
+  error: unknown
+) => {
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error ?? "").toLowerCase();
+
+  if (
+    message.includes("0.5") &&
+    (message.includes("minimum") ||
+      message.includes("min") ||
+      message.includes("at least") ||
+      message.includes("greater than"))
+  ) {
+    return "amount too small";
+  }
+
+  if (
+    message.includes("2000") &&
+    (message.includes("maximum") ||
+      message.includes("max") ||
+      message.includes("limit"))
+  ) {
+    return "amount too much";
+  }
+
+  return "";
+};
+
+/*
+ * ====================================================
  * HOME
  * ====================================================
  */
@@ -641,6 +700,15 @@ export default function Home() {
 
   const [amount, setAmount] = useState("");
 
+  const [offrampInputMode, setOfframpInputMode] =
+    useState<"naira" | "crypto">("naira");
+
+  const [cryptoInputValue, setCryptoInputValue] =
+    useState("");
+
+  const [quoteRate, setQuoteRate] =
+    useState<number | null>(null);
+
   const [selectedCrypto, setSelectedCrypto] =
     useState<CryptoOption | null>(null);
 
@@ -691,6 +759,9 @@ export default function Home() {
     setSelectedCrypto(null);
     setCryptoSearch("");
     setCryptoAmount("");
+    setCryptoInputValue("");
+    setOfframpInputMode("naira");
+    setQuoteRate(null);
     setQuoteError("");
     setPaymentError("");
     setOnrampCryptoSearch("");
@@ -875,7 +946,7 @@ export default function Home() {
         throw new Error(
           data?.error ||
             data?.message ||
-            "Failed to load banks."
+            "Couldn't load the banks. Please try again."
         );
       }
 
@@ -1278,7 +1349,7 @@ export default function Home() {
         throw new Error(
           data?.error ||
             data?.message ||
-            "Unable to verify account."
+            "Couldn't verify this account. Please check the details and try again."
         );
       }
 
@@ -1290,7 +1361,7 @@ export default function Home() {
         typeof verifiedName !== "string"
       ) {
         throw new Error(
-          "Account name could not be retrieved."
+          "Couldn't retrieve the account name. Please check the account details and try again."
         );
       }
 
@@ -1306,9 +1377,7 @@ export default function Home() {
       setAccountName("");
 
       setAccountError(
-        error instanceof Error
-          ? error.message
-          : "Unable to verify account."
+        "Couldn't verify this account. Please check the details and try again."
       );
     } finally {
       setVerifyingAccount(false);
@@ -1443,8 +1512,38 @@ export default function Home() {
         ""
       );
 
-    setAmount(value);
+    if (offrampInputMode === "crypto") {
+      setCryptoInputValue(value);
+
+      if (quoteRate && Number(value) > 0) {
+        setAmount(
+          (Number(value) / quoteRate).toString()
+        );
+      } else {
+        setAmount("");
+      }
+    } else {
+      setAmount(value);
+    }
+
     setCryptoAmount("");
+    setQuoteError("");
+    setPaymentError("");
+  };
+
+  const handleOfframpInputModeToggle = () => {
+    if (!selectedCrypto) {
+      return;
+    }
+
+    if (offrampInputMode === "naira") {
+      setCryptoInputValue(cryptoAmount || "");
+      setOfframpInputMode("crypto");
+    } else {
+      setOfframpInputMode("naira");
+      setCryptoInputValue("");
+    }
+
     setQuoteError("");
     setPaymentError("");
   };
@@ -1504,7 +1603,7 @@ export default function Home() {
       throw new Error(
         data?.error ||
           data?.message ||
-          "Unable to get crypto quote."
+          "Couldn't get a quote right now. Please try again."
       );
     }
 
@@ -1517,7 +1616,7 @@ if (
   value <= 0
 ) {
   throw new Error(
-    "Invalid crypto amount returned."
+    "Couldn't calculate the crypto amount. Please try again."
   );
 }
 
@@ -1532,14 +1631,34 @@ if (
     returnedSettlementAmount <= 0)
 ) {
   throw new Error(
-    "Invalid USDC settlement amount returned for ETH."
+    "Couldn't calculate the ETH conversion. Please try again."
   );
+}
+
+const paycrestAmountInUsdc =
+  selectedCrypto.symbol === "ETH"
+    ? returnedSettlementAmount
+    : value;
+
+const amountLimitError =
+  getPaycrestAmountError(
+    paycrestAmountInUsdc
+  );
+
+if (amountLimitError) {
+  throw new Error(amountLimitError);
 }
 
 if (!cancelled) {
   setCryptoAmount(
     value.toFixed(6)
   );
+
+  if (Number(amount) > 0) {
+    setQuoteRate(
+      value / Number(amount)
+    );
+  }
 
   setSettlementAmount(
     selectedCrypto.symbol === "ETH"
@@ -1555,10 +1674,12 @@ if (!cancelled) {
         error
       );
 
+      const amountError =
+        getPaycrestErrorMessage(error);
+
       setQuoteError(
-        error instanceof Error
-          ? error.message
-          : "Unable to get crypto quote."
+        amountError ||
+          "Couldn't get a quote right now. Please try again."
       );
     }
   } finally {
@@ -1598,6 +1719,22 @@ return () => {
   const estimatedPayAmountFormatted =
     estimatedPayAmount > 0
       ? estimatedPayAmount.toFixed(6)
+      : "";
+
+  const amountInputValue =
+    offrampInputMode === "crypto"
+      ? cryptoInputValue
+      : amount;
+
+  const nairaAmountFormatted =
+    Number(amount) > 0
+      ? Number(amount).toLocaleString(
+          "en-NG",
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }
+        )
       : "";
 
   const showPayButton =
@@ -1678,6 +1815,30 @@ return () => {
   let cancelled = false;
 
   const getOnrampQuote = async () => {
+    const enteredAmount = Number(
+      onrampCryptoAmount
+    );
+
+    if (
+      selectedCrypto.symbol === "USDC" ||
+      selectedCrypto.symbol === "USDT"
+    ) {
+      const amountLimitError =
+        getPaycrestAmountError(
+          enteredAmount
+        );
+
+      if (amountLimitError) {
+        setOnrampQuoteError(
+          amountLimitError
+        );
+        setOnrampLocalAmount("");
+        setOnrampSenderFee("");
+        setOnrampQuoteLoading(false);
+        return;
+      }
+    }
+
     setOnrampQuoteLoading(true);
     setOnrampQuoteError("");
 
@@ -1704,7 +1865,7 @@ return () => {
         throw new Error(
           data?.error ||
             data?.message ||
-            "Unable to get onramp quote."
+            "Couldn't get a quote right now. Please try again."
         );
       }
 
@@ -1732,7 +1893,25 @@ return () => {
         localAmount <= 0
       ) {
         throw new Error(
-          "Invalid local currency amount returned."
+          "Couldn't calculate the amount. Please try again."
+        );
+      }
+
+      const paycrestAmountInUsdc = Number(
+        data?.usdcAmount ??
+          data?.usdAmount ??
+          data?.usdValue ??
+          data?.usdcValue
+      );
+
+      const amountLimitError =
+        getPaycrestAmountError(
+          paycrestAmountInUsdc
+        );
+
+      if (amountLimitError) {
+        throw new Error(
+          amountLimitError
         );
       }
 
@@ -1774,10 +1953,12 @@ return () => {
         setOnrampLocalAmount("");
         setOnrampSenderFee("");
 
+        const amountError =
+          getPaycrestErrorMessage(error);
+
         setOnrampQuoteError(
-          error instanceof Error
-            ? error.message
-            : "Unable to get onramp quote."
+          amountError ||
+            "Couldn't get a quote right now. Please try again."
         );
       }
     } finally {
@@ -1865,7 +2046,7 @@ return () => {
         throw new Error(
           data?.error ||
             data?.message ||
-            "Unable to verify account."
+            "Couldn't verify this account. Please check the details and try again."
         );
       }
 
@@ -1877,7 +2058,7 @@ return () => {
         typeof verifiedName !== "string"
       ) {
         throw new Error(
-          "Account name could not be retrieved."
+          "Couldn't retrieve the account name. Please check the account details and try again."
         );
       }
 
@@ -1893,9 +2074,7 @@ return () => {
       setOnrampRefundAccountName("");
 
       setOnrampRefundError(
-        error instanceof Error
-          ? error.message
-          : "Unable to verify account."
+        "Couldn't verify this account. Please check the details and try again."
       );
     } finally {
       setOnrampRefundVerifying(false);
@@ -2040,7 +2219,7 @@ const handleCreateOnrampOrder = async () => {
       throw new Error(
         data?.error ||
           data?.message ||
-          "Unable to create onramp order."
+          "Couldn't start your transaction. Please try again."
       );
     }
 
@@ -2096,13 +2275,13 @@ const handleCreateOnrampOrder = async () => {
 
     if (!returnedOrderId) {
       throw new Error(
-        "Paycrest did not return an order ID."
+        "Couldn't create your transaction. Please try again."
       );
     }
 
     if (!paymentAccount) {
       throw new Error(
-        "Paycrest did not return a payment account."
+        "Couldn't prepare your payment details. Please try again."
       );
     }
 
@@ -2124,7 +2303,7 @@ const handleCreateOnrampOrder = async () => {
 
     if (!accountNumber) {
       throw new Error(
-        "Paycrest did not return the payment account number."
+        "Couldn't prepare the payment account. Please try again."
       );
     }
 
@@ -2133,7 +2312,7 @@ const handleCreateOnrampOrder = async () => {
       paymentAmount === null
     ) {
       throw new Error(
-        "Paycrest did not return the amount to transfer."
+        "Couldn't determine the amount to transfer. Please try again."
       );
     }
 
@@ -2200,7 +2379,7 @@ const handleCreateOnrampOrder = async () => {
     setOnrampError(
       error instanceof Error
         ? error.message
-        : "Unable to create onramp order."
+        : "Couldn't start your transaction. Please try again."
     );
   }
 };
@@ -2746,7 +2925,7 @@ useEffect(() => {
       if (!response.ok) {
         throw new Error(
           data?.error ||
-            "Unable to create Paycrest order."
+            "Couldn't start your withdrawal. Please try again."
         );
       }
 
@@ -2761,7 +2940,7 @@ useEffect(() => {
 
       if (!receiveAddress) {
         throw new Error(
-          "Paycrest did not return a receive address."
+          "Couldn't prepare the withdrawal. Please try again."
         );
       }
 
@@ -2771,7 +2950,7 @@ useEffect(() => {
         )
       ) {
         throw new Error(
-          "Paycrest returned an invalid receiving address."
+          "Couldn't prepare your withdrawal. Please try again."
         );
       }
 
@@ -2798,7 +2977,7 @@ useEffect(() => {
         orderAmount <= 0
       ) {
         throw new Error(
-          "Paycrest returned an invalid order amount."
+          "Couldn't calculate your withdrawal amount. Please try again."
         );
       }
 
@@ -2809,7 +2988,7 @@ useEffect(() => {
         senderFee < 0
       ) {
         throw new Error(
-          "Paycrest returned an invalid sender fee."
+          "Couldn't calculate the withdrawal fee. Please try again."
         );
       }
 
@@ -2820,7 +2999,7 @@ useEffect(() => {
         transactionFee < 0
       ) {
         throw new Error(
-          "Paycrest returned an invalid transaction fee."
+          "Couldn't calculate the transaction fee. Please try again."
         );
       }
 
@@ -2852,7 +3031,7 @@ if (selectedCrypto.symbol === "ETH") {
     !swapTransaction?.data
   ) {
     throw new Error(
-      "0x did not return a valid ETH swap transaction."
+      "Couldn't prepare your ETH transaction. Please try again."
     );
   }
 
@@ -2924,7 +3103,7 @@ if (selectedCrypto.symbol === "ETH") {
 
       if (!hash) {
         throw new Error(
-          "Wallet transaction was not submitted."
+          "Your transaction wasn't submitted. Please try again."
         );
       }
 
@@ -2985,7 +3164,7 @@ if (selectedCrypto.symbol === "ETH") {
       setPaymentError(
         error instanceof Error
           ? error.message
-          : "Payment failed. Please try again."
+          : "Couldn't complete your payment. Please try again."
       );
     }
   };
@@ -4149,7 +4328,7 @@ ONRAMP MODAL 1
                                   {
                                     onrampPaymentAccount?.bankName ||
                                     onrampPaymentAccount?.institution ||
-                                    "—"
+                                    "-"
                                   }
                                 </span>
                               </div>
@@ -4164,7 +4343,7 @@ ONRAMP MODAL 1
                                     {
                                       onrampPaymentAccount?.accountIdentifier ||
                                       onrampPaymentAccount?.accountNumber ||
-                                      "—"
+                                      "-"
                                     }
                                   </span>
 
@@ -4186,7 +4365,7 @@ ONRAMP MODAL 1
                                 <span className="max-w-[250px] truncate text-right font-semibold text-foreground">
                                   {
                                     onrampPaymentAccount?.accountName ||
-                                    "—"
+                                    "-"
                                   }
                                 </span>
                               </div>
@@ -4712,18 +4891,48 @@ ONRAMP MODAL 1
                       </div>
 
                       <div className="mt-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="Enter Amount (₦)"
-                          value={
-                            amount
-                          }
-                          onChange={
-                            handleAmountChange
-                          }
-                          className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px]"
-                        />
+                        <div className="flex w-full items-center gap-2">
+                          <div className="relative min-w-0 flex-1">
+                            {offrampInputMode === "naira" && (
+                              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground sm:left-5 sm:text-[16px]">
+                                ₦
+                              </span>
+                            )}
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder={
+                                offrampInputMode === "crypto"
+                                  ? `Enter ${selectedCrypto?.symbol || "crypto"} amount`
+                                  : "Enter Amount (₦)"
+                              }
+                              value={
+                                amountInputValue
+                              }
+                              onChange={
+                                handleAmountChange
+                              }
+                              className={`h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px] ${
+                                offrampInputMode === "naira"
+                                  ? "pl-8 sm:pl-9"
+                                  : ""
+                              }`}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={
+                              handleOfframpInputModeToggle
+                            }
+                            disabled={!selectedCrypto}
+                            className="h-[52px] shrink-0 rounded-[10px] border border-border bg-input px-3 text-[13px] font-medium text-foreground transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60 sm:h-[56px] sm:px-4 sm:text-[14px]"
+                          >
+                            {offrampInputMode === "naira"
+                              ? `Input ${selectedCrypto?.symbol || "crypto"}`
+                              : "Input NGN"}
+                          </button>
+                        </div>
 
                         {loadingQuote && (
                           <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
@@ -4736,15 +4945,22 @@ ONRAMP MODAL 1
                           !loadingQuote &&
                           !quoteError && (
                             <div className="mt-2 px-1 text-[13px] text-muted-foreground">
-                              You will pay approximately{" "}
-                              <span className="font-medium text-foreground">
-                                {
-                                  estimatedPayAmountFormatted
-                                }{" "}
-                                {
-                                  selectedCrypto?.symbol
-                                }
-                              </span>
+                              {offrampInputMode === "crypto" ? (
+                                <>
+                                  You will get{" "}
+                                  <span className="font-medium text-foreground">
+                                    ₦{nairaAmountFormatted}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  You will pay approximately{" "}
+                                  <span className="font-medium text-foreground">
+                                    {estimatedPayAmountFormatted}{" "}
+                                    {selectedCrypto?.symbol}
+                                  </span>
+                                </>
+                              )}
                             </div>
                           )}
 
@@ -5247,7 +5463,7 @@ function BCodeView({
         "0x0000000000000000000000000000000000000000"
       ) {
         setRedeemError(
-          "This B-Code does not exist."
+          "Couldn't find that B-Code. Please check the code and try again."
         );
 
         return false;
@@ -5263,7 +5479,7 @@ function BCodeView({
 
       if (cancelled) {
         setRedeemError(
-          "This B-Code has been cancelled."
+          "This B-Code has been cancelled and can no longer be redeemed."
         );
 
         return false;
@@ -5291,7 +5507,7 @@ function BCodeView({
         setRedeemToken("");
 
         setRedeemError(
-          "This B-Code contains an unsupported token."
+          "This B-Code uses a crypto that isn't supported right now."
         );
 
         return false;
@@ -5323,7 +5539,7 @@ function BCodeView({
       setRedeemError(
         error instanceof Error
           ? error.message
-          : "Unable to validate this B-Code."
+          : "Couldn't verify this B-Code. Please check the code and try again."
       );
 
       return false;
@@ -5343,7 +5559,7 @@ function BCodeView({
         !wallet?.address
       ) {
         setGenerateError(
-          "Connect your wallet first."
+          "Connect your wallet to continue."
         );
 
         return;
@@ -5351,7 +5567,7 @@ function BCodeView({
 
       if (!generateToken) {
         setGenerateError(
-          "Select a crypto first."
+          "Choose a crypto to continue."
         );
 
         return;
@@ -5367,7 +5583,7 @@ function BCodeView({
         numericAmount <= 0
       ) {
         setGenerateError(
-          "Enter an amount greater than zero."
+          "Enter an amount greater than 0 to continue."
         );
 
         return;
@@ -5397,7 +5613,7 @@ function BCodeView({
 
       if (feeUnits <= 0n) {
         setGenerateError(
-          "Amount is too small to cover the 2% creation fee."
+          "Enter a larger amount to cover the B-Code fee."
         );
 
         return;
@@ -5457,7 +5673,7 @@ function BCodeView({
     }) => {
       if (!wallet?.address) {
         throw new Error(
-          "Connect your wallet first."
+          "Connect your wallet to continue."
         );
       }
 
@@ -5495,7 +5711,7 @@ function BCodeView({
         !approvalResult?.hash
       ) {
         throw new Error(
-          "Token approval was not submitted."
+          "Token approval wasn't submitted. Please try again."
         );
       }
 
@@ -5532,7 +5748,7 @@ function BCodeView({
     }) => {
       if (!wallet?.address) {
         throw new Error(
-          "Connect your wallet first."
+          "Connect your wallet to continue."
         );
       }
 
@@ -5655,7 +5871,7 @@ function BCodeView({
         !wallet?.address
       ) {
         setGenerateError(
-          "Connect your wallet first."
+          "Connect your wallet to continue."
         );
 
         return;
@@ -5663,7 +5879,7 @@ function BCodeView({
 
       if (!generateToken) {
         setGenerateError(
-          "Select a crypto first."
+          "Choose a crypto to continue."
         );
 
         return;
@@ -5679,7 +5895,7 @@ function BCodeView({
         numericAmount <= 0
       ) {
         setGenerateError(
-          "Enter an amount greater than zero."
+          "Enter an amount greater than 0 to continue."
         );
 
         return;
@@ -5709,7 +5925,7 @@ function BCodeView({
 
       if (feeUnits <= 0n) {
         setGenerateError(
-          "Amount is too small to cover the 2% creation fee."
+          "Enter a larger amount to cover the B-Code fee."
         );
 
         return;
@@ -5803,7 +6019,7 @@ function BCodeView({
 
         if (!codeIsAvailable) {
           throw new Error(
-            "Unable to generate a unique B-Code. Please try again."
+            "Couldn't create your B-Code right now. Please try again."
           );
         }
 
@@ -5960,7 +6176,7 @@ function BCodeView({
             !result?.hash
           ) {
             throw new Error(
-              "B-Code transaction was not submitted."
+              "Your B-Code transaction wasn't submitted. Please try again."
             );
           }
 
@@ -6054,7 +6270,7 @@ function BCodeView({
           throw new Error(
             data?.error ||
               data?.message ||
-              "Unable to create B-Code."
+              "Couldn't create your B-Code. Please try again."
           );
         }
 
@@ -6123,7 +6339,7 @@ function BCodeView({
         setGenerateError(
           error instanceof Error
             ? error.message
-            : "Unable to create B-Code."
+            : "Couldn't create your B-Code. Please try again."
         );
       }
     };
@@ -6213,7 +6429,7 @@ const downloadShareImage =
 
       if (!ctx) {
         throw new Error(
-          "Unable to create share image."
+          "Couldn't prepare your B-Code image. Please try again."
         );
       }
 
@@ -6749,7 +6965,7 @@ const downloadMyBCodeImage =
 
       if (!ctx) {
         throw new Error(
-          "Unable to create B-Code image."
+          "Couldn't prepare your B-Code image. Please try again."
         );
       }
 
@@ -7319,9 +7535,7 @@ const downloadMyBCodeImage =
         );
 
         setRedeemError(
-          error instanceof Error
-            ? error.message
-            : "Unable to redeem B-Code."
+          "Couldn't redeem this B-Code. Please try again."
         );
       }
     };
@@ -7455,9 +7669,7 @@ const downloadMyBCodeImage =
         setMyBCodes([]);
 
         setMyBCodesError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your B-Codes."
+          "Couldn't load your B-Codes. Please try again."
         );
       } finally {
         setMyBCodesLoading(
@@ -7637,7 +7849,7 @@ const downloadMyBCodeImage =
           !result?.hash
         ) {
           throw new Error(
-            "Cancellation transaction was not submitted."
+            "Your cancellation wasn't submitted. Please try again."
           );
         }
 
@@ -7661,9 +7873,7 @@ const downloadMyBCodeImage =
         );
 
         setCancelError(
-          error instanceof Error
-            ? error.message
-            : "Unable to cancel this B-Code."
+          "Couldn't cancel this B-Code. Please try again."
         );
       } finally {
         setCancelLoading(
@@ -11620,7 +11830,7 @@ function SwapView({
             !approvalResult?.hash
           ) {
             throw new Error(
-              "Token approval was not submitted."
+              "Token approval wasn't submitted. Please try again."
             );
           }
 

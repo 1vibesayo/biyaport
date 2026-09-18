@@ -13,15 +13,6 @@ const SUPPORTED_NETWORKS = [
   "bnb-smart-chain",
 ] as const;
 
-/*
- * Your Biyaport fee.
- *
- * Example:
- *
- * 1% = "1"
- */
-const SENDER_FEE_PERCENT = "1";
-
 type SupportedToken =
   (typeof SUPPORTED_TOKENS)[number];
 
@@ -102,8 +93,7 @@ export async function POST(
       walletAddress,
 
       /*
-       * These names now match
-       * the frontend exactly.
+       * Refund account details.
        */
       institution,
       accountNumber,
@@ -269,9 +259,16 @@ export async function POST(
 
     /*
      * --------------------------------------------
-     * CREATE ONRAMP ORDER
+     * CREATE PAYCREST ONRAMP ORDER
      *
      * Fiat -> Crypto
+     *
+     * IMPORTANT:
+     *
+     * Biyaport does NOT define senderFeePercent.
+     *
+     * Paycrest determines the applicable
+     * sender fee and returns it in the order.
      * --------------------------------------------
      */
 
@@ -333,12 +330,6 @@ export async function POST(
        * Biyaport internal reference.
        */
       reference,
-
-      /*
-       * Biyaport fee.
-       */
-      senderFeePercent:
-        SENDER_FEE_PERCENT,
     };
 
     console.log(
@@ -479,6 +470,15 @@ export async function POST(
     /*
      * --------------------------------------------
      * RETURN ORDER
+     *
+     * Paycrest is the source of truth for:
+     *
+     * - senderFee
+     * - senderFeePercent
+     * - transactionFee
+     *
+     * Biyaport does not calculate or override
+     * any of these values.
      * --------------------------------------------
      */
 
@@ -505,12 +505,23 @@ export async function POST(
         rate:
           order.rate,
 
+        /*
+         * Paycrest-calculated sender fee.
+         */
         senderFee:
           order.senderFee,
 
+        /*
+         * Paycrest-calculated sender fee percentage,
+         * when provided by Paycrest.
+         */
         senderFeePercent:
           order.senderFeePercent,
 
+        /*
+         * Paycrest transaction/network fee,
+         * when provided by Paycrest.
+         */
         transactionFee:
           order.transactionFee,
 

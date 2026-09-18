@@ -17,11 +17,9 @@ import {
   RefreshCw,
   ArrowLeftRight,
   CreditCard,
-  History,
   Home as HomeIcon,
   Coins,
   Settings,
-  Menu,
   X,
 } from "lucide-react";
 
@@ -3271,6 +3269,68 @@ if (selectedCrypto.symbol === "ETH") {
         </div>
 
         <style jsx global>{`
+          html {
+            scrollbar-color: #1557E8 #050511;
+            scrollbar-width: thin;
+          }
+
+          * {
+            scrollbar-color: #1557E8 #050511;
+            scrollbar-width: thin;
+          }
+
+          *::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+          }
+
+          *::-webkit-scrollbar-track {
+            background: #050511;
+          }
+
+          *::-webkit-scrollbar-thumb {
+            background: #1557E8;
+            border-radius: 999px;
+          }
+
+          *::-webkit-scrollbar-thumb:hover {
+            background: #0B50EA;
+          }
+
+          @keyframes biyaport-button-label-in {
+            from {
+              opacity: 0;
+              transform: translateY(3px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          @keyframes biyaport-dropdown-in {
+            from {
+              opacity: 0;
+              transform: translateY(-4px) scale(0.98);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+
+          .biyaport-dropdown {
+            transform-origin: top center;
+            animation: biyaport-dropdown-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: transform, opacity;
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .biyaport-dropdown {
+              animation: none;
+            }
+          }
+
           @keyframes biyaport-spin {
             from {
               transform: rotate(0deg);
@@ -3456,12 +3516,22 @@ if (selectedCrypto.symbol === "ETH") {
       <BCodeView
         initialRedeemCode={bcodeDeepLink}
         onBackHome={backToQuickPort}
+        onQuickPort={handleQuickPortNavigation}
+        onBCodes={handleBCodesNavigation}
+        onSwap={handleSwapNavigation}
       />
     );
   }
 
   if (mainView === "swap") {
-    return <SwapView onBackHome={backToQuickPort} />;
+    return (
+      <SwapView
+        onBackHome={backToQuickPort}
+        onQuickPort={handleQuickPortNavigation}
+        onBCodes={handleBCodesNavigation}
+        onSwap={handleSwapNavigation}
+      />
+    );
   }
 
   /*
@@ -3476,6 +3546,7 @@ if (selectedCrypto.symbol === "ETH") {
 
       <div className="relative z-10 min-h-screen">
         <SiteNav
+          activeTab="quick-port"
           onQuickPort={handleQuickPortNavigation}
           onBCodes={handleBCodesNavigation}
           onSwap={handleSwapNavigation}
@@ -3535,7 +3606,7 @@ if (selectedCrypto.symbol === "ETH") {
         </button>
 
         {currencyDropdownOpen && (
-          <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-[220px] overflow-hidden rounded-[12px] border border-border bg-[#070812] p-1.5 shadow-2xl">
+          <div className="biyaport-dropdown absolute right-0 top-[calc(100%+8px)] z-50 w-[220px] overflow-hidden rounded-[12px] border border-border bg-[#070812] p-1.5 shadow-2xl">
 
             {CURRENCIES.map(
               (currency) => (
@@ -3731,7 +3802,7 @@ ONRAMP MODAL 1
                     </div>
 
                     {onrampCryptoDropdownOpen && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                      <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                         <div className="border-b border-border p-3">
   <div className="flex items-center gap-2">
@@ -4071,7 +4142,7 @@ ONRAMP MODAL 1
 
       {/* BANK DROPDOWN */}
       {onrampBankDropdownOpen && (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+        <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
           {/* SEARCH */}
           <div className="border-b border-border p-3">
@@ -4536,7 +4607,7 @@ ONRAMP MODAL 1
                         </button>
 
                         {bankDropdownOpen && (
-                          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                             <div className="border-b border-border p-3">
                               <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
@@ -4764,7 +4835,7 @@ ONRAMP MODAL 1
                         </button>
 
                         {cryptoDropdownOpen && (
-                          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                             <div className="border-b border-border p-3">
                               <div className="flex items-center gap-2">
@@ -4829,53 +4900,40 @@ ONRAMP MODAL 1
                                       >
                                         <div className="flex min-w-0 items-center gap-3">
                                           <Image
-                                            src={
-                                              crypto.logo
-                                            }
+                                            src={crypto.logo}
                                             alt=""
-                                            width={
-                                              40
-                                            }
-                                            height={
-                                              40
-                                            }
+                                            width={40}
+                                            height={40}
                                             className="h-10 w-10 shrink-0 object-contain"
                                           />
 
                                           <div className="min-w-0">
-                                            <div className="font-medium">
-                                              {
-                                                crypto.symbol
-                                              }
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-medium">
+                                                {crypto.symbol}
+                                              </span>
+
+                                              {selectedCrypto?.network === crypto.network &&
+                                                selectedCrypto?.symbol === crypto.symbol && (
+                                                  <Check className="h-4 w-4 shrink-0 text-primary" />
+                                                )}
                                             </div>
 
-                                            <div className="text-[12px] text-muted-foreground">
-                                              {
-                                                crypto.name
-                                              }
+                                            <div className="truncate text-[12px] text-muted-foreground">
+                                              {crypto.name}
                                             </div>
                                           </div>
                                         </div>
 
-                                        <div className="ml-3 flex shrink-0 flex-col items-end">
+                                        <div className="ml-4 flex shrink-0 flex-col items-end">
                                           <span className="text-[14px] font-medium text-foreground">
-                                            {loadingBalances
-                                              ? "..."
-                                              : balance}
+                                            {loadingBalances ? "..." : balance}
                                           </span>
 
                                           <span className="text-[11px] text-muted-foreground">
-                                            {
-                                              crypto.symbol
-                                            }
+                                            {crypto.symbol}
                                           </span>
                                         </div>
-
-                                        {selectedCrypto?.network ===
-                                          crypto.network &&
-                                          selectedCrypto?.symbol === crypto.symbol && (
-                                          <Check className="ml-3 h-4 w-4 shrink-0 text-primary" />
-                                        )}
                                       </button>
                                     );
                                   }
@@ -5041,9 +5099,15 @@ ONRAMP MODAL 1
 function BCodeView({
   initialRedeemCode,
   onBackHome,
+  onQuickPort,
+  onBCodes,
+  onSwap,
 }: {
   initialRedeemCode?: string;
   onBackHome: () => void;
+  onQuickPort?: () => void;
+  onBCodes?: () => void;
+  onSwap?: () => void;
 }) {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -5111,6 +5175,14 @@ function BCodeView({
   const generateNetwork = "base" as const;
 
   const [generateToken, setGenerateToken] = useState<GenerateToken | "">("");
+
+  const [generateTokenBalances, setGenerateTokenBalances] = useState<Record<GenerateToken, string>>({
+    USDC: "0.00",
+    USDT: "0.00",
+    ETH: "0.0000",
+  });
+
+  const [generateBalancesLoading, setGenerateBalancesLoading] = useState(false);
 
   const [
     generateCryptoDropdownOpen,
@@ -5230,6 +5302,9 @@ function BCodeView({
   const [redeemState, setRedeemState] =
     useState<RedeemState>("idle");
 
+  const [redeemValidating, setRedeemValidating] =
+    useState(false);
+
   const [redeemStage, setRedeemStage] =
     useState<BCodeStage>(1);
 
@@ -5268,6 +5343,61 @@ function BCodeView({
           generateCryptoSearch.trim().toLowerCase()
         )
     );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGenerateTokenBalances = async () => {
+      if (!wallet?.address) {
+        setGenerateTokenBalances({
+          USDC: "0.00",
+          USDT: "0.00",
+          ETH: "0.0000",
+        });
+        return;
+      }
+
+      setGenerateBalancesLoading(true);
+
+      try {
+        const [usdcBalance, usdtBalance, ethBalance] = await Promise.all([
+          BCODE_PUBLIC_CLIENT.readContract({
+            address: BCODE_BASE_USDC,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [wallet.address as `0x${string}`],
+          }),
+          BCODE_PUBLIC_CLIENT.readContract({
+            address: BCODE_BASE_USDT,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [wallet.address as `0x${string}`],
+          }),
+          BCODE_PUBLIC_CLIENT.getBalance({
+            address: wallet.address as `0x${string}`,
+          }),
+        ]);
+
+        if (cancelled) return;
+
+        setGenerateTokenBalances({
+          USDC: Number(formatUnits(usdcBalance, 6)).toFixed(2),
+          USDT: Number(formatUnits(usdtBalance, 6)).toFixed(2),
+          ETH: Number(formatUnits(ethBalance, 18)).toFixed(4),
+        });
+      } catch (error) {
+        console.error("BCODE BALANCE ERROR:", error);
+      } finally {
+        if (!cancelled) setGenerateBalancesLoading(false);
+      }
+    };
+
+    loadGenerateTokenBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet?.address]);
 
   /*
    * ====================================================
@@ -5418,18 +5548,23 @@ function BCodeView({
    */
 
   const validateBCode = async () => {
+    if (redeemValidating) {
+      return false;
+    }
+
+    setRedeemValidating(true);
+    setRedeemError("");
+
     const code =
       redeemCode
         .trim()
         .toUpperCase();
 
-    setRedeemError("");
-
     if (!isValidBCodeFormat(code)) {
       setRedeemError(
         "Enter a valid B-Code in the format B-XXXX-XXXX."
       );
-
+      setRedeemValidating(false);
       return false;
     }
 
@@ -5439,15 +5574,10 @@ function BCodeView({
 
       const bcode =
         await BCODE_PUBLIC_CLIENT.readContract({
-          address:
-            BCODE_CONTRACT_ADDRESS,
-          abi:
-            BCODE_CONTRACT_ABI,
-          functionName:
-            "getBCode",
-          args: [
-            codeHash,
-          ],
+          address: BCODE_CONTRACT_ADDRESS,
+          abi: BCODE_CONTRACT_ABI,
+          functionName: "getBCode",
+          args: [codeHash],
         });
 
       const [
@@ -5465,7 +5595,7 @@ function BCodeView({
         setRedeemError(
           "Couldn't find that B-Code. Please check the code and try again."
         );
-
+        setRedeemValidating(false);
         return false;
       }
 
@@ -5473,7 +5603,7 @@ function BCodeView({
         setRedeemError(
           "This B-Code has already been redeemed."
         );
-
+        setRedeemValidating(false);
         return false;
       }
 
@@ -5481,7 +5611,7 @@ function BCodeView({
         setRedeemError(
           "This B-Code has been cancelled and can no longer be redeemed."
         );
-
+        setRedeemValidating(false);
         return false;
       }
 
@@ -5505,29 +5635,25 @@ function BCodeView({
         setRedeemToken("ETH");
       } else {
         setRedeemToken("");
-
         setRedeemError(
           "This B-Code uses a crypto that isn't supported right now."
         );
-
+        setRedeemValidating(false);
         return false;
       }
 
       const decimals =
-        token ===
-        NATIVE_ETH.toLowerCase()
+        token === NATIVE_ETH.toLowerCase()
           ? 18
           : BCODE_TOKEN_DECIMALS;
 
       setRedeemAmount(
-        formatUnits(
-          amount,
-          decimals
-        )
+        formatUnits(amount, decimals)
       );
 
       setRedeemCode(code);
       setRedeemStep(2);
+      setRedeemValidating(false);
 
       return true;
     } catch (error) {
@@ -5541,7 +5667,7 @@ function BCodeView({
           ? error.message
           : "Couldn't verify this B-Code. Please check the code and try again."
       );
-
+      setRedeemValidating(false);
       return false;
     }
   };
@@ -7954,10 +8080,10 @@ const downloadMyBCodeImage =
       <div className="relative z-10 min-h-screen">
 
         <SiteNav
-          onQuickPort={
-            onBackHome
-          }
-          onBCodes={() => {}}
+          activeTab="b-codes"
+          onQuickPort={onQuickPort ?? onBackHome}
+          onBCodes={onBCodes}
+          onSwap={onSwap}
         />
 
         <section className="min-h-screen overflow-y-auto px-4 pb-28 pt-[112px] sm:px-6 sm:pb-12 sm:pt-[128px]">
@@ -8042,7 +8168,7 @@ const downloadMyBCodeImage =
                             1
                           );
                         }}
-                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-300 ease-out ${
                           mode ===
                           "generate"
                             ? "bg-[#050511] text-foreground shadow-sm"
@@ -8062,7 +8188,7 @@ const downloadMyBCodeImage =
                             1
                           );
                         }}
-                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition ${
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-300 ease-out ${
                           mode ===
                           "redeem"
                             ? "bg-[#050511] text-foreground shadow-sm"
@@ -8238,7 +8364,7 @@ const downloadMyBCodeImage =
   </button>
 
   {generateCryptoDropdownOpen && (
-    <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+    <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
       <div className="flex items-center gap-2 border-b border-border p-3">
         <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -8303,36 +8429,46 @@ const downloadMyBCodeImage =
                   }}
                   className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <Image
                       src={token.logo}
                       alt=""
                       width={32}
                       height={32}
-                      className="h-8 w-8 object-contain"
+                      className="h-8 w-8 shrink-0 object-contain"
                     />
 
-                    <div>
-                      <div className="text-[14px] font-medium">
-                        {symbol}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[14px] font-medium">
+                          {symbol}
+                        </span>
+
+                        {generateToken === symbol && (
+                          <Check className="h-4 w-4 shrink-0 text-primary" />
+                        )}
                       </div>
 
-                      <div className="text-[12px] text-muted-foreground">
-                        {symbol ===
-                        "USDC"
+                      <div className="truncate text-[12px] text-muted-foreground">
+                        {symbol === "USDC"
                           ? "USD Coin"
-                          : symbol ===
-                            "USDT"
+                          : symbol === "USDT"
                           ? "Tether USD"
                           : "Ethereum"}
                       </div>
                     </div>
                   </div>
 
-                  {generateToken ===
-                    symbol && (
-                    <Check className="h-4 w-4 text-primary" />
-                  )}
+                  <div className="ml-4 flex shrink-0 flex-col items-end text-right">
+                    <span className="text-[14px] font-medium text-foreground">
+                      {generateBalancesLoading
+                        ? "..."
+                        : generateTokenBalances[symbol]}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {symbol}
+                    </span>
+                  </div>
                 </button>
               );
             }
@@ -8685,12 +8821,16 @@ const downloadMyBCodeImage =
 
                             <button
                               type="button"
-                              onClick={
-                                validateBCode
-                              }
-                              className="mt-5 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
+                              onClick={validateBCode}
+                              disabled={redeemValidating}
+                              className="mt-5 flex h-[56px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-80"
                             >
-                              Validate B-Code
+                              <span
+                                key={redeemValidating ? "validating" : "validate"}
+                                className="animate-[biyaport-button-label-in_220ms_ease-out]"
+                              >
+                                {redeemValidating ? "Validating B-Code" : "Validate B-Code"}
+                              </span>
                             </button>
                           </>
                         )}
@@ -10185,8 +10325,16 @@ function loadImage(
       const image =
         new window.Image();
 
-      image.onload = () =>
+      image.onload = async () => {
+        try {
+          if (typeof image.decode === "function") {
+            await image.decode();
+          }
+        } catch {
+          // Continue with the loaded image if decoding fails.
+        }
         resolve(image);
+      };
 
       image.onerror = reject;
 
@@ -10223,6 +10371,87 @@ type SwapToken = {
   logoURI: string | null;
   isNative: boolean;
 };
+
+const SWAP_TOKEN_CACHE_KEY = "biyaport-swap-tokens-v1";
+const swapTokenCache = new Map<number, SwapToken[]>();
+const swapTokenCachePromises = new Map<number, Promise<SwapToken[]>>();
+
+function filterSwapTokens(tokens: SwapToken[], search: string) {
+  const normalized = search.trim().toLowerCase();
+
+  if (!normalized) return tokens;
+
+  return tokens.filter((token) =>
+    token.symbol.toLowerCase().includes(normalized) ||
+    token.name.toLowerCase().includes(normalized) ||
+    token.address.toLowerCase().includes(normalized)
+  );
+}
+
+function getStoredSwapTokenCache() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const stored = window.sessionStorage.getItem(SWAP_TOKEN_CACHE_KEY);
+    if (!stored) return;
+
+    const parsed = JSON.parse(stored) as Record<string, SwapToken[]>;
+    Object.entries(parsed).forEach(([chainId, tokens]) => {
+      if (Array.isArray(tokens)) {
+        swapTokenCache.set(Number(chainId), tokens);
+      }
+    });
+  } catch {
+    // Ignore invalid session cache and fetch normally.
+  }
+}
+
+function persistSwapTokenCache() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const serialized: Record<string, SwapToken[]> = {};
+    swapTokenCache.forEach((tokens, chainId) => {
+      serialized[String(chainId)] = tokens;
+    });
+    window.sessionStorage.setItem(
+      SWAP_TOKEN_CACHE_KEY,
+      JSON.stringify(serialized)
+    );
+  } catch {
+    // Session storage can be unavailable or full.
+  }
+}
+
+async function getSwapTokensOnce(chainId: number) {
+  const cached = swapTokenCache.get(chainId);
+  if (cached) return cached;
+
+  const pending = swapTokenCachePromises.get(chainId);
+  if (pending) return pending;
+
+  const request = fetch(
+    `/api/swap/tokens?chainId=${chainId}&limit=100`,
+    { cache: "no-store" }
+  )
+    .then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || "Unable to load tokens.");
+      }
+
+      const loaded = Array.isArray(data?.tokens) ? data.tokens : [];
+      swapTokenCache.set(chainId, loaded);
+      persistSwapTokenCache();
+      return loaded;
+    })
+    .finally(() => {
+      swapTokenCachePromises.delete(chainId);
+    });
+
+  swapTokenCachePromises.set(chainId, request);
+  return request;
+}
 
 type SwapPriceResponse = {
   success?: boolean;
@@ -10295,12 +10524,18 @@ function SwapTokenLogo({
     );
   }
 
+  const highQualityLogo = token.logoURI
+    ?.replace("/small/", "/large/")
+    .replace("/thumb/", "/large/");
+
   return (
     <img
-      src={token.logoURI}
+      src={highQualityLogo || token.logoURI}
       alt=""
       width={size}
       height={size}
+      loading="lazy"
+      decoding="async"
       className="shrink-0 rounded-full object-contain"
     />
   );
@@ -10370,7 +10605,7 @@ function SwapNetworkButton({
             width={20}
             height={20}
             className="h-5 w-5 object-contain"
-          />
+           loading="lazy" decoding="async" />
         ) : (
           <div className="h-5 w-5 rounded-full bg-secondary" />
         )}
@@ -10385,7 +10620,7 @@ function SwapNetworkButton({
       </button>
 
       {open && !disabled && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-[80] w-[220px] overflow-hidden rounded-[11px] border border-border bg-[#070812] p-1.5 shadow-2xl">
+        <div className="biyaport-dropdown absolute right-0 top-[calc(100%+8px)] z-[80] w-[220px] overflow-hidden rounded-[11px] border border-border bg-[#070812] p-1.5 shadow-2xl">
           {networks.map((item) => (
             <button
               key={item.chainId}
@@ -10407,7 +10642,7 @@ function SwapNetworkButton({
                   width={20}
                   height={20}
                   className="h-5 w-5 object-contain"
-                />
+                 loading="lazy" decoding="async" />
 
                 <span className="text-[13px]">
                   {item.name}
@@ -10444,6 +10679,7 @@ function SwapTokenSelector({
   networks,
   selectedNetwork,
   onNetworkChange,
+  getTokenBalance,
   networkDisabled = false,
   disabled = false,
 }: {
@@ -10457,6 +10693,7 @@ function SwapTokenSelector({
   networks: SwapNetwork[];
   selectedNetwork: SwapNetwork | null;
   onNetworkChange?: (chainId: number) => void;
+  getTokenBalance?: (token: SwapToken) => string;
   networkDisabled?: boolean;
   disabled?: boolean;
 }) {
@@ -10510,7 +10747,7 @@ function SwapTokenSelector({
       </button>
 
       {open && !disabled && (
-        <div className="absolute left-0 top-[calc(100%+8px)] z-[90] w-[min(390px,calc(100vw-40px))] overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+        <div className="biyaport-dropdown absolute left-0 top-[calc(100%+8px)] z-[90] w-[min(390px,calc(100vw-40px))] overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
           {/* SEARCH + NETWORK */}
           <div className="border-b border-border p-3">
             <div className="flex items-center gap-2">
@@ -10592,6 +10829,15 @@ function SwapTokenSelector({
                       {item.name}
                     </span>
                   </div>
+
+                  <div className="ml-3 flex shrink-0 flex-col items-end text-right">
+                    <span className="text-[13px] font-medium text-foreground">
+                      {getTokenBalance ? getTokenBalance(item) : "--"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {item.symbol}
+                    </span>
+                  </div>
                 </button>
               ))
             )}
@@ -10606,10 +10852,20 @@ function SwapTokenSelector({
  * SWAP VIEW
  ********************************************************************************/
 
+function getPublicClientByChainId(chainId: number) {
+  return chainId === 56 ? getPublicClient("bnb-smart-chain") : getPublicClient("base");
+}
+
 function SwapView({
   onBackHome,
+  onQuickPort,
+  onBCodes,
+  onSwap,
 }: {
   onBackHome: () => void;
+  onQuickPort?: () => void;
+  onBCodes?: () => void;
+  onSwap?: () => void;
 }) {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
@@ -10631,6 +10887,11 @@ function SwapView({
 
   const [sellAmount, setSellAmount] = useState("");
   const [buyAmount, setBuyAmount] = useState("");
+
+  const [sellTokenBalance, setSellTokenBalance] = useState("0");
+  const [buyTokenBalance, setBuyTokenBalance] = useState("0");
+  const [sellBalanceLoading, setSellBalanceLoading] = useState(false);
+  const [buyBalanceLoading, setBuyBalanceLoading] = useState(false);
 
   const [sellSearch, setSellSearch] = useState("");
   const [buySearch, setBuySearch] = useState("");
@@ -10713,6 +10974,10 @@ function SwapView({
    * BUY network always follows SELL network.
    */
   const buyNetwork = sellNetwork;
+
+  useEffect(() => {
+    getStoredSwapTokenCache();
+  }, []);
 
   // ============================================================
   // HELPERS
@@ -10996,6 +11261,58 @@ function SwapView({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBalance = async (
+      token: SwapToken | null,
+      setter: (value: string) => void,
+      setLoading: (value: boolean) => void
+    ) => {
+      if (!wallet?.address || !token) {
+        setter("0");
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const client = getPublicClientByChainId(token.chainId);
+        let balance: bigint;
+
+        if (token.address.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+          balance = await client.getBalance({
+            address: wallet.address as `0x${string}`,
+          });
+        } else {
+          balance = await client.readContract({
+            address: token.address as `0x${string}`,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [wallet.address as `0x${string}`],
+          });
+        }
+
+        if (!cancelled) {
+          setter(formatTokenAmount(balance.toString(), token.decimals) || "0");
+        }
+      } catch (error) {
+        console.error("SWAP BALANCE ERROR:", error);
+        if (!cancelled) setter("0");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadBalance(sellToken, setSellTokenBalance, setSellBalanceLoading);
+    loadBalance(buyToken, setBuyTokenBalance, setBuyBalanceLoading);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet?.address, sellToken?.address, sellToken?.chainId, buyToken?.address, buyToken?.chainId]);
+
   // ============================================================
   // LOAD TOKENS
   // ============================================================
@@ -11006,84 +11323,31 @@ function SwapView({
     side: "sell" | "buy"
   ) => {
     const requestRef =
-      side === "sell"
-        ? sellTokenRequestRef
-        : buyTokenRequestRef;
+      side === "sell" ? sellTokenRequestRef : buyTokenRequestRef;
+    const requestId = ++requestRef.current;
 
-    const requestId =
-      ++requestRef.current;
-
-    if (side === "sell") {
-      setSellTokensLoading(true);
-    } else {
-      setBuyTokensLoading(true);
-    }
+    if (side === "sell") setSellTokensLoading(true);
+    else setBuyTokensLoading(true);
 
     try {
-      const response = await fetch(
-        `/api/swap/tokens?chainId=${chainId}&search=${encodeURIComponent(
-          search
-        )}&limit=100`,
-        {
-          cache: "no-store",
-        }
-      );
+      const loaded = await getSwapTokensOnce(chainId);
 
-      const data =
-        await response.json();
+      if (requestId !== requestRef.current) return;
 
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Unable to load tokens."
-        );
-      }
-
-      if (
-        requestId !==
-        requestRef.current
-      ) {
-        return;
-      }
-
-      const loaded =
-        Array.isArray(data?.tokens)
-          ? data.tokens
-          : [];
-
-      if (side === "sell") {
-        setSellTokens(loaded);
-      } else {
-        setBuyTokens(loaded);
-      }
+      const filtered = filterSwapTokens(loaded, search);
+      if (side === "sell") setSellTokens(filtered);
+      else setBuyTokens(filtered);
     } catch (error) {
-      if (
-        requestId !==
-        requestRef.current
-      ) {
-        return;
-      }
+      if (requestId !== requestRef.current) return;
 
-      if (side === "sell") {
-        setSellTokens([]);
-      } else {
-        setBuyTokens([]);
-      }
+      if (side === "sell") setSellTokens([]);
+      else setBuyTokens([]);
 
-      console.error(
-        "SWAP TOKEN LOAD ERROR:",
-        error
-      );
+      console.error("SWAP TOKEN LOAD ERROR:", error);
     } finally {
-      if (
-        requestId ===
-        requestRef.current
-      ) {
-        if (side === "sell") {
-          setSellTokensLoading(false);
-        } else {
-          setBuyTokensLoading(false);
-        }
+      if (requestId === requestRef.current) {
+        if (side === "sell") setSellTokensLoading(false);
+        else setBuyTokensLoading(false);
       }
     }
   };
@@ -12094,6 +12358,29 @@ function SwapView({
         )
       : sellAmount;
 
+  const getSwapTokenBalance = (token: SwapToken) => {
+    if (token.address.toLowerCase() ===
+      "0x0000000000000000000000000000000000000000") {
+      return sellToken?.address.toLowerCase() === token.address.toLowerCase()
+        ? (sellBalanceLoading ? "..." : sellTokenBalance)
+        : buyToken?.address.toLowerCase() === token.address.toLowerCase()
+        ? (buyBalanceLoading ? "..." : buyTokenBalance)
+        : "0";
+    }
+
+    if (sellToken?.address.toLowerCase() === token.address.toLowerCase() &&
+        sellToken?.chainId === token.chainId) {
+      return sellBalanceLoading ? "..." : sellTokenBalance;
+    }
+
+    if (buyToken?.address.toLowerCase() === token.address.toLowerCase() &&
+        buyToken?.chainId === token.chainId) {
+      return buyBalanceLoading ? "..." : buyTokenBalance;
+    }
+
+    return "0";
+  };
+
   const displayedBuyAmount =
     lastEditedRef.current === "sell"
       ? formatTokenAmount(
@@ -12181,9 +12468,9 @@ function SwapView({
       <div className="relative z-10 min-h-screen">
         <SiteNav
           activeTab="swap"
-          onQuickPort={onBackHome}
-          onBCodes={onBackHome}
-          onSwap={() => {}}
+          onQuickPort={onQuickPort ?? onBackHome}
+          onBCodes={onBCodes}
+          onSwap={onSwap}
         />
 
         <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
@@ -12435,7 +12722,7 @@ function SwapView({
 
                   <span className="text-[13px] text-muted-foreground">
                     {sellToken
-                      ? `Balance: ${sellToken.symbol}`
+                      ? `Balance: ${sellBalanceLoading ? "..." : sellTokenBalance} ${sellToken.symbol}`
                       : "Balance: --"}
                   </span>
                 </div>
@@ -12471,11 +12758,12 @@ function SwapView({
                     }
                   />
 
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={
-                      displayedSellAmount
+                  <div className="group flex min-w-0 flex-1 items-center">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={
+                        displayedSellAmount
                     }
                     onChange={(event) =>
                       handleSellAmountChange(
@@ -12485,6 +12773,19 @@ function SwapView({
                     placeholder="0"
                     className="min-w-0 flex-1 bg-transparent px-2 text-right text-[24px] font-semibold outline-none placeholder:text-muted-foreground/50"
                   />
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      if (sellTokenBalance !== "0") {
+                        handleSellAmountChange(sellTokenBalance);
+                      }
+                    }}
+                    className="mr-1 text-[14px] font-medium text-[#1557E8] opacity-0 transition-opacity duration-200 hover:text-[#0B50EA] md:group-hover:opacity-100 focus:opacity-100 max-md:group-focus-within:opacity-100"
+                  >
+                    Max
+                  </button>
+                  </div>
                 </div>
               </div>
 
@@ -12529,7 +12830,7 @@ function SwapView({
 
                   <span className="text-[13px] text-muted-foreground">
                     {buyToken
-                      ? `Balance: ${buyToken.symbol}`
+                      ? `Balance: ${buyBalanceLoading ? "..." : buyTokenBalance} ${buyToken.symbol}`
                       : "Balance: --"}
                   </span>
                 </div>
@@ -12557,6 +12858,7 @@ function SwapView({
                     selectedNetwork={
                       buyNetwork
                     }
+                    getTokenBalance={getSwapTokenBalance}
                     networkDisabled
                     disabled={
                       !sellNetwork ||
@@ -12564,11 +12866,12 @@ function SwapView({
                     }
                   />
 
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={
-                      displayedBuyAmount
+                  <div className="group flex min-w-0 flex-1 items-center">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={
+                        displayedBuyAmount
                     }
                     onChange={(event) =>
                       handleBuyAmountChange(
@@ -12578,20 +12881,26 @@ function SwapView({
                     placeholder="0"
                     className="min-w-0 flex-1 bg-transparent px-2 text-right text-[24px] font-semibold outline-none placeholder:text-muted-foreground/50"
                   />
+
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      if (buyTokenBalance !== "0") {
+                        handleBuyAmountChange(buyTokenBalance);
+                      }
+                    }}
+                    className="mr-1 text-[14px] font-medium text-[#1557E8] opacity-0 transition-opacity duration-200 hover:text-[#0B50EA] md:group-hover:opacity-100 focus:opacity-100 max-md:group-focus-within:opacity-100"
+                  >
+                    Max
+                  </button>
+                  </div>
                 </div>
               </div>
 
               {/* ==================================================
                   PRICE LOADING
               ================================================== */}
-
-              {priceLoading &&
-              readyForPrice ? (
-                <div className="mt-4 flex items-center justify-center gap-2 text-[13px] text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Getting best rate...
-                </div>
-              ) : null}
 
               {/* ==================================================
                   PRICE ERROR
@@ -12691,28 +13000,48 @@ function SwapView({
                 }
                 className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {swapLoading ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-
-                    {sellToken?.isNative
-                      ? "Confirm swap"
-                      : "Preparing swap"}
-                  </>
-                ) : !sellNetwork ||
-                  !sellToken ||
-                  !buyToken ? (
-                  "Select tokens to swap"
-                ) : !hasAmount ? (
-                  "Enter an amount"
-                ) : !price ? (
-                  "Get swap rate"
-                ) : !authenticated ||
-                  !wallet?.address ? (
-                  "Connect wallet"
-                ) : (
-                  "Swap"
-                )}
+                <span
+                  key={
+                    swapLoading
+                      ? sellToken?.isNative
+                        ? "confirm-swap"
+                        : "preparing-swap"
+                      : !sellNetwork || !sellToken || !buyToken
+                      ? "select-tokens"
+                      : !hasAmount
+                      ? "enter-amount"
+                      : priceLoading
+                      ? "fetching-rate"
+                      : !price
+                      ? "waiting-rate"
+                      : !authenticated || !wallet?.address
+                      ? "connect-wallet"
+                      : "swap"
+                  }
+                  className="flex items-center justify-center gap-2 animate-[biyaport-button-label-in_220ms_ease-out]"
+                >
+                  {swapLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      {sellToken?.isNative ? "Confirm swap" : "Preparing swap"}
+                    </>
+                  ) : !sellNetwork || !sellToken || !buyToken ? (
+                    "Select tokens to swap"
+                  ) : !hasAmount ? (
+                    "Enter an amount"
+                  ) : priceLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Fetching the best rate
+                    </>
+                  ) : !price ? (
+                    "Fetching the best rate"
+                  ) : !authenticated || !wallet?.address ? (
+                    "Connect wallet"
+                  ) : (
+                    "Swap"
+                  )}
+                </span>
               </button>
                 </>
               )}
@@ -12811,7 +13140,7 @@ function NetworkSelector({
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 top-[calc(100%+8px)] z-[60] w-[220px] overflow-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 shadow-2xl"
+          className="biyaport-dropdown absolute right-0 top-[calc(100%+8px)] z-[60] w-[220px] overflow-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 shadow-2xl"
         >
           {NETWORKS.map(
             (
@@ -12872,14 +13201,18 @@ function SiteNav({
   onBCodes,
   onSwap,
 }: {
-  activeTab?: "quick-port" | "b-codes" | "swap" | "history";
+  activeTab?: "quick-port" | "b-codes" | "swap";
   onQuickPort?: () => void;
   onBCodes?: () => void;
   onSwap?: () => void;
 }) {
   const [activeMobileTab, setActiveMobileTab] = useState<
-    "quick-port" | "b-codes" | "swap" | "history"
+    "quick-port" | "b-codes" | "swap"
   >(activeTab);
+
+  useEffect(() => {
+    setActiveMobileTab(activeTab);
+  }, [activeTab]);
 
   return (
     <>
@@ -12907,7 +13240,11 @@ function SiteNav({
                 setActiveMobileTab("quick-port");
                 onQuickPort?.();
               }}
-              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+                activeMobileTab === "quick-port"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               Quick Port
             </button>
@@ -12918,7 +13255,11 @@ function SiteNav({
                 setActiveMobileTab("b-codes");
                 onBCodes?.();
               }}
-              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+                activeMobileTab === "b-codes"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               B-Codes
             </button>
@@ -12929,17 +13270,13 @@ function SiteNav({
                 setActiveMobileTab("swap");
                 onSwap?.();
               }}
-              className="rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+                activeMobileTab === "swap"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               Swap
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="cursor-default rounded-[8px] px-3 py-2 text-[14px] font-semibold text-muted-foreground"
-            >
-              History
             </button>
           </nav>
 
@@ -12948,10 +13285,10 @@ function SiteNav({
       </header>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-[110] px-5 pb-[calc(env(safe-area-inset-bottom)+8px)] md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-[110] flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+8px)] md:hidden"
         aria-label="Mobile navigation"
       >
-        <div className="mx-auto flex max-w-[420px] items-center justify-between gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">
+        <div className="flex w-fit max-w-[calc(100vw-40px)] items-center gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">
 
           {/* Quick Port */}
           <button
@@ -13031,32 +13368,6 @@ function SiteNav({
             </span>
           </button>
 
-          {/* History */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveMobileTab("history");
-              // Empty modal for now.
-            }}
-            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
-              activeMobileTab === "history"
-                ? "bg-[#0B50EA] px-6 text-white"
-                : "w-11 px-0 text-muted-foreground active:scale-95"
-            }`}
-          >
-            <Menu className="h-5 w-5 shrink-0" strokeWidth={2} />
-
-            <span
-              className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
-                activeMobileTab === "history"
-                  ? "ml-2 max-w-[100px] opacity-100"
-                  : "ml-0 max-w-0 opacity-0"
-              }`}
-            >
-              History
-            </span>
-          </button>
-
         </div>
       </nav>
     </>
@@ -13072,11 +13383,13 @@ function SiteNav({
 
 function PaymentShell({
   children,
+  activeTab = "quick-port",
   onQuickPort,
   onBCodes,
   onSwap,
 }: {
   children: React.ReactNode;
+  activeTab?: "quick-port" | "b-codes" | "swap";
   onQuickPort?: () => void;
   onBCodes?: () => void;
   onSwap?: () => void;
@@ -13089,6 +13402,7 @@ function PaymentShell({
       <div className="relative z-10 min-h-screen">
 
         <SiteNav
+          activeTab={activeTab}
           onQuickPort={onQuickPort}
           onBCodes={onBCodes}
           onSwap={onSwap}

@@ -11132,8 +11132,39 @@ function SwapView({
 }) {
   const { authenticated } = usePrivy();
   const { wallets } = useWallets();
-  const { sendTransaction } = useSendTransaction();
   const wallet = wallets[0];
+
+  /*
+   * IMPORTANT: the swap transaction flow does not use Privy's
+   * reactive wallet array or useSendTransaction. Privy can refresh
+   * the wallet collection during a chain switch. The swap captures
+   * the wallet provider once and uses that same provider/address for
+   * approval and the final swap transaction.
+   */
+  const walletRef = useRef(wallet);
+  const activeWalletAddressRef = useRef(wallet?.address ?? "");
+  const swapInProgressRef = useRef(false);
+
+  const [activeWalletAddress, setActiveWalletAddress] =
+    useState<string>(wallet?.address ?? "");
+
+  useEffect(() => {
+    if (wallet?.address) {
+      walletRef.current = wallet;
+      activeWalletAddressRef.current = wallet.address;
+      setActiveWalletAddress(wallet.address);
+      return;
+    }
+
+    /*
+     * Never clear the visible wallet while a swap is running.
+     * A temporary empty wallet array can occur during a chain switch.
+     */
+    if (!authenticated && !swapInProgressRef.current) {
+      activeWalletAddressRef.current = "";
+      setActiveWalletAddress("");
+    }
+  }, [wallet, wallet?.address, authenticated]);
 
   const [networks, setNetworks] = useState<SwapNetwork[]>([]);
   const [networksLoading, setNetworksLoading] = useState(true);
@@ -11533,7 +11564,7 @@ function SwapView({
       setter: (value: string) => void,
       setLoading: (value: boolean) => void
     ) => {
-      if (!wallet?.address || !token) {
+      if (!activeWalletAddress || !token) {
         setter("0");
         setLoading(false);
         return;
@@ -11547,14 +11578,14 @@ function SwapView({
 
         if (token.address.toLowerCase() === "0x0000000000000000000000000000000000000000") {
           balance = await client.getBalance({
-            address: wallet.address as `0x${string}`,
+            address: activeWalletAddress as `0x${string}`,
           });
         } else {
           balance = await client.readContract({
             address: token.address as `0x${string}`,
             abi: erc20Abi,
             functionName: "balanceOf",
-            args: [wallet.address as `0x${string}`],
+            args: [activeWalletAddress as `0x${string}`],
           });
         }
 
@@ -11575,7 +11606,7 @@ function SwapView({
     return () => {
       cancelled = true;
     };
-  }, [wallet?.address, sellToken?.address, sellToken?.chainId, buyToken?.address, buyToken?.chainId]);
+  }, [activeWalletAddress, sellToken?.address, sellToken?.chainId, buyToken?.address, buyToken?.chainId]);
 
   // ============================================================
   // LOAD TOKENS
@@ -11760,7 +11791,7 @@ function SwapView({
                 }),
 
             taker:
-              wallet?.address,
+              activeWalletAddress,
           }),
         }
       );
@@ -12121,162 +12152,169 @@ function SwapView({
   // ============================================================
 
   const executeSwap = async () => {
+    if (swapInProgressRef.current) {
+      return;
+    }
+
     if (
       !sellNetwork ||
       !sellToken ||
       !buyToken ||
-      !wallet?.address
+      !activeWalletAddress
     ) {
       setSwapError(
         "Connect your wallet and complete both token fields first."
       );
-
       return;
     }
 
     if (!price) {
-      setSwapError(
-        "Get a swap price before continuing."
-      );
-
+      setSwapError("Get a swap price before continuing.");
       return;
     }
 
-    const activeSellUnits =
-      getActiveSellUnits();
+    const activeSellUnits = getActiveSellUnits();
+
+    if (!activeSellUnits || activeSellUnits === "0") {
+      setSwapError("Enter a valid amount.");
+      return;
+    }
+
+    const currentWallet = walletRef.current;
+    const swapWalletAddress =
+      (activeWalletAddressRef.current || activeWalletAddress) as `0x${string}`;
+
+    if (!currentWallet?.address) {
+      setSwapError(
+        "Wallet connection was interrupted. Please reconnect and try again."
+      );
+      return;
+    }
 
     if (
-      !activeSellUnits ||
-      activeSellUnits === "0"
+      currentWallet.address.toLowerCase() !==
+      swapWalletAddress.toLowerCase()
     ) {
-      setSwapError(
-        "Enter a valid amount."
-      );
-
+      setSwapError("Wallet connection changed. Please try the swap again.");
       return;
     }
 
+    swapInProgressRef.current = true;
     setSwapLoading(true);
     setSwapError("");
 
-    const slippageBps =
-      getSlippageBps();
+    const slippageBps = getSlippageBps();
 
     try {
       /*
-       * Switch wallet to SELL network.
+       * Capture the wallet's EIP-1193 provider BEFORE any chain switch.
+       * This is the critical change: transaction signing no longer goes
+       * back through a reactive Privy wallet lookup while the swap is in
+       * progress.
        */
-      if (wallet.switchChain) {
-        await wallet.switchChain(
-          sellNetwork.chainId
+      const provider = await currentWallet.getEthereumProvider();
+
+      const chainIdRaw = await provider.request({
+        method: "eth_chainId",
+      });
+
+      const currentChainId = parseInt(String(chainIdRaw), 16);
+
+      if (currentChainId !== sellNetwork.chainId) {
+        if (!currentWallet.switchChain) {
+          throw new Error(
+            "Please switch to the correct network in your wallet."
+          );
+        }
+
+        await currentWallet.switchChain(sellNetwork.chainId);
+
+        const switchedChainIdRaw = await provider.request({
+          method: "eth_chainId",
+        });
+        const switchedChainId = parseInt(
+          String(switchedChainIdRaw),
+          16
         );
+
+        if (switchedChainId !== sellNetwork.chainId) {
+          throw new Error(
+            "Please switch to the correct network in your wallet."
+          );
+        }
       }
 
-      /*
-       * Get the public client for the
-       * current network.
-       *
-       * This is also used later to wait for
-       * the swap transaction to be mined.
-       */
-      const publicClient =
-        getPublicClient(
-          sellNetwork.chainId ===
-            BSC_CHAIN_ID
-            ? "bnb-smart-chain"
-            : "base"
-        );
+      const publicClient = getPublicClient(
+        sellNetwork.chainId === BSC_CHAIN_ID
+          ? "bnb-smart-chain"
+          : "base"
+      );
 
-      /*
-       * Request quote.
-       */
-      const quoteResponse =
-        await fetch(
-          "/api/swap/quote",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              chainId:
-                sellNetwork.chainId,
+      const requestQuote = async (
+        sellAmountOverride?: string
+      ) => {
+        const quoteResponse = await fetch("/api/swap/quote", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            chainId: sellNetwork.chainId,
+            sellToken: sellToken.address,
+            buyToken: buyToken.address,
+            taker: swapWalletAddress,
+            slippageBps,
+            ...(lastEditedRef.current === "buy" && !sellAmountOverride
+              ? {
+                  buyAmount: getTokenAmountUnits(
+                    buyAmount,
+                    buyToken.decimals
+                  ),
+                }
+              : {
+                  sellAmount:
+                    sellAmountOverride ?? activeSellUnits,
+                }),
+          }),
+        });
 
-              sellToken:
-                sellToken.address,
+        const quoteData: SwapQuoteResponse & {
+          error?: string;
+        } = await quoteResponse.json();
 
-              buyToken:
-                buyToken.address,
+        if (!quoteResponse.ok) {
+          throw new Error(
+            quoteData?.error ||
+              "Unable to prepare swap transaction."
+          );
+        }
 
-              taker:
-                wallet.address,
+        return quoteData;
+      };
 
-              slippageBps,
+      /* First quote. */
+      const quoteData = await requestQuote();
 
-              ...(lastEditedRef.current ===
-              "buy"
-                ? {
-                    buyAmount:
-                      getTokenAmountUnits(
-                        buyAmount,
-                        buyToken.decimals
-                      ),
-                  }
-                : {
-                    sellAmount:
-                      activeSellUnits,
-                  }),
-            }),
-          }
-        );
-
-      const quoteData: SwapQuoteResponse & {
-        error?: string;
-      } = await quoteResponse.json();
-
-      if (!quoteResponse.ok) {
-        throw new Error(
-          quoteData?.error ||
-            "Unable to prepare swap transaction."
-        );
-      }
-
-      /*
-       * Balance check.
-       */
-      const balanceIssue =
-        quoteData.issues?.balance;
+      const balanceIssue = quoteData.issues?.balance;
 
       if (balanceIssue) {
-        const actual =
-          formatTokenAmount(
-            balanceIssue.actual,
-            sellToken.decimals
-          );
-
-        const expected =
-          formatTokenAmount(
-            balanceIssue.expected,
-            sellToken.decimals
-          );
+        const actual = formatTokenAmount(
+          balanceIssue.actual,
+          sellToken.decimals
+        );
+        const expected = formatTokenAmount(
+          balanceIssue.expected,
+          sellToken.decimals
+        );
 
         throw new Error(
           `Insufficient ${sellToken.symbol} balance. Available: ${
             actual || "0"
-          }. Required: ${
-            expected || "more"
-          }.`
+          }. Required: ${expected || "more"}.`
         );
       }
 
-      const transaction =
-        quoteData.transaction;
-
-      if (
-        !transaction?.to ||
-        !transaction.data
-      ) {
+      if (!quoteData.transaction?.to || !quoteData.transaction.data) {
         throw new Error(
           "0x did not return a valid swap transaction."
         );
@@ -12284,19 +12322,17 @@ function SwapView({
 
       const requiredSellUnits =
         lastEditedRef.current === "buy"
-          ? quoteData.maxSellAmount ??
-            activeSellUnits
-          : quoteData.sellAmount ??
-            activeSellUnits;
+          ? quoteData.maxSellAmount ?? activeSellUnits
+          : quoteData.sellAmount ?? activeSellUnits;
 
       /*
-       * ERC-20 approval.
+       * ERC-20 approval through the captured provider.
+       * We do not call useSendTransaction here.
        */
       if (!sellToken.isNative) {
         const spender =
           quoteData.allowanceTarget ||
-          quoteData.issues?.allowance
-            ?.spender;
+          quoteData.issues?.allowance?.spender;
 
         if (!spender) {
           throw new Error(
@@ -12304,103 +12340,64 @@ function SwapView({
           );
         }
 
-        const allowance =
-          await publicClient.readContract({
-            address:
-              sellToken.address as `0x${string}`,
+        const allowance = await publicClient.readContract({
+          address: sellToken.address as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [
+            swapWalletAddress,
+            spender as `0x${string}`,
+          ],
+        });
 
+        if (allowance < BigInt(requiredSellUnits)) {
+          const approvalData = encodeFunctionData({
             abi: erc20Abi,
-
-            functionName:
-              "allowance",
-
+            functionName: "approve",
             args: [
-              wallet.address as `0x${string}`,
               spender as `0x${string}`,
+              maxUint256,
             ],
           });
 
-        if (
-          allowance <
-          BigInt(requiredSellUnits)
-        ) {
-          const approvalData =
-            encodeFunctionData({
-              abi: erc20Abi,
+          const approvalGasLimit = await getSafeGasLimit(
+            publicClient,
+            {
+              account: swapWalletAddress,
+              to: sellToken.address as `0x${string}`,
+              data: approvalData,
+              value: 0n,
+            }
+          );
 
-              functionName:
-                "approve",
-
-              args: [
-                spender as `0x${string}`,
-                maxUint256,
-              ],
-            });
-
-          const approvalGasLimit =
-            await getSafeGasLimit(
-              publicClient,
+          const approvalHash = await provider.request({
+            method: "eth_sendTransaction",
+            params: [
               {
-                account:
-                  wallet.address as `0x${string}`,
-                to:
-                  sellToken.address as `0x${string}`,
-                data: approvalData,
-                value: 0n,
-              }
-            );
-
-          const approvalResult =
-            await sendTransaction(
-              {
+                from: swapWalletAddress,
                 to: sellToken.address as `0x${string}`,
-
                 data: approvalData,
-
-                value: 0n,
-
-                chainId:
-                  sellNetwork.chainId,
-
+                value: "0x0",
                 ...(approvalGasLimit
-                  ? {
-                      gasLimit:
-                        approvalGasLimit,
-                    }
+                  ? { gas: `0x${approvalGasLimit.toString(16)}` }
                   : {}),
               },
-              {
-                address:
-                  wallet.address,
-              }
-            );
+            ],
+          });
 
-          if (
-            !approvalResult?.hash
-          ) {
+          if (!approvalHash) {
             throw new Error(
               "Token approval wasn't submitted. Please try again."
             );
           }
 
-          /*
-           * Wait for approval to be mined
-           * before continuing.
-           */
           const approvalReceipt =
-            await publicClient.waitForTransactionReceipt(
-              {
-                hash:
-                  approvalResult.hash,
+            await publicClient.waitForTransactionReceipt({
+              hash: approvalHash as `0x${string}`,
+              confirmations: 1,
+            });
 
-                confirmations: 1,
-              }
-            );
-
-          if (
-            approvalReceipt.status !==
-            "success"
-          ) {
+          if (approvalReceipt.status !== "success") {
             throw new Error(
               "Token approval transaction failed."
             );
@@ -12409,72 +12406,18 @@ function SwapView({
       }
 
       /*
-       * Refresh quote after approval.
+       * Refresh the executable 0x quote after approval.
        */
-      const finalQuoteResponse =
-        await fetch(
-          "/api/swap/quote",
-          {
-            method: "POST",
+      const finalQuote = await requestQuote(
+        lastEditedRef.current === "buy"
+          ? undefined
+          : getTokenAmountUnits(
+              sellAmount,
+              sellToken.decimals
+            ) || activeSellUnits
+      );
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              chainId:
-                sellNetwork.chainId,
-
-              sellToken:
-                sellToken.address,
-
-              buyToken:
-                buyToken.address,
-
-              taker:
-                wallet.address,
-
-              slippageBps,
-
-              ...(lastEditedRef.current ===
-              "buy"
-                ? {
-                    buyAmount:
-                      getTokenAmountUnits(
-                        buyAmount,
-                        buyToken.decimals
-                      ),
-                  }
-                : {
-                    sellAmount:
-                      getTokenAmountUnits(
-                        sellAmount,
-                        sellToken.decimals
-                      ),
-                  }),
-            }),
-          }
-        );
-
-      const finalQuote:
-        SwapQuoteResponse & {
-          error?: string;
-        } =
-        await finalQuoteResponse.json();
-
-      if (
-        !finalQuoteResponse.ok
-      ) {
-        throw new Error(
-          finalQuote?.error ||
-            "Unable to refresh swap transaction."
-        );
-      }
-
-      if (
-        finalQuote.issues?.balance
-      ) {
+      if (finalQuote.issues?.balance) {
         throw new Error(
           "Insufficient token balance for this swap."
         );
@@ -12489,90 +12432,69 @@ function SwapView({
         );
       }
 
-      /*
-       * Capture the symbols before waiting for
-       * the transaction.
-       *
-       * This ensures the success modal always
-       * shows the tokens involved in this swap.
-       */
-      const completedSellSymbol =
-        sellToken.symbol;
+      const completedSellSymbol = sellToken.symbol;
+      const completedBuySymbol = buyToken.symbol;
 
-      const completedBuySymbol =
-        buyToken.symbol;
-
-      /*
-       * Send swap transaction.
-       */
       const swapTo =
-        finalQuote.transaction
-          .to as `0x${string}`;
-
+        finalQuote.transaction.to as `0x${string}`;
       const swapData =
-        finalQuote.transaction
-          .data as `0x${string}`;
+        finalQuote.transaction.data as `0x${string}`;
+      const swapValue = BigInt(
+        finalQuote.transaction.value ?? "0"
+      );
+      const quoteGas = finalQuote.transaction.gas
+        ? BigInt(finalQuote.transaction.gas)
+        : undefined;
 
-      const swapValue =
-        BigInt(
-          finalQuote.transaction.value ??
-            "0"
-        );
-
-      const quoteGas =
-        finalQuote.transaction.gas
-          ? BigInt(
-              finalQuote.transaction.gas
-            )
-          : undefined;
+      const swapGasLimit = await getSafeGasLimit(
+        publicClient,
+        {
+          account: swapWalletAddress,
+          to: swapTo,
+          data: swapData,
+          value: swapValue,
+        },
+        quoteGas
+      );
 
       /*
-       * Estimate the exact 0x transaction on the
-       * active chain before asking Privy to submit it.
-       *
-       * This prevents the RPC error:
-       * "gas required exceeds allowance".
+       * Before the final signature, verify that the captured provider
+       * still controls the same address. This is a real wallet check,
+       * not a check against Privy's reactive UI state.
        */
-      const swapGasLimit =
-        await getSafeGasLimit(
-          publicClient,
-          {
-            account:
-              wallet.address as `0x${string}`,
-            to: swapTo,
-            data: swapData,
-            value: swapValue,
-          },
-          quoteGas
+      const providerAccounts = await provider.request({
+        method: "eth_accounts",
+      });
+
+      if (
+        Array.isArray(providerAccounts) &&
+        providerAccounts[0] &&
+        String(providerAccounts[0]).toLowerCase() !==
+          swapWalletAddress.toLowerCase()
+      ) {
+        throw new Error(
+          "Wallet connection changed. Please try the swap again."
         );
+      }
 
-      const swapResult =
-        await sendTransaction(
+      const swapHash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [
           {
+            from: swapWalletAddress,
             to: swapTo,
-
             data: swapData,
-
-            value: swapValue,
-
-            chainId:
-              sellNetwork.chainId,
-
+            value: `0x${swapValue.toString(16)}`,
             ...(swapGasLimit
-              ? {
-                  gasLimit:
-                    swapGasLimit,
-                }
+              ? { gas: `0x${swapGasLimit.toString(16)}` }
+              : quoteGas
+              ? { gas: `0x${quoteGas.toString(16)}` }
               : {}),
           },
-          {
-            address:
-              wallet.address,
-          }
-        );
+        ],
+      });
 
-      const transactionHash =
-        swapResult?.hash;
+      const transactionHash = String(swapHash || "");
 
       if (!transactionHash) {
         throw new Error(
@@ -12580,66 +12502,21 @@ function SwapView({
         );
       }
 
-      /*
-       * IMPORTANT:
-       *
-       * Do NOT show the success modal yet.
-       *
-       * Wait until the transaction has actually
-       * been mined and confirmed.
-       */
-      const swapReceipt =
-        await publicClient.waitForTransactionReceipt(
-          {
-            hash: transactionHash,
-            confirmations: 1,
-          }
-        );
+      /* Only show success after the transaction is mined. */
+      await publicClient.waitForTransactionReceipt({
+        hash: transactionHash as `0x${string}`,
+        confirmations: 1,
+      });
 
-      /*
-       * If the transaction was reverted,
-       * never show the success modal.
-       */
-      if (
-        swapReceipt.status !==
-        "success"
-      ) {
-        throw new Error(
-          "Swap transaction failed."
-        );
-      }
-
-      /*
-       * Transaction is now successfully mined.
-       *
-       * Only now do we switch the existing swap card
-       * into its success state.
-       */
-      setSuccessTxHash(
-        transactionHash
-      );
-
-      setSuccessChainId(
-        sellNetwork.chainId
-      );
-
-      setSuccessSellSymbol(
-        completedSellSymbol
-      );
-
-      setSuccessBuySymbol(
-        completedBuySymbol
-      );
-
+      setSuccessTxHash(transactionHash);
+      setSuccessChainId(sellNetwork.chainId);
+      setSuccessSellSymbol(completedSellSymbol);
+      setSuccessBuySymbol(completedBuySymbol);
       setPrice(finalQuote);
       setSwapError("");
       setSwapSuccess(true);
     } catch (error) {
-      console.error(
-        "SWAP ERROR:",
-        error
-      );
-
+      console.error("SWAP ERROR:", error);
       setSwapError(
         getUserFacingErrorMessage(
           error,
@@ -12647,6 +12524,7 @@ function SwapView({
         )
       );
     } finally {
+      swapInProgressRef.current = false;
       setSwapLoading(false);
     }
   };
@@ -12672,7 +12550,7 @@ function SwapView({
 
   const canSwap = Boolean(
     authenticated &&
-      wallet?.address &&
+      activeWalletAddress &&
       readyForPrice &&
       price &&
       !priceLoading
@@ -13299,7 +13177,7 @@ function SwapView({
               ================================================== */}
 
               {!authenticated ||
-              !wallet?.address ? (
+              !activeWalletAddress ? (
                 <div className="mt-5 rounded-[10px] border border-border bg-[#070812] p-3 text-center text-[13px] text-muted-foreground">
                   Connect your wallet to swap.
                 </div>
@@ -13334,7 +13212,7 @@ function SwapView({
                       ? "fetching-rate"
                       : !price
                       ? "waiting-rate"
-                      : !authenticated || !wallet?.address
+                      : !authenticated || !activeWalletAddress
                       ? "connect-wallet"
                       : "swap"
                   }
@@ -13356,7 +13234,7 @@ function SwapView({
                     </>
                   ) : !price ? (
                     "Fetching the best rate"
-                  ) : !authenticated || !wallet?.address ? (
+                  ) : !authenticated || !activeWalletAddress ? (
                     "Connect wallet"
                   ) : (
                     "Swap"

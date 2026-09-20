@@ -36,6 +36,7 @@ import {
   maxUint256,
   parseUnits,
   createPublicClient,
+  fallback,
   http,
   keccak256,
   stringToHex,
@@ -246,9 +247,62 @@ const BCODE_CONTRACT_ABI = [
   },
 ] as const;
 
-const BCODE_PUBLIC_CLIENT = createPublicClient({
+const configuredBaseRpc =
+  process.env.NEXT_PUBLIC_BASE_RPC_URL?.trim();
+
+const BASE_RPC_URL =
+  process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL?.trim() ||
+  (process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim()
+    ? `https://base-mainnet.g.alchemy.com/v2/${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY.trim()}`
+    : configuredBaseRpc &&
+      !/infura/i.test(configuredBaseRpc)
+    ? configuredBaseRpc
+    : "https://mainnet.base.org");
+
+const BSC_RPC_URL =
+  process.env.NEXT_PUBLIC_BSC_RPC_URL?.trim() ||
+  "https://bsc-dataseed.bnbchain.org";
+
+const BASE_PUBLIC_CLIENT = createPublicClient({
   chain: base,
-  transport: http(),
+  transport: fallback(
+    [
+      http(BASE_RPC_URL, {
+        timeout: 10_000,
+        retryCount: 2,
+        retryDelay: 400,
+      }),
+      http("https://mainnet.base.org", {
+        timeout: 10_000,
+        retryCount: 2,
+        retryDelay: 400,
+      }),
+    ],
+    {
+      rank: false,
+    }
+  ),
+});
+
+const BSC_PUBLIC_CLIENT = createPublicClient({
+  chain: bsc,
+  transport: fallback(
+    [
+      http(BSC_RPC_URL, {
+        timeout: 10_000,
+        retryCount: 2,
+        retryDelay: 400,
+      }),
+      http("https://bsc-dataseed.bnbchain.org", {
+        timeout: 10_000,
+        retryCount: 2,
+        retryDelay: 400,
+      }),
+    ],
+    {
+      rank: false,
+    }
+  ),
 });
 
 const getBCodeTokenConfig = (symbol: "USDT" | "USDC") =>
@@ -361,10 +415,72 @@ const getTokenConfig = (
 };
 
 const getPublicClient = (network: NetworkKey) =>
-  createPublicClient({
-    chain: getNetworkConfig(network).chain,
-    transport: http(),
-  });
+  network === "bnb-smart-chain"
+    ? BSC_PUBLIC_CLIENT
+    : BASE_PUBLIC_CLIENT;
+
+/*
+ * ====================================================
+ * SAFE TRANSACTION GAS
+ * ====================================================
+ *
+ * Privy's transaction sender can submit a transaction
+ * with a gas allowance that is too close to the estimate.
+ * Base/0x swaps are especially sensitive to this because
+ * the returned transaction can require slightly more gas
+ * when it is actually simulated/submitted.
+ *
+ * Always estimate against the same chain RPC used for
+ * receipt/balance operations, then add a safety buffer.
+ * If estimation fails, fall back to the gas returned by
+ * 0x (when available) instead of sending an undersized
+ * transaction.
+ */
+type GasEstimateInput = {
+  account: `0x${string}`;
+  to: `0x${string}`;
+  data?: `0x${string}`;
+  value?: bigint;
+};
+
+const getSafeGasLimit = async (
+  client: {
+    estimateGas: (args: GasEstimateInput) => Promise<bigint>;
+  },
+  transaction: GasEstimateInput,
+  fallbackGas?: bigint
+) => {
+  try {
+    const estimatedGas =
+      await client.estimateGas(transaction);
+
+    // 20% buffer + a small fixed allowance for RPC/client
+    // estimation differences.
+    return (
+      estimatedGas +
+      estimatedGas / 5n +
+      10_000n
+    );
+  } catch (error) {
+    console.warn(
+      "GAS ESTIMATION FALLBACK:",
+      error
+    );
+
+    if (
+      fallbackGas !== undefined &&
+      fallbackGas > 0n
+    ) {
+      return (
+        fallbackGas +
+        fallbackGas / 5n +
+        10_000n
+      );
+    }
+
+    return undefined;
+  }
+};
 /*
  * ====================================================
  * TYPES
@@ -538,6 +654,145 @@ const getPaycrestAmountError = (
   }
 
   return "";
+};
+
+/*
+ * ====================================================
+ * USER-FACING ERROR NORMALIZER
+ * ====================================================
+ *
+ * Keep provider/RPC/wallet implementation details out of
+ * the UI. The original error is still logged for debugging,
+ * while users only see a short, actionable message.
+ */
+const getUserFacingErrorMessage = (
+  error: unknown,
+  fallback = "Something went wrong. Please try again."
+) => {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : String(error ?? "");
+
+  const message = raw.toLowerCase();
+
+  // User intentionally cancelled/rejected the wallet request.
+  if (
+    message.includes("user rejected") ||
+    message.includes("user denied") ||
+    message.includes("user cancelled") ||
+    message.includes("user canceled") ||
+    message.includes("action_rejected") ||
+    message.includes("request rejected")
+  ) {
+    return "Transaction cancelled.";
+  }
+
+  // Token/native balance is too low.
+  if (
+    message.includes("insufficient balance") ||
+    message.includes("transfer amount exceeds balance") ||
+    message.includes("exceeds balance") ||
+    message.includes("insufficient funds") &&
+      (
+        message.includes("balance") ||
+        message.includes("transfer") ||
+        message.includes("amount")
+      )
+  ) {
+    return "Insufficient funds.";
+  }
+
+  // Native gas balance is too low.
+  if (
+    message.includes("insufficient funds for gas") ||
+    message.includes("insufficient funds for intrinsic transaction cost") ||
+    message.includes("insufficient funds") &&
+      (
+        message.includes("gas") ||
+        message.includes("intrinsic")
+      )
+  ) {
+    return "Not enough gas to complete this transaction.";
+  }
+
+  if (message.includes("insufficient funds")) {
+    return "Insufficient funds.";
+  }
+
+  // Gas estimation / allowance problems are technical details.
+  if (
+    message.includes("gas required exceeds allowance") ||
+    message.includes("gas limit") ||
+    message.includes("exceeds allowance") ||
+    message.includes("intrinsic gas")
+  ) {
+    return "Transaction could not be submitted. Please try again.";
+  }
+
+  // Wallet/network connection problems.
+  if (
+    message.includes("chain disconnected") ||
+    message.includes("provider disconnected") ||
+    message.includes("disconnected")
+  ) {
+    return "Wallet connection was interrupted. Please try again.";
+  }
+
+  if (
+    message.includes("wrong chain") ||
+    message.includes("chain mismatch") ||
+    message.includes("switch chain") ||
+    message.includes("unsupported chain")
+  ) {
+    return "Please switch to the correct network.";
+  }
+
+  // RPC/provider failures.
+  if (
+    message.includes("json-rpc") ||
+    message.includes("rpc") ||
+    message.includes("eth_sendrawtransaction") ||
+    message.includes("internal json-rpc error") ||
+    message.includes("network request failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("429") ||
+    message.includes("502") ||
+    message.includes("503") ||
+    message.includes("service unavailable") ||
+    message.includes("too many requests")
+  ) {
+    return "Network error. Please try again.";
+  }
+
+  // Contract/revert errors. Do not expose raw revert signatures,
+  // ABI errors, stack traces, or provider implementation details.
+  if (
+    message.includes("execution reverted") ||
+    message.includes("contractfunctionexecutionerror") ||
+    message.includes("contractfunctionrevertederror") ||
+    message.includes("estimategasexecutionerror") ||
+    message.includes("callexecutionerror") ||
+    message.includes("revert")
+  ) {
+    return "Transaction could not be completed. Please try again.";
+  }
+
+  // Transaction submission/nonce/provider errors.
+  if (
+    message.includes("eth_sendrawtransaction") ||
+    message.includes("nonce too low") ||
+    message.includes("replacement transaction underpriced") ||
+    message.includes("transaction underpriced") ||
+    message.includes("already known") ||
+    message.includes("transaction could not be submitted")
+  ) {
+    return "Transaction could not be submitted. Please try again.";
+  }
+
+  return fallback;
 };
 
 const getPaycrestErrorMessage = (
@@ -969,12 +1224,14 @@ export default function Home() {
 }, []);
 
   /*
-   * ====================================================
-   * TOKEN BALANCES
-   * ====================================================
-   */
+ * ====================================================
+ * TOKEN BALANCES
+ * ====================================================
+ */
 
-  const refreshTokenBalances = async () => {
+const balanceRefreshInProgress = useRef(false);
+
+const refreshTokenBalances = async () => {
   if (!wallet?.address) {
     setTokenBalances({
       USDT: "0.00",
@@ -985,18 +1242,29 @@ export default function Home() {
     return;
   }
 
+  // Prevent multiple balance requests from running at once.
+  if (balanceRefreshInProgress.current) {
+    return;
+  }
+
+  balanceRefreshInProgress.current = true;
   setLoadingBalances(true);
 
   try {
     const client = getPublicClient(selectedNetwork);
+
     const usdtConfig = getTokenConfig(
       selectedNetwork,
       "USDT"
     );
+
     const usdcConfig = getTokenConfig(
       selectedNetwork,
       "USDC"
     );
+
+    const walletAddress =
+      wallet.address as `0x${string}`;
 
     const [
       usdtBalance,
@@ -1007,23 +1275,18 @@ export default function Home() {
         address: usdtConfig.address,
         abi: erc20Abi,
         functionName: "balanceOf",
-        args: [
-          wallet.address as `0x${string}`,
-        ],
+        args: [walletAddress],
       }),
 
       client.readContract({
         address: usdcConfig.address,
         abi: erc20Abi,
         functionName: "balanceOf",
-        args: [
-          wallet.address as `0x${string}`,
-        ],
+        args: [walletAddress],
       }),
 
       client.getBalance({
-        address:
-          wallet.address as `0x${string}`,
+        address: walletAddress,
       }),
     ]);
 
@@ -1054,34 +1317,29 @@ export default function Home() {
       "TOKEN BALANCE ERROR:",
       error
     );
+  } finally {
+    balanceRefreshInProgress.current = false;
+    setLoadingBalances(false);
+  }
+};
 
+useEffect(() => {
+  if (!authenticated || !wallet?.address) {
     setTokenBalances({
       USDT: "0.00",
       USDC: "0.00",
       ETH: "0.00",
     });
-  } finally {
-    setLoadingBalances(false);
+
+    return;
   }
-};
 
-  useEffect(() => {
-    if (!authenticated || !wallet?.address) {
-      setTokenBalances({
-      USDT: "0.00",
-      USDC: "0.00",
-      ETH: "0.00",
-    });
-
-      return;
-    }
-
-    refreshTokenBalances();
-  }, [
-    authenticated,
-    wallet?.address,
-    selectedNetwork,
-  ]);
+  refreshTokenBalances();
+}, [
+  authenticated,
+  wallet?.address,
+  selectedNetwork,
+]);
 
   /*
    * ====================================================
@@ -1129,6 +1387,7 @@ export default function Home() {
     setTokenBalances({
       USDT: "0.00",
       USDC: "0.00",
+      ETH: "0.00",
     });
 
     resetOnramp();
@@ -2375,9 +2634,10 @@ const handleCreateOnrampOrder = async () => {
     setOnrampState("error");
 
     setOnrampError(
-      error instanceof Error
-        ? error.message
-        : "Couldn't start your transaction. Please try again."
+      getUserFacingErrorMessage(
+        error,
+        "Couldn't start your transaction. Please try again."
+      )
     );
   }
 };
@@ -3160,9 +3420,10 @@ if (selectedCrypto.symbol === "ETH") {
       );
 
       setPaymentError(
-        error instanceof Error
-          ? error.message
-          : "Couldn't complete your payment. Please try again."
+        getUserFacingErrorMessage(
+          error,
+          "Couldn't complete your payment. Please try again."
+        )
       );
     }
   };
@@ -3469,7 +3730,7 @@ if (selectedCrypto.symbol === "ETH") {
         <div className="flex min-h-[70vh] items-center justify-center">
           <div className="w-full max-w-[590px] rounded-[16px] border border-border bg-card p-8 text-center">
 
-            <div className="mx-auto flex h-[80px] w-[80px] items-center justify-center rounded-full bg-destructive/10 text-3xl">
+            <div className="mx-auto flex h-[80px] w-[80px] items-center justify-center rounded-full bg-[#F04438]/10 text-3xl">
               !
             </div>
 
@@ -3950,7 +4211,7 @@ ONRAMP MODAL 1
   )}
 
                   {onrampQuoteError && (
-                    <div className="mt-3 px-1 text-[13px] text-destructive">
+                    <div className="mt-3 px-1 text-[13px] text-[#F04438]">
                       {
                         onrampQuoteError
                       }
@@ -4240,7 +4501,7 @@ ONRAMP MODAL 1
 
       {/* ACCOUNT ERROR */}
       {onrampRefundError && (
-        <div className="mt-2 px-1 text-[13px] text-destructive">
+        <div className="mt-2 px-1 text-[13px] text-[#F04438]">
           {onrampRefundError}
         </div>
       )}
@@ -4303,7 +4564,7 @@ ONRAMP MODAL 1
 
     {/* ONRAMP ERROR */}
     {onrampError && (
-      <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+      <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
         {onrampError}
       </div>
     )}
@@ -4489,7 +4750,7 @@ ONRAMP MODAL 1
                           {onrampCountdown ===
                             0 &&
                             onrampExpiry && (
-                              <div className="mt-2 text-center text-[13px] text-destructive">
+                              <div className="mt-2 text-center text-[13px] text-[#F04438]">
                                 This payment account has expired.
                               </div>
                             )}
@@ -4537,7 +4798,7 @@ ONRAMP MODAL 1
                           </div>
 
                           {onrampError && (
-                            <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+                            <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
                               {
                                 onrampError
                               }
@@ -4709,7 +4970,7 @@ ONRAMP MODAL 1
                           )}
 
                         {accountError && (
-                          <div className="mt-2 px-1 text-[13px] text-destructive">
+                          <div className="mt-2 px-1 text-[13px] text-[#F04438]">
                             {
                               accountError
                             }
@@ -5023,7 +5284,7 @@ ONRAMP MODAL 1
                           )}
 
                         {quoteError && (
-                          <div className="mt-2 px-1 text-[13px] text-destructive">
+                          <div className="mt-2 px-1 text-[13px] text-[#F04438]">
                             {
                               quoteError
                             }
@@ -5066,7 +5327,7 @@ ONRAMP MODAL 1
                       </div>
 
                       {paymentError && (
-                        <div className="mt-3 rounded-[10px] border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+                        <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
                           {
                             paymentError
                           }
@@ -5361,19 +5622,19 @@ function BCodeView({
 
       try {
         const [usdcBalance, usdtBalance, ethBalance] = await Promise.all([
-          BCODE_PUBLIC_CLIENT.readContract({
+          BASE_PUBLIC_CLIENT.readContract({
             address: BCODE_BASE_USDC,
             abi: erc20Abi,
             functionName: "balanceOf",
             args: [wallet.address as `0x${string}`],
           }),
-          BCODE_PUBLIC_CLIENT.readContract({
+          BASE_PUBLIC_CLIENT.readContract({
             address: BCODE_BASE_USDT,
             abi: erc20Abi,
             functionName: "balanceOf",
             args: [wallet.address as `0x${string}`],
           }),
-          BCODE_PUBLIC_CLIENT.getBalance({
+          BASE_PUBLIC_CLIENT.getBalance({
             address: wallet.address as `0x${string}`,
           }),
         ]);
@@ -5573,7 +5834,7 @@ function BCodeView({
         hashBCodeForClient(code);
 
       const bcode =
-        await BCODE_PUBLIC_CLIENT.readContract({
+        await BASE_PUBLIC_CLIENT.readContract({
           address: BCODE_CONTRACT_ADDRESS,
           abi: BCODE_CONTRACT_ABI,
           functionName: "getBCode",
@@ -5663,9 +5924,10 @@ function BCodeView({
       );
 
       setRedeemError(
-        error instanceof Error
-          ? error.message
-          : "Couldn't verify this B-Code. Please check the code and try again."
+        getUserFacingErrorMessage(
+          error,
+          "Couldn't verify this B-Code. Please check the code and try again."
+        )
       );
       setRedeemValidating(false);
       return false;
@@ -5766,7 +6028,7 @@ function BCodeView({
       requiredAmount: bigint;
     }) => {
       const allowance =
-        await BCODE_PUBLIC_CLIENT.readContract({
+        await BASE_PUBLIC_CLIENT.readContract({
           address:
             tokenAddress,
           abi:
@@ -5841,7 +6103,7 @@ function BCodeView({
         );
       }
 
-      await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+      await BASE_PUBLIC_CLIENT.waitForTransactionReceipt(
         {
           hash:
             approvalResult.hash as `0x${string}`,
@@ -6106,7 +6368,7 @@ function BCodeView({
           attempt += 1
         ) {
           const existing =
-            await BCODE_PUBLIC_CLIENT.readContract(
+            await BASE_PUBLIC_CLIENT.readContract(
               {
                 address:
                   BCODE_CONTRACT_ADDRESS,
@@ -6198,7 +6460,7 @@ function BCodeView({
          */
 
         const nonce =
-          await BCODE_PUBLIC_CLIENT.readContract(
+          await BASE_PUBLIC_CLIENT.readContract(
             {
               address:
                 BCODE_CONTRACT_ADDRESS,
@@ -6310,7 +6572,7 @@ function BCodeView({
             result.hash
           );
 
-          await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+          await BASE_PUBLIC_CLIENT.waitForTransactionReceipt(
             {
               hash:
                 result.hash as `0x${string}`,
@@ -6415,7 +6677,7 @@ function BCodeView({
           txHash
         );
 
-        await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+        await BASE_PUBLIC_CLIENT.waitForTransactionReceipt(
           {
             hash:
               txHash as `0x${string}`,
@@ -6463,9 +6725,10 @@ function BCodeView({
         );
 
         setGenerateError(
-          error instanceof Error
-            ? error.message
-            : "Couldn't create your B-Code. Please try again."
+          getUserFacingErrorMessage(
+            error,
+            "Couldn't create your B-Code. Please try again."
+          )
         );
       }
     };
@@ -7719,7 +7982,7 @@ const downloadMyBCodeImage =
 
       try {
         const hashes =
-          await BCODE_PUBLIC_CLIENT.readContract(
+          await BASE_PUBLIC_CLIENT.readContract(
             {
               address:
                 BCODE_CONTRACT_ADDRESS,
@@ -7747,7 +8010,7 @@ const downloadMyBCodeImage =
                 hash
               ) => {
                 const result =
-                  await BCODE_PUBLIC_CLIENT.readContract(
+                  await BASE_PUBLIC_CLIENT.readContract(
                     {
                       address:
                         BCODE_CONTRACT_ADDRESS,
@@ -7979,7 +8242,7 @@ const downloadMyBCodeImage =
           );
         }
 
-        await BCODE_PUBLIC_CLIENT.waitForTransactionReceipt(
+        await BASE_PUBLIC_CLIENT.waitForTransactionReceipt(
           {
             hash:
               result.hash as `0x${string}`,
@@ -8273,8 +8536,8 @@ const downloadMyBCodeImage =
 
                       {generateState ===
                         "error" && (
-                        <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                          <p className="text-[14px] text-destructive">
+                        <div className="rounded-[12px] border border-[#F04438]/30 bg-[#F04438]/10 p-4 text-center">
+                          <p className="text-[14px] text-[#F04438]">
                             {
                               generateError ||
                               "B-Code creation failed."
@@ -8522,7 +8785,7 @@ const downloadMyBCodeImage =
                             </div>
 
                             {generateError && (
-                              <p className="mt-3 text-[13px] text-destructive">
+                              <p className="mt-3 text-[13px] text-[#F04438]">
                                 {
                                   generateError
                                 }
@@ -8622,7 +8885,7 @@ const downloadMyBCodeImage =
                             </div>
 
                             {generateError && (
-                              <p className="mt-3 text-[13px] text-destructive">
+                              <p className="mt-3 text-[13px] text-[#F04438]">
                                 {
                                   generateError
                                 }
@@ -8756,8 +9019,8 @@ const downloadMyBCodeImage =
 
                       {redeemState ===
                         "error" && (
-                        <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-4 text-center">
-                          <p className="text-[14px] text-destructive">
+                        <div className="rounded-[12px] border border-[#F04438]/30 bg-[#F04438]/10 p-4 text-center">
+                          <p className="text-[14px] text-[#F04438]">
                             {
                               redeemError
                             }
@@ -8812,7 +9075,7 @@ const downloadMyBCodeImage =
                             </div>
 
                             {redeemError && (
-                              <p className="mt-3 text-[13px] text-destructive">
+                              <p className="mt-3 text-[13px] text-[#F04438]">
                                 {
                                   redeemError
                                 }
@@ -8924,7 +9187,7 @@ const downloadMyBCodeImage =
                             </div>
 
                             {redeemError && (
-                              <p className="mt-3 text-[13px] text-destructive">
+                              <p className="mt-3 text-[13px] text-[#F04438]">
                                 {
                                   redeemError
                                 }
@@ -9018,8 +9281,8 @@ const downloadMyBCodeImage =
         </p>
       </div>
     ) : myBCodesError ? (
-      <div className="rounded-[12px] border border-destructive/30 bg-destructive/10 p-5 text-center">
-        <p className="text-[14px] text-destructive">
+      <div className="rounded-[12px] border border-[#F04438]/30 bg-[#F04438]/10 p-5 text-center">
+        <p className="text-[14px] text-[#F04438]">
           {myBCodesError}
         </p>
 
@@ -9292,7 +9555,7 @@ const downloadMyBCodeImage =
               </p>
 
               {cancelError && (
-                <div className="mt-4 rounded-[10px] border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[12px] leading-5 text-destructive">
+                <div className="mt-4 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-3 py-2.5 text-[12px] leading-5 text-[#F04438]">
                   {
                     cancelError
                   }
@@ -11242,9 +11505,10 @@ function SwapView({
       } catch (error) {
         if (!cancelled) {
           setNetworkError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load swap networks."
+            getUserFacingErrorMessage(
+              error,
+              "Unable to load swap networks."
+            )
           );
         }
       } finally {
@@ -11558,9 +11822,10 @@ function SwapView({
       lastPricedKeyRef.current = "";
 
       setPriceError(
-        error instanceof Error
-          ? error.message
-          : "Unable to get swap price."
+        getUserFacingErrorMessage(
+          error,
+          "Unable to get swap price."
+        )
       );
     } finally {
       if (
@@ -12072,6 +12337,19 @@ function SwapView({
               ],
             });
 
+          const approvalGasLimit =
+            await getSafeGasLimit(
+              publicClient,
+              {
+                account:
+                  wallet.address as `0x${string}`,
+                to:
+                  sellToken.address as `0x${string}`,
+                data: approvalData,
+                value: 0n,
+              }
+            );
+
           const approvalResult =
             await sendTransaction(
               {
@@ -12079,10 +12357,17 @@ function SwapView({
 
                 data: approvalData,
 
-                value: BigInt(0),
+                value: 0n,
 
                 chainId:
                   sellNetwork.chainId,
+
+                ...(approvalGasLimit
+                  ? {
+                      gasLimit:
+                        approvalGasLimit,
+                    }
+                  : {}),
               },
               {
                 address:
@@ -12220,22 +12505,65 @@ function SwapView({
       /*
        * Send swap transaction.
        */
+      const swapTo =
+        finalQuote.transaction
+          .to as `0x${string}`;
+
+      const swapData =
+        finalQuote.transaction
+          .data as `0x${string}`;
+
+      const swapValue =
+        BigInt(
+          finalQuote.transaction.value ??
+            "0"
+        );
+
+      const quoteGas =
+        finalQuote.transaction.gas
+          ? BigInt(
+              finalQuote.transaction.gas
+            )
+          : undefined;
+
+      /*
+       * Estimate the exact 0x transaction on the
+       * active chain before asking Privy to submit it.
+       *
+       * This prevents the RPC error:
+       * "gas required exceeds allowance".
+       */
+      const swapGasLimit =
+        await getSafeGasLimit(
+          publicClient,
+          {
+            account:
+              wallet.address as `0x${string}`,
+            to: swapTo,
+            data: swapData,
+            value: swapValue,
+          },
+          quoteGas
+        );
+
       const swapResult =
         await sendTransaction(
           {
-            to: finalQuote.transaction
-              .to as `0x${string}`,
+            to: swapTo,
 
-            data: finalQuote.transaction
-              .data as `0x${string}`,
+            data: swapData,
 
-            value: BigInt(
-              finalQuote.transaction.value ??
-                "0"
-            ),
+            value: swapValue,
 
             chainId:
               sellNetwork.chainId,
+
+            ...(swapGasLimit
+              ? {
+                  gasLimit:
+                    swapGasLimit,
+                }
+              : {}),
           },
           {
             address:
@@ -12313,9 +12641,10 @@ function SwapView({
       );
 
       setSwapError(
-        error instanceof Error
-          ? error.message
-          : "Swap failed. Please try again."
+        getUserFacingErrorMessage(
+          error,
+          "Swap failed. Please try again."
+        )
       );
     } finally {
       setSwapLoading(false);
@@ -12593,10 +12922,6 @@ function SwapView({
                           <p className="text-[14px] font-semibold">
                             Swap settings
                           </p>
-
-                          <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
-                            Set the maximum price movement you are willing to accept.
-                          </p>
                         </div>
 
                         <button
@@ -12613,7 +12938,7 @@ function SwapView({
 
                       <div className="mt-5">
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-[13px] font-medium">
+                          <span className="text-[13px] font-regular text-muted-foreground">
                             Slippage tolerance
                           </span>
 
@@ -12684,11 +13009,6 @@ function SwapView({
                             %
                           </span>
                         </div>
-
-                        <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-                          Higher slippage can allow a swap to execute during larger price movements.
-                        </p>
-
                         <button
                           type="button"
                           onClick={
@@ -12705,7 +13025,7 @@ function SwapView({
               </div>
 
               {networkError ? (
-                <div className="mb-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                <div className="mb-4 rounded-[9px] border border-[#F04438]/30 bg-[#F04438]/10 px-3 py-3 text-[13px] text-[#F04438]">
                   {networkError}
                 </div>
               ) : null}
@@ -12907,7 +13227,7 @@ function SwapView({
               ================================================== */}
 
               {priceError ? (
-                <div className="mt-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                <div className="mt-4 rounded-[9px] border border-[#F04438]/30 bg-[#F04438]/10 px-3 py-3 text-[13px] text-[#F04438]">
                   {priceError}
                 </div>
               ) : null}
@@ -12955,7 +13275,7 @@ function SwapView({
                   </div>
 
                   {price.issues?.balance ? (
-                    <div className="mt-3 text-[12px] text-destructive">
+                    <div className="mt-3 text-[12px] text-[#F04438]">
                       Insufficient{" "}
                       {sellToken?.symbol}{" "}
                       balance for this amount.
@@ -12969,7 +13289,7 @@ function SwapView({
               ================================================== */}
 
               {swapError ? (
-                <div className="mt-4 rounded-[9px] border border-destructive/30 bg-destructive/10 px-3 py-3 text-[13px] text-destructive">
+                <div className="mt-4 rounded-[9px] border border-[#F04438]/30 bg-[#F04438]/10 px-3 py-3 text-[13px] text-[#F04438]">
                   {swapError}
                 </div>
               ) : null}
@@ -13297,7 +13617,7 @@ function SiteNav({
               setActiveMobileTab("quick-port");
               onQuickPort?.();
             }}
-            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
               activeMobileTab === "quick-port"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -13323,7 +13643,7 @@ function SiteNav({
     setActiveMobileTab("b-codes");
     onBCodes?.();
   }}
-  className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+  className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
     activeMobileTab === "b-codes"
       ? "bg-[#0B50EA] px-6 text-white"
       : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -13349,7 +13669,7 @@ function SiteNav({
               setActiveMobileTab("swap");
               onSwap?.();
             }}
-            className={`flex h-13 items-center justify-center rounded-[15px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
               activeMobileTab === "swap"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"

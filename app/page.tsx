@@ -11056,7 +11056,7 @@ function SwapTokenSelector({
       </button>
 
       {open && !disabled && (
-        <div className="biyaport-dropdown absolute left-0 top-[calc(100%+8px)] z-[90] w-[min(390px,calc(100vw-40px))] overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+        <div className="biyaport-dropdown absolute left-0 top-[calc(100%+8px)] z-[90] w-[min(390px,calc(100vw-100px))] overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
           {/* SEARCH + NETWORK */}
           <div className="border-b border-border p-3">
             <div className="flex items-center gap-2">
@@ -13889,7 +13889,7 @@ function SiteNav({
       </header>
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-[110] flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+8px)] md:hidden"
+        className="fixed bottom-0 left-0 right-0 z-[110] flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+4px)] md:hidden"
         aria-label="Mobile navigation"
       >
         <div className="flex w-fit max-w-[calc(100vw-40px)] items-center gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2">

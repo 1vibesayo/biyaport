@@ -9597,7 +9597,7 @@ const downloadMyBCodeImage =
 
         {cancelHash && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-            <div className="w-full max-w-[400px] rounded-[16px] border border-border bg-[#0B0B16] p-5 shadow-2xl sm:p-6">
+            <div className="w-full max-w-[400px] rounded-[16px] border border-border bg-[#050511] p-5 shadow-2xl sm:p-6">
 
               <h2 className="text-[18px] font-semibold">
                 Cancel B-Code?

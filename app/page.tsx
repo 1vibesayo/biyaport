@@ -41,7 +41,7 @@ import {
   keccak256,
   stringToHex,
 } from "viem";
-import { base, bsc } from "viem/chains";
+import { base, bsc, mainnet, polygon } from "viem/chains";
 import QRCode from "qrcode";
 
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
@@ -298,6 +298,54 @@ const BSC_PUBLIC_CLIENT = createPublicClient({
         retryCount: 2,
         retryDelay: 400,
       }),
+    ],
+    {
+      rank: false,
+    }
+  ),
+});
+
+const ETHEREUM_RPC_URL =
+  process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL?.trim();
+
+const POLYGON_RPC_URL =
+  process.env.NEXT_PUBLIC_POLYGON_RPC_URL?.trim();
+
+const ETHEREUM_PUBLIC_CLIENT = createPublicClient({
+  chain: mainnet,
+  transport: fallback(
+    [
+      ...(ETHEREUM_RPC_URL
+        ? [
+            http(ETHEREUM_RPC_URL, {
+              timeout: 10_000,
+              retryCount: 2,
+              retryDelay: 400,
+            }),
+          ]
+        : []),
+      http(),
+    ],
+    {
+      rank: false,
+    }
+  ),
+});
+
+const POLYGON_PUBLIC_CLIENT = createPublicClient({
+  chain: polygon,
+  transport: fallback(
+    [
+      ...(POLYGON_RPC_URL
+        ? [
+            http(POLYGON_RPC_URL, {
+              timeout: 10_000,
+              retryCount: 2,
+              retryDelay: 400,
+            }),
+          ]
+        : []),
+      http(),
     ],
     {
       rank: false,
@@ -4581,21 +4629,26 @@ ONRAMP MODAL 1
 "processing" ? (
   <div className="py-10 text-center">
 
-    <div className="relative mx-auto flex h-[80px] w-[80px] items-center justify-center rounded-full bg-[#050511]">
+    <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
+              <div
+                className="absolute h-[96px] w-[96px] rounded-full"
+                style={{
+                  background:
+                    "conic-gradient(from 0deg, transparent 0deg, transparent 45deg, #1557E8 110deg, #1557E8 150deg, transparent 210deg, transparent 360deg)",
+                  animation:
+                    "biyaport-spin 1.5s linear infinite",
+                }}
+              />
 
-      <div
-        className="absolute h-[80px] w-[80px] rounded-full"
-        style={{
-          background:
-            "conic-gradient(from 0deg, transparent 0deg, transparent 45deg, #1557E8 110deg, #1557E8 150deg, transparent 210deg, transparent 360deg)",
-          animation:
-            "biyaport-spin 1.5s linear infinite",
-        }}
-      />
+              <div className="absolute h-[90px] w-[90px] rounded-full bg-[#050511]" />
 
-      <div className="absolute h-[74px] w-[74px] rounded-full bg-[#050511]" />
-
-    </div>
+              <div className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full bg-[#1557E8]">
+                <Send
+                  className="h-7 w-7 -rotate-12 text-white"
+                  strokeWidth={2.2}
+                />
+              </div>
+            </div>
 
     <h2 className="mt-6 text-[20px] font-semibold">
       Transfer Processing
@@ -10614,7 +10667,7 @@ type SwapNetwork = {
   chainId: number;
   slug: string;
   name: string;
-  symbol: string;
+  symbol?: string;
   nativeToken: {
     symbol: string;
     name: string;
@@ -10635,77 +10688,59 @@ type SwapToken = {
   isNative: boolean;
 };
 
-const SWAP_TOKEN_CACHE_KEY = "biyaport-swap-tokens-v1";
-const swapTokenCache = new Map<number, SwapToken[]>();
-const swapTokenCachePromises = new Map<number, Promise<SwapToken[]>>();
 
-function filterSwapTokens(tokens: SwapToken[], search: string) {
+const filterSwapTokens = (
+  tokens: SwapToken[],
+  search: string
+) => {
   const normalized = search.trim().toLowerCase();
 
-  if (!normalized) return tokens;
+  if (!normalized) {
+    return tokens;
+  }
 
   return tokens.filter((token) =>
     token.symbol.toLowerCase().includes(normalized) ||
     token.name.toLowerCase().includes(normalized) ||
-    token.address.toLowerCase().includes(normalized)
+    token.address.toLowerCase() === normalized
   );
-}
+};
 
-function getStoredSwapTokenCache() {
-  if (typeof window === "undefined") return;
-
-  try {
-    const stored = window.sessionStorage.getItem(SWAP_TOKEN_CACHE_KEY);
-    if (!stored) return;
-
-    const parsed = JSON.parse(stored) as Record<string, SwapToken[]>;
-    Object.entries(parsed).forEach(([chainId, tokens]) => {
-      if (Array.isArray(tokens)) {
-        swapTokenCache.set(Number(chainId), tokens);
-      }
-    });
-  } catch {
-    // Ignore invalid session cache and fetch normally.
-  }
-}
-
-function persistSwapTokenCache() {
-  if (typeof window === "undefined") return;
-
-  try {
-    const serialized: Record<string, SwapToken[]> = {};
-    swapTokenCache.forEach((tokens, chainId) => {
-      serialized[String(chainId)] = tokens;
-    });
-    window.sessionStorage.setItem(
-      SWAP_TOKEN_CACHE_KEY,
-      JSON.stringify(serialized)
-    );
-  } catch {
-    // Session storage can be unavailable or full.
-  }
-}
+const swapTokenCache = new Map<number, SwapToken[]>();
+const swapTokenCachePromises = new Map<number, Promise<SwapToken[]>>();
 
 async function getSwapTokensOnce(chainId: number) {
   const cached = swapTokenCache.get(chainId);
-  if (cached) return cached;
+
+  if (cached) {
+    return cached;
+  }
 
   const pending = swapTokenCachePromises.get(chainId);
-  if (pending) return pending;
+
+  if (pending) {
+    return pending;
+  }
 
   const request = fetch(
-    `/api/swap/tokens?chainId=${chainId}&limit=100`,
+    `/api/swap/tokens?chainId=${chainId}`,
     { cache: "no-store" }
   )
     .then(async (response) => {
       const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(data?.error || "Unable to load tokens.");
+        throw new Error(
+          data?.error || "Unable to load tokens."
+        );
       }
 
-      const loaded = Array.isArray(data?.tokens) ? data.tokens : [];
+      const loaded = Array.isArray(data?.tokens)
+        ? data.tokens
+        : [];
+
       swapTokenCache.set(chainId, loaded);
-      persistSwapTokenCache();
+
       return loaded;
     })
     .finally(() => {
@@ -10713,6 +10748,7 @@ async function getSwapTokensOnce(chainId: number) {
     });
 
   swapTokenCachePromises.set(chainId, request);
+
   return request;
 }
 
@@ -10724,6 +10760,7 @@ type SwapPriceResponse = {
   quoteType?: "sell" | "buy";
   sellAmount?: string | null;
   buyAmount?: string | null;
+  minBuyAmount?: string | null;
   maxSellAmount?: string | null;
   liquidityAvailable?: boolean | null;
   allowanceTarget?: string | null;
@@ -10862,7 +10899,11 @@ function SwapNetworkButton({
             src={
               current.slug === "base"
                 ? "/base-logo.svg"
-                : "/bsc-logo.svg"
+                : current.slug === "bnb-smart-chain"
+                ? "/bsc-logo.svg"
+                : current.slug === "ethereum"
+                ? "/eth-logo.svg"
+                : "/pol-logo.svg"
             }
             alt=""
             width={20}
@@ -10899,7 +10940,11 @@ function SwapNetworkButton({
                   src={
                     item.slug === "base"
                       ? "/base-logo.svg"
-                      : "/bsc-logo.svg"
+                      : item.slug === "bnb-smart-chain"
+                      ? "/bsc-logo.svg"
+                      : item.slug === "ethereum"
+                      ? "/eth-logo.svg"
+                      : "/pol-logo.svg"
                   }
                   alt=""
                   width={20}
@@ -10927,8 +10972,9 @@ function SwapNetworkButton({
  * SWAP TOKEN SELECTOR
  *
  * Network selector lives INSIDE the dropdown.
- * SELL: network selector active.
- * BUY: network selector disabled and follows SELL network.
+ * SELL: network selector is active and independent.
+ * BUY: network selector is also active and independent.
+ * Different networks are allowed for cross-chain swaps.
  ************************************************************/
 
 function SwapTokenSelector({
@@ -11028,7 +11074,7 @@ function SwapTokenSelector({
                   onClick={(event) =>
                     event.stopPropagation()
                   }
-                  placeholder="Search token"
+                  placeholder="Search or paste contract address"
                   className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
                 />
               </div>
@@ -11116,7 +11162,17 @@ function SwapTokenSelector({
  ********************************************************************************/
 
 function getPublicClientByChainId(chainId: number) {
-  return chainId === 56 ? getPublicClient("bnb-smart-chain") : getPublicClient("base");
+  switch (chainId) {
+    case 1:
+      return ETHEREUM_PUBLIC_CLIENT;
+    case 56:
+      return BSC_PUBLIC_CLIENT;
+    case 137:
+      return POLYGON_PUBLIC_CLIENT;
+    case 8453:
+    default:
+      return BASE_PUBLIC_CLIENT;
+  }
 }
 
 function SwapView({
@@ -11240,10 +11296,10 @@ function SwapView({
   // Stored as percentage.
   // 0.5 = 0.5% = 50 bps.
   const [slippageTolerance, setSlippageTolerance] =
-    useState("0.5");
+    useState("1.0");
 
   const [slippageDraft, setSlippageDraft] =
-    useState("0.5");
+    useState("1.0");
 
   const settingsRef =
     useRef<HTMLDivElement | null>(null);
@@ -11264,14 +11320,8 @@ function SwapView({
   const sellTokenRequestRef = useRef(0);
   const buyTokenRequestRef = useRef(0);
 
-  /*
-   * BUY network always follows SELL network.
-   */
-  const buyNetwork = sellNetwork;
-
-  useEffect(() => {
-    getStoredSwapTokenCache();
-  }, []);
+  const [buyNetwork, setBuyNetwork] =
+    useState<SwapNetwork | null>(null);
 
   // ============================================================
   // HELPERS
@@ -11357,6 +11407,14 @@ function SwapView({
 
     if (chainId === 56) {
       return `https://bscscan.com/tx/${hash}`;
+    }
+
+    if (chainId === 1) {
+      return `https://etherscan.io/tx/${hash}`;
+    }
+
+    if (chainId === 137) {
+      return `https://polygonscan.com/tx/${hash}`;
     }
 
     return "";
@@ -11529,9 +11587,8 @@ function SwapView({
             loaded[0] ??
             null;
 
-          setSellNetwork(
-            defaultNetwork
-          );
+          setSellNetwork(defaultNetwork);
+          setBuyNetwork(defaultNetwork);
         }
       } catch (error) {
         if (!cancelled) {
@@ -11576,7 +11633,7 @@ function SwapView({
         const client = getPublicClientByChainId(token.chainId);
         let balance: bigint;
 
-        if (token.address.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+        if (token.isNative || token.address.toLowerCase() === "0x0000000000000000000000000000000000000000") {
           balance = await client.getBalance({
             address: activeWalletAddress as `0x${string}`,
           });
@@ -11618,31 +11675,79 @@ function SwapView({
     side: "sell" | "buy"
   ) => {
     const requestRef =
-      side === "sell" ? sellTokenRequestRef : buyTokenRequestRef;
+      side === "sell"
+        ? sellTokenRequestRef
+        : buyTokenRequestRef;
+
     const requestId = ++requestRef.current;
 
-    if (side === "sell") setSellTokensLoading(true);
-    else setBuyTokensLoading(true);
+    if (side === "sell") {
+      setSellTokensLoading(true);
+    } else {
+      setBuyTokensLoading(true);
+    }
 
     try {
-      const loaded = await getSwapTokensOnce(chainId);
+      const normalizedSearch = search.trim();
 
-      if (requestId !== requestRef.current) return;
+      /*
+       * Empty search uses the cached three-token default list.
+       * A search is sent to the server so a pasted contract
+       * address can be resolved through CoinGecko.
+       */
+      const loaded = normalizedSearch
+        ? await fetch(
+            `/api/swap/tokens?chainId=${chainId}&search=${encodeURIComponent(
+              normalizedSearch
+            )}`,
+            { cache: "no-store" }
+          ).then(async (response) => {
+            const data = await response.json();
 
-      const filtered = filterSwapTokens(loaded, search);
-      if (side === "sell") setSellTokens(filtered);
-      else setBuyTokens(filtered);
+            if (!response.ok) {
+              throw new Error(
+                data?.error || "Unable to load tokens."
+              );
+            }
+
+            return Array.isArray(data?.tokens)
+              ? data.tokens
+              : [];
+          })
+        : await getSwapTokensOnce(chainId);
+
+      if (requestId !== requestRef.current) {
+        return;
+      }
+
+      const filtered = normalizedSearch
+        ? filterSwapTokens(loaded, normalizedSearch)
+        : loaded;
+
+      if (side === "sell") {
+        setSellTokens(filtered);
+      } else {
+        setBuyTokens(filtered);
+      }
     } catch (error) {
-      if (requestId !== requestRef.current) return;
+      if (requestId !== requestRef.current) {
+        return;
+      }
 
-      if (side === "sell") setSellTokens([]);
-      else setBuyTokens([]);
+      if (side === "sell") {
+        setSellTokens([]);
+      } else {
+        setBuyTokens([]);
+      }
 
       console.error("SWAP TOKEN LOAD ERROR:", error);
     } finally {
       if (requestId === requestRef.current) {
-        if (side === "sell") setSellTokensLoading(false);
-        else setBuyTokensLoading(false);
+        if (side === "sell") {
+          setSellTokensLoading(false);
+        } else {
+          setBuyTokensLoading(false);
+        }
       }
     }
   };
@@ -11745,7 +11850,7 @@ function SwapView({
     }
 
     const priceKey =
-      `${activeSide}:${sellNetwork.chainId}:${sellToken.address.toLowerCase()}:${buyToken.address.toLowerCase()}:${activeValue}:${slippageTolerance}`;
+      `${activeSide}:${sellNetwork.chainId}:${buyNetwork?.chainId ?? 0}:${sellToken.address.toLowerCase()}:${buyToken.address.toLowerCase()}:${activeValue}:${slippageTolerance}`;
 
     if (
       priceKey ===
@@ -11765,40 +11870,46 @@ function SwapView({
 
     try {
       const response = await fetch(
-        "/api/swap/price",
+        sellNetwork.chainId !== buyNetwork?.chainId
+          ? "/api/swap/cross-chain/quote"
+          : "/api/swap/price",
         {
           method: "POST",
           headers: {
             "Content-Type":
               "application/json",
           },
-          body: JSON.stringify({
-            chainId:
-              sellNetwork.chainId,
-
-            sellToken:
-              sellToken.address,
-
-            buyToken:
-              buyToken.address,
-
-            ...(activeSide === "sell"
+          body: JSON.stringify(
+            sellNetwork.chainId !== buyNetwork?.chainId
               ? {
+                  originChain: sellNetwork.chainId,
+                  destinationChain: buyNetwork?.chainId,
+                  sellToken: sellToken.address,
+                  buyToken: buyToken.address,
+                  /*
+                   * Cross-chain quotes are sell-amount driven. 0x returns
+                   * the quoted destination amount inside quotes[0].buyAmount.
+                   * Do not send the buy-side amount as sellAmount.
+                   */
                   sellAmount: units,
+                  originAddress: activeWalletAddress,
+                  destinationAddress: activeWalletAddress,
+                  slippageBps: getSlippageBps(),
                 }
               : {
-                  buyAmount: units,
-                }),
-
-            taker:
-              activeWalletAddress,
-          }),
+                  chainId: sellNetwork.chainId,
+                  sellToken: sellToken.address,
+                  buyToken: buyToken.address,
+                  ...(activeSide === "sell"
+                    ? { sellAmount: units }
+                    : { buyAmount: units }),
+                  taker: activeWalletAddress,
+                }
+          ),
         }
       );
 
-      const data: SwapPriceResponse & {
-        error?: string;
-      } = await response.json();
+      const rawData = await response.json();
 
       if (
         requestId !==
@@ -11809,10 +11920,49 @@ function SwapView({
 
       if (!response.ok) {
         throw new Error(
-          data?.error ||
+          rawData?.error ||
             "Unable to get swap price."
         );
       }
+
+      /*
+       * 0x Cross-Chain returns the executable quote inside
+       * quotes[0]. Same-chain 0x responses expose these values
+       * at the top level. Normalize both shapes so the rest of
+       * the swap UI can use one price object.
+       */
+      const crossChainQuote =
+        sellNetwork.chainId !== buyNetwork?.chainId
+          ? rawData?.quotes?.[0]
+          : null;
+
+      const data: SwapPriceResponse & {
+        error?: string;
+        crossChainQuoteId?: string | null;
+        estimatedTimeSeconds?: number | null;
+      } = crossChainQuote
+        ? {
+            ...rawData,
+            sellAmount:
+              crossChainQuote.sellAmount ?? null,
+            buyAmount:
+              crossChainQuote.buyAmount ?? null,
+            minBuyAmount:
+              crossChainQuote.minBuyAmount ?? null,
+            allowanceTarget:
+              rawData?.allowanceTarget ??
+              crossChainQuote?.issues?.allowance?.spender ??
+              null,
+            issues:
+              crossChainQuote.issues ??
+              rawData.issues ??
+              null,
+            crossChainQuoteId:
+              crossChainQuote.quoteId ?? null,
+            estimatedTimeSeconds:
+              crossChainQuote.estimatedTimeSeconds ?? null,
+          }
+        : rawData;
 
       if (
         data.liquidityAvailable ===
@@ -11820,6 +11970,15 @@ function SwapView({
       ) {
         throw new Error(
           "No liquidity available for this token pair."
+        );
+      }
+
+      if (
+        !data.buyAmount ||
+        !data.sellAmount
+      ) {
+        throw new Error(
+          "Unable to calculate a swap rate right now."
         );
       }
 
@@ -11832,7 +11991,16 @@ function SwapView({
             buyToken.decimals
           )
         );
-      } else {
+      } else if (
+        sellNetwork.chainId ===
+        buyNetwork?.chainId
+      ) {
+        /*
+         * Same-chain 0x supports exact-buy quotes. Cross-chain
+         * quotes are requested by sell amount, so we do not
+         * overwrite the sell field from an unsupported exact-buy
+         * request.
+         */
         setSellAmount(
           formatTokenAmount(
             data.maxSellAmount ??
@@ -11905,6 +12073,7 @@ function SwapView({
     sellToken?.address,
     buyToken?.address,
     sellNetwork?.chainId,
+    buyNetwork?.chainId,
     slippageTolerance,
   ]);
 
@@ -11921,6 +12090,8 @@ function SwapView({
           item.chainId === chainId
       ) ?? null;
 
+    // Sell and Buy networks are independent now that cross-chain
+    // swaps are supported. Changing Sell must never overwrite Buy.
     setSellNetwork(next);
 
     setSellToken(null);
@@ -11961,6 +12132,23 @@ function SwapView({
 
     lastEditedRef.current =
       "sell";
+  };
+
+  // ============================================================
+  // BUY NETWORK CHANGE
+  // ============================================================
+
+  const handleBuyNetworkChange = (chainId: number) => {
+    const next =
+      networks.find((item) => item.chainId === chainId) ?? null;
+
+    setBuyNetwork(next);
+    setBuyToken(null);
+    setBuyAmount("");
+    setBuySearch("");
+    clearPrice();
+    setSwapError("");
+    lastEditedRef.current = "sell";
   };
 
   // ============================================================
@@ -12083,6 +12271,11 @@ function SwapView({
       currentSellToken
     );
 
+    const currentSellNetwork = sellNetwork;
+    const currentBuyNetwork = buyNetwork;
+    setSellNetwork(currentBuyNetwork);
+    setBuyNetwork(currentSellNetwork);
+
     /*
      * Swap the amounts.
      */
@@ -12158,6 +12351,7 @@ function SwapView({
 
     if (
       !sellNetwork ||
+      !buyNetwork ||
       !sellToken ||
       !buyToken ||
       !activeWalletAddress
@@ -12244,11 +12438,218 @@ function SwapView({
         }
       }
 
-      const publicClient = getPublicClient(
-        sellNetwork.chainId === BSC_CHAIN_ID
-          ? "bnb-smart-chain"
-          : "base"
-      );
+      const publicClient =
+        getPublicClientByChainId(
+          sellNetwork.chainId
+        );
+
+      /*
+       * Cross-chain swaps use the 0x Cross-Chain API. The origin
+       * wallet signs exactly one transaction on the sell chain. 0x
+       * then handles the bridge/settlement on the destination chain.
+       */
+      if (sellNetwork.chainId !== buyNetwork.chainId) {
+        const crossQuoteResponse = await fetch(
+          "/api/swap/cross-chain/quote",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              originChain: sellNetwork.chainId,
+              destinationChain: buyNetwork.chainId,
+              sellToken: sellToken.address,
+              buyToken: buyToken.address,
+              sellAmount: activeSellUnits,
+              originAddress: swapWalletAddress,
+              destinationAddress: swapWalletAddress,
+              slippageBps,
+            }),
+          }
+        );
+
+        const crossQuote = await crossQuoteResponse.json();
+
+        if (!crossQuoteResponse.ok) {
+          throw new Error(
+            crossQuote?.error ||
+              "Unable to prepare cross-chain swap."
+          );
+        }
+
+        const quote = crossQuote?.quotes?.[0];
+        const transaction = quote?.transaction?.details;
+
+        if (!quote || !transaction?.to || !transaction?.data) {
+          throw new Error(
+            "0x did not return a valid cross-chain transaction."
+          );
+        }
+
+        if (crossQuote?.issues?.balance) {
+          const actual = formatTokenAmount(
+            crossQuote.issues.balance.actual,
+            sellToken.decimals
+          );
+          const expected = formatTokenAmount(
+            crossQuote.issues.balance.expected,
+            sellToken.decimals
+          );
+
+          throw new Error(
+            `Insufficient ${sellToken.symbol} balance. Available: ${actual || "0"}. Required: ${expected || "more"}.`
+          );
+        }
+
+        if (!sellToken.isNative) {
+          const spender =
+            crossQuote?.issues?.allowance?.spender ||
+            crossQuote?.allowanceTarget;
+
+          if (spender) {
+            const allowance = await publicClient.readContract({
+              address: sellToken.address as `0x${string}`,
+              abi: erc20Abi,
+              functionName: "allowance",
+              args: [swapWalletAddress, spender as `0x${string}`],
+            });
+
+            if (allowance < BigInt(quote.sellAmount)) {
+              const approvalData = encodeFunctionData({
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [spender as `0x${string}`, maxUint256],
+              });
+
+              const approvalGasLimit = await getSafeGasLimit(
+                publicClient,
+                {
+                  account: swapWalletAddress,
+                  to: sellToken.address as `0x${string}`,
+                  data: approvalData,
+                  value: 0n,
+                }
+              );
+
+              const approvalHash = await provider.request({
+                method: "eth_sendTransaction",
+                params: [{
+                  from: swapWalletAddress,
+                  to: sellToken.address,
+                  data: approvalData,
+                  value: "0x0",
+                  ...(approvalGasLimit ? { gas: `0x${approvalGasLimit.toString(16)}` } : {}),
+                }],
+              });
+
+              if (!approvalHash) {
+                throw new Error("Token approval wasn't submitted. Please try again.");
+              }
+
+              const approvalReceipt = await publicClient.waitForTransactionReceipt({
+                hash: approvalHash as `0x${string}`,
+                confirmations: 1,
+              });
+
+              if (approvalReceipt.status !== "success") {
+                throw new Error("Token approval transaction failed.");
+              }
+            }
+          }
+        }
+
+        const txValue = BigInt(transaction.value || "0");
+        const txGas = transaction.gas ? BigInt(transaction.gas) : undefined;
+        const safeGas = await getSafeGasLimit(
+          publicClient,
+          {
+            account: swapWalletAddress,
+            to: transaction.to as `0x${string}`,
+            data: transaction.data as `0x${string}`,
+            value: txValue,
+          },
+          txGas
+        );
+
+        const swapHash = await provider.request({
+          method: "eth_sendTransaction",
+          params: [{
+            from: swapWalletAddress,
+            to: transaction.to,
+            data: transaction.data,
+            value: `0x${txValue.toString(16)}`,
+            ...(safeGas ? { gas: `0x${safeGas.toString(16)}` } : {}),
+          }],
+        });
+
+        const transactionHash = String(swapHash || "");
+        if (!transactionHash) {
+          throw new Error("Cross-chain transaction was not submitted.");
+        }
+
+        await publicClient.waitForTransactionReceipt({
+          hash: transactionHash as `0x${string}`,
+          confirmations: 1,
+        });
+
+        setPrice({
+          sellAmount: quote.sellAmount,
+          buyAmount: quote.buyAmount,
+          minBuyAmount: quote.minBuyAmount,
+          liquidityAvailable: true,
+        });
+
+        setSuccessTxHash(transactionHash);
+        setSuccessChainId(sellNetwork.chainId);
+        setSuccessSellSymbol(sellToken.symbol);
+        setSuccessBuySymbol(buyToken.symbol);
+
+        /* Poll 0x until the destination leg is filled. */
+        const startedAt = Date.now();
+        let finalStatus = "";
+
+        while (Date.now() - startedAt < 10 * 60 * 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+
+          const statusResponse = await fetch(
+            "/api/swap/cross-chain/status",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                originChain: sellNetwork.chainId,
+                originTxHash: transactionHash,
+                quoteId: quote.quoteId,
+              }),
+            }
+          );
+
+          const statusData = await statusResponse.json();
+
+          if (!statusResponse.ok) {
+            throw new Error(
+              statusData?.error || "Unable to track cross-chain swap."
+            );
+          }
+
+          finalStatus = statusData?.status || "";
+
+          if (finalStatus === "bridge_filled" || finalStatus === "complete") {
+            setSwapError("");
+            setSwapSuccess(true);
+            return;
+          }
+
+          if (["failed", "refunded", "reverted", "bridge_failed"].includes(finalStatus)) {
+            throw new Error(
+              "The cross-chain swap could not be completed. Check the transaction status and try again if needed."
+            );
+          }
+        }
+
+        throw new Error(
+          "The cross-chain swap is still processing. Your origin transaction was submitted successfully."
+        );
+      }
 
       const requestQuote = async (
         sellAmountOverride?: string
@@ -12757,9 +13158,16 @@ function SwapView({
               ) : (
                 <>
               <div className="mb-6 flex items-center justify-between">
-                <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
-                  Swap
-                </h1>
+                <div>
+                  <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
+                    Swap
+                  </h1>
+                  {sellNetwork && buyNetwork && sellNetwork.chainId !== buyNetwork.chainId ? (
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      Cross-chain swap
+                    </p>
+                  ) : null}
+                </div>
 
                 <div
                   ref={settingsRef}
@@ -12948,9 +13356,10 @@ function SwapView({
                     onNetworkChange={
                       handleSellNetworkChange
                     }
-                    networkDisabled={
-                      networksLoading
-                    }
+                    // Sell network is always selectable after the
+                    // network list has loaded. It is intentionally
+                    // independent from the Buy network.
+                    networkDisabled={false}
                     disabled={
                       networksLoading
                     }
@@ -13004,7 +13413,7 @@ function SwapView({
                   }
                   aria-label="Reverse swap"
                   title="Reverse swap"
-                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-border bg-[#10101B] text-foreground transition hover:bg-[#181824] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-border bg-[#10101B] text-foreground transition hover:bg-[#181824] disabled:cursor-not-allowed disabled:opacity-100"
                 >
                   <ArrowLeftRight
                     className={`h-4 w-4 transition-transform duration-180 ${
@@ -13048,26 +13457,23 @@ function SwapView({
                     onSelect={
                       handleBuyTokenSelect
                     }
-                    networks={
-                      buyNetwork
-                        ? [buyNetwork]
-                        : []
-                    }
-                    selectedNetwork={
-                      buyNetwork
-                    }
+                    networks={networks}
+                    selectedNetwork={buyNetwork}
+                    onNetworkChange={handleBuyNetworkChange}
                     getTokenBalance={getSwapTokenBalance}
-                    networkDisabled
-                    disabled={
-                      !sellNetwork ||
-                      !sellToken
-                    }
+                    // Buy network is independently selectable for
+                    // cross-chain swaps.
+                    networkDisabled={false}
+                    disabled={!sellNetwork || !sellToken}
                   />
 
                   <div className="group flex min-w-0 flex-1 items-center">
                     <input
                       type="text"
                       inputMode="decimal"
+                      readOnly={
+                        sellNetwork?.chainId !== buyNetwork?.chainId
+                      }
                       value={
                         displayedBuyAmount
                     }

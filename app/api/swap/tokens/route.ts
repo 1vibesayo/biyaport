@@ -1,18 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
-  FEATURED_SYMBOLS,
   NATIVE_TOKEN_ADDRESS,
   SWAP_NETWORKS,
 } from "../_config";
-
-type CoinGeckoToken = {
-  chainId: number;
-  address: string;
-  name: string;
-  symbol: string;
-  decimals: number;
-  logoURI?: string;
-};
 
 type Token = {
   chainId: number;
@@ -24,50 +14,63 @@ type Token = {
   isNative: boolean;
 };
 
+function isAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
 function getNetwork(chainId: number) {
   return SWAP_NETWORKS.find(
     (network) => network.chainId === chainId
   );
 }
 
-function normalizeToken(token: CoinGeckoToken): Token {
-  return {
-    chainId: token.chainId,
-    address: token.address,
-    name: token.name,
-    symbol: token.symbol.toUpperCase(),
-    decimals: token.decimals,
-    logoURI: token.logoURI ?? null,
-    isNative: false,
-  };
+function getDefaultTokens(network: (typeof SWAP_NETWORKS)[number]): Token[] {
+  return [
+    {
+      chainId: network.chainId,
+      address: network.nativeToken.address,
+      name: network.nativeToken.name,
+      symbol: network.nativeToken.symbol,
+      decimals: network.nativeToken.decimals,
+      logoURI: network.nativeToken.logoURI,
+      isNative: true,
+    },
+    ...network.featuredTokens.map((token) => ({
+      chainId: network.chainId,
+      address: token.address,
+      name: token.name,
+      symbol: token.symbol,
+      decimals: token.decimals,
+      logoURI: token.logoURI,
+      isNative: false,
+    })),
+  ];
 }
 
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
+function getCoinGeckoPlatform(chainId: number) {
+  switch (chainId) {
+    case 1:
+      return "ethereum";
+
+    case 56:
+      return "binance-smart-chain";
+
+    case 137:
+      return "polygon-pos";
+
+    case 8453:
+      return "base";
+
+    default:
+      return null;
+  }
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
 
   const chainIdParam = searchParams.get("chainId");
-  const search = searchParams.get("search")?.trim().toLowerCase() ?? "";
-
-  const limitParam = Number(
-    searchParams.get("limit") ?? "100"
-  );
-
-  const limit = Math.min(
-    Math.max(
-      Number.isFinite(limitParam) ? limitParam : 100,
-      1
-    ),
-    200
-  );
-
-  if (!chainIdParam) {
-    return NextResponse.json(
-      {
-        error: "chainId is required",
-      },
-      { status: 400 }
-    );
-  }
+  const search = searchParams.get("search")?.trim() || "";
 
   const chainId = Number(chainIdParam);
 
@@ -85,7 +88,82 @@ export async function GET(request: NextRequest) {
   if (!network) {
     return NextResponse.json(
       {
-        error: "Unsupported swap network",
+        error: "Unsupported network",
+      },
+      { status: 400 }
+    );
+  }
+
+  /*
+   * No search:
+   * Return only Biyaport's 3 default tokens for this network.
+   */
+  if (!search) {
+    return NextResponse.json({
+      tokens: getDefaultTokens(network),
+    });
+  }
+
+  /*
+   * Text search:
+   * Search only Biyaport's default tokens.
+   *
+   * Arbitrary contract addresses are handled separately below.
+   */
+  if (!isAddress(search)) {
+    const query = search.toLowerCase();
+
+    const tokens = getDefaultTokens(network).filter((token) => {
+      return (
+        token.symbol.toLowerCase().includes(query) ||
+        token.name.toLowerCase().includes(query) ||
+        token.address.toLowerCase() === query
+      );
+    });
+
+    return NextResponse.json({
+      tokens,
+    });
+  }
+
+  /*
+   * Contract-address lookup.
+   *
+   * First check Biyaport's known tokens. This avoids an external
+   * request for USDC, USDT, or the native token.
+   */
+  const knownToken = getDefaultTokens(network).find(
+    (token) =>
+      token.address.toLowerCase() === search.toLowerCase()
+  );
+
+  if (knownToken) {
+    return NextResponse.json({
+      tokens: [knownToken],
+    });
+  }
+
+  const apiKey = process.env.COINGECKO_API_KEY;
+
+  if (!apiKey) {
+    console.error(
+      "[SWAP TOKENS] COINGECKO_API_KEY is not configured"
+    );
+
+    return NextResponse.json(
+      {
+        error: "Token lookup is temporarily unavailable",
+      },
+      { status: 503 }
+    );
+  }
+
+  const platform = getCoinGeckoPlatform(chainId);
+
+  if (!platform) {
+    return NextResponse.json(
+      {
+        error: "Token lookup is not supported on this network",
       },
       { status: 400 }
     );
@@ -93,47 +171,43 @@ export async function GET(request: NextRequest) {
 
   try {
     /*
-     * CoinGecko publishes chain-specific token lists through
-     * tokens.coingecko.com.
-     *
-     * Examples:
-     * Base:
-     * https://tokens.coingecko.com/base/all.json
-     *
-     * BNB Smart Chain:
-     * https://tokens.coingecko.com/binance-smart-chain/all.json
+     * CoinGecko standard API contract lookup.
      */
-    const tokenListUrl =
-      `https://tokens.coingecko.com/` +
-      `${network.coingeckoAssetPlatform}/all.json`;
-
-    const response = await fetch(tokenListUrl, {
-      headers: {
-        Accept: "application/json",
-      },
-
-      /*
-       * Token lists do not need to be fetched on every request.
-       * Cache the server-side result for 5 minutes.
-       */
-      next: {
-        revalidate: 300,
-      },
-    });
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${platform}/contract/${search}`,
+      {
+        headers: {
+          accept: "application/json",
+          "x-cg-demo-api-key": apiKey,
+        },
+        cache: "no-store",
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
+      if (response.status === 404) {
+        return NextResponse.json({
+          tokens: [],
+        });
+      }
+
+      if (response.status === 429) {
+        return NextResponse.json(
+          {
+            error: "Token lookup is temporarily unavailable",
+          },
+          { status: 429 }
+        );
+      }
 
       console.error(
-        "[COINGECKO TOKEN LIST]",
-        response.status,
-        tokenListUrl,
-        errorText
+        "[SWAP TOKENS] CoinGecko error:",
+        response.status
       );
 
       return NextResponse.json(
         {
-          error: "Failed to fetch token list",
+          error: "Token lookup is temporarily unavailable",
         },
         { status: 502 }
       );
@@ -141,136 +215,42 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
 
-    const externalTokens: CoinGeckoToken[] =
-      Array.isArray(data?.tokens)
-        ? data.tokens
-        : [];
-
-    /*
-     * Always include the native token manually.
-     */
-    const tokens: Token[] = [
-      {
-        chainId,
-        address: NATIVE_TOKEN_ADDRESS,
-        name: network.nativeToken.name,
-        symbol: network.nativeToken.symbol,
-        decimals: network.nativeToken.decimals,
-        logoURI: network.nativeToken.logoURI,
-        isNative: true,
-      },
-    ];
-
-    /*
-     * Normalize CoinGecko tokens.
-     */
-    for (const token of externalTokens) {
-      if (token.chainId !== chainId) {
-        continue;
-      }
-
-      if (
-        !token.address ||
-        !token.symbol ||
-        !token.name ||
-        !Number.isInteger(token.decimals)
-      ) {
-        continue;
-      }
-
-      tokens.push(normalizeToken(token));
-    }
-
-    /*
-     * Remove duplicate contract addresses.
-     */
-    const uniqueTokens = Array.from(
-      new Map(
-        tokens.map((token) => [
-          token.address.toLowerCase(),
-          token,
-        ])
-      ).values()
-    );
-
-    /*
-     * Search by:
-     * - symbol
-     * - name
-     * - contract address
-     */
-    const filteredTokens = search
-      ? uniqueTokens.filter((token) => {
-          const symbol = token.symbol.toLowerCase();
-          const name = token.name.toLowerCase();
-          const address = token.address.toLowerCase();
-
-          return (
-            symbol.includes(search) ||
-            name.includes(search) ||
-            address.includes(search)
-          );
-        })
-      : uniqueTokens;
-
-    /*
-     * Featured tokens are always displayed first.
-     */
-    const featured =
-      FEATURED_SYMBOLS[network.slug] ?? [];
-
-    const featuredSet = new Set(
-      featured.map((symbol) =>
-        symbol.toLowerCase()
-      )
-    );
-
-    filteredTokens.sort((a, b) => {
-      const aFeatured = featuredSet.has(
-        a.symbol.toLowerCase()
-      );
-
-      const bFeatured = featuredSet.has(
-        b.symbol.toLowerCase()
-      );
-
-      if (aFeatured && !bFeatured) {
-        return -1;
-      }
-
-      if (!aFeatured && bFeatured) {
-        return 1;
-      }
-
-      return a.symbol.localeCompare(b.symbol);
-    });
-
-    const result = filteredTokens.slice(0, limit);
+    const token: Token = {
+      chainId,
+      address: search,
+      name: data.name || data.symbol || "Unknown token",
+      symbol: data.symbol
+        ? String(data.symbol).toUpperCase()
+        : "UNKNOWN",
+      decimals: Number.isInteger(data.detail_platforms?.[platform]?.decimal_place)
+        ? data.detail_platforms[platform].decimal_place
+        : 18,
+      logoURI:
+        data.image?.large ||
+        data.image?.small ||
+        data.image?.thumb ||
+        null,
+      isNative: false,
+    };
 
     return NextResponse.json({
-      network: {
-        chainId: network.chainId,
-        slug: network.slug,
-        name: network.name,
+      tokens: [token],
+      metadata: {
+        coingeckoId: data.id || null,
+        marketCapRank: data.market_cap_rank ?? null,
       },
-
-      search,
-
-      total: filteredTokens.length,
-
-      tokens: result,
     });
   } catch (error) {
     console.error(
-      "[SWAP TOKENS]",
+      "[SWAP TOKENS] CoinGecko request failed:",
       error
     );
 
     return NextResponse.json(
       {
-        error: "Failed to load swap tokens",
+        error: "Token lookup is temporarily unavailable",
       },
-      { status: 500 }
+      { status: 502 }
     );
   }
 }

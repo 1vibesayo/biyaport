@@ -47,10 +47,7 @@ export async function GET() {
 
     const networks = results
       .filter((network) => network.available)
-      .map(({ nativeToken, ...network }) => ({
-        ...network,
-        nativeToken,
-      }));
+      .map(({ available, ...network }) => network);
 
     return NextResponse.json({
       networks,

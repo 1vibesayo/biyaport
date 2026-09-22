@@ -14,7 +14,8 @@ function isHexAddress(value: string) {
 
 function isValidTokenAddress(value: string) {
   return (
-    value.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase() ||
+    value.toLowerCase() ===
+      NATIVE_TOKEN_ADDRESS.toLowerCase() ||
     isHexAddress(value)
   );
 }
@@ -44,10 +45,10 @@ function getSwapFeeToken(
   buyToken: string
 ) {
   /**
-   * 0x requires swapFeeToken to be an ERC-20 contract address.
+   * 0x requires swapFeeToken to be an ERC-20.
    *
-   * If the sell token is native ETH/BNB, use the buy token
-   * for the Biyaport fee.
+   * If the sell token is native, charge the fee
+   * in the buy token instead.
    */
   if (
     sellToken.toLowerCase() ===
@@ -61,7 +62,8 @@ function getSwapFeeToken(
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ZEROX_API_KEY;
-  const feeRecipient = process.env.SWAP_FEE_RECIPIENT;
+  const feeRecipient =
+    process.env.SWAP_FEE_RECIPIENT;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -72,7 +74,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!feeRecipient || !isHexAddress(feeRecipient)) {
+  if (
+    !feeRecipient ||
+    !isHexAddress(feeRecipient)
+  ) {
     return NextResponse.json(
       {
         error:
@@ -147,12 +152,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * Exactly one amount must be supplied.
-     *
-     * sellAmount = exact input
-     * buyAmount  = exact output
-     */
     const hasSellAmount =
       typeof sellAmount === "string" &&
       sellAmount.length > 0;
@@ -175,7 +174,10 @@ export async function POST(request: NextRequest) {
       ? sellAmount
       : buyAmount;
 
-    if (!/^\d+$/.test(amount)) {
+    if (
+      typeof amount !== "string" ||
+      !/^\d+$/.test(amount)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -231,7 +233,11 @@ export async function POST(request: NextRequest) {
 
     const params = new URLSearchParams();
 
-    params.set("chainId", String(numericChainId));
+    params.set(
+      "chainId",
+      String(numericChainId)
+    );
+
     params.set("sellToken", sellToken);
     params.set("buyToken", buyToken);
 
@@ -249,11 +255,6 @@ export async function POST(request: NextRequest) {
       params.set("recipient", recipient);
     }
 
-    /**
-     * Biyaport fee:
-     *
-     * 25 BPS = 0.25%
-     */
     params.set(
       "swapFeeRecipient",
       feeRecipient
@@ -266,25 +267,20 @@ export async function POST(request: NextRequest) {
 
     params.set(
       "swapFeeToken",
-      getSwapFeeToken(sellToken, buyToken)
+      getSwapFeeToken(
+        sellToken,
+        buyToken
+      )
     );
 
-    /**
-     * Price endpoint doesn't require slippage,
-     * but including the user's configured value allows
-     * the API response to remain consistent with quote.
-     */
-    if (slippageBps !== undefined) {
-      params.set(
-        "slippageBps",
-        String(Number(slippageBps))
-      );
-    } else {
-      params.set(
-        "slippageBps",
-        String(DEFAULT_SLIPPAGE_BPS)
-      );
-    }
+    params.set(
+      "slippageBps",
+      String(
+        slippageBps === undefined
+          ? DEFAULT_SLIPPAGE_BPS
+          : Number(slippageBps)
+      )
+    );
 
     const url =
       `${ZEROX_API}/swap/allowance-holder/price?` +
@@ -326,16 +322,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * liquidityAvailable is the important 0x signal.
-     */
-    if (data?.liquidityAvailable === false) {
+    if (
+      data?.liquidityAvailable === false
+    ) {
       return NextResponse.json(
         {
           error:
             "No liquidity available for this token pair",
           liquidityAvailable: false,
-          data,
         },
         { status: 422 }
       );
@@ -343,32 +337,22 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-
       chainId: numericChainId,
-
       sellToken,
       buyToken,
 
-      /**
-       * Indicates which side the user supplied.
-       */
       quoteType: hasSellAmount
         ? "sell"
         : "buy",
 
-      /**
-       * Exact-input:
-       *   sellAmount = supplied amount
-       *   buyAmount  = calculated output
-       *
-       * Exact-output:
-       *   buyAmount      = supplied amount
-       *   maxSellAmount  = maximum calculated input
-       *   sellAmount     = usually null from 0x price response
-       */
-      sellAmount: data?.sellAmount ?? null,
-      buyAmount: data?.buyAmount ?? null,
-      maxSellAmount: data?.maxSellAmount ?? null,
+      sellAmount:
+        data?.sellAmount ?? null,
+
+      buyAmount:
+        data?.buyAmount ?? null,
+
+      maxSellAmount:
+        data?.maxSellAmount ?? null,
 
       liquidityAvailable:
         data?.liquidityAvailable ?? null,
@@ -376,11 +360,14 @@ export async function POST(request: NextRequest) {
       allowanceTarget:
         data?.allowanceTarget ?? null,
 
-      fees: data?.fees ?? null,
+      fees:
+        data?.fees ?? null,
 
-      issues: data?.issues ?? null,
+      issues:
+        data?.issues ?? null,
 
-      tokens: data?.tokens ?? null,
+      tokens:
+        data?.tokens ?? null,
 
       tokenMetadata:
         data?.tokenMetadata ?? null,

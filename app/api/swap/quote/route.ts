@@ -14,7 +14,8 @@ function isHexAddress(value: string) {
 
 function isValidTokenAddress(value: string) {
   return (
-    value.toLowerCase() === NATIVE_TOKEN_ADDRESS.toLowerCase() ||
+    value.toLowerCase() ===
+      NATIVE_TOKEN_ADDRESS.toLowerCase() ||
     isHexAddress(value)
   );
 }
@@ -49,9 +50,12 @@ function isValidBps(value: unknown) {
   );
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   const apiKey = process.env.ZEROX_API_KEY;
-  const feeRecipient = process.env.SWAP_FEE_RECIPIENT;
+  const feeRecipient =
+    process.env.SWAP_FEE_RECIPIENT;
 
   if (!apiKey) {
     return NextResponse.json(
@@ -62,7 +66,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!feeRecipient || !isHexAddress(feeRecipient)) {
+  if (
+    !feeRecipient ||
+    !isHexAddress(feeRecipient)
+  ) {
     return NextResponse.json(
       {
         error:
@@ -137,9 +144,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * Exactly one amount is allowed.
-     */
     const hasSellAmount =
       typeof sellAmount === "string" &&
       sellAmount.length > 0;
@@ -162,7 +166,10 @@ export async function POST(request: NextRequest) {
       ? sellAmount
       : buyAmount;
 
-    if (!/^\d+$/.test(amount)) {
+    if (
+      typeof amount !== "string" ||
+      !/^\d+$/.test(amount)
+    ) {
       return NextResponse.json(
         {
           error:
@@ -181,12 +188,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * taker is REQUIRED for /quote.
-     *
-     * 0x needs the user's wallet address to generate
-     * the executable transaction and validate the quote.
-     */
     if (
       typeof taker !== "string" ||
       !isHexAddress(taker)
@@ -256,10 +257,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    params.set(
-      "taker",
-      taker
-    );
+    params.set("taker", taker);
 
     if (recipient) {
       params.set(
@@ -268,9 +266,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    /**
-     * Biyaport fee
-     */
     params.set(
       "swapFeeRecipient",
       feeRecipient
@@ -334,7 +329,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (data?.liquidityAvailable === false) {
+    if (
+      data?.liquidityAvailable === false
+    ) {
       return NextResponse.json(
         {
           error:
@@ -345,7 +342,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const transaction = data?.transaction;
+    const transaction =
+      data?.transaction;
 
     if (
       !transaction?.to ||
@@ -400,8 +398,10 @@ export async function POST(request: NextRequest) {
       transaction: {
         to: transaction.to,
         data: transaction.data,
-        value: transaction.value ?? "0",
-        gas: transaction.gas ?? null,
+        value:
+          transaction.value ?? "0",
+        gas:
+          transaction.gas ?? null,
         gasPrice:
           transaction.gasPrice ?? null,
       },

@@ -9604,7 +9604,7 @@ const downloadMyBCodeImage =
               </h2>
 
               <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
-                This will permanently mark the B-Code as cancelled and return the locked tokens to your wallet. You will need to approve a blockchain transaction.
+                This will permanently mark the B-Code as cancelled and return the locked tokens to your wallet.
               </p>
 
               {cancelError && (

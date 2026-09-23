@@ -3700,20 +3700,6 @@ if (selectedCrypto.symbol === "ETH") {
               </span>
             </p>
 
-            <div className="relative mx-auto mt-8 w-full max-w-[310px]">
-              <div className="h-[3px] w-full rounded-full bg-[#1557E8]" />
-
-              <div className="absolute left-0 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
-
-              <div className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
-
-              <div className="absolute right-0 top-1/2 h-3 w-3 translate-x-1/2 -translate-y-1/2 rounded-full bg-[#1557E8]" />
-            </div>
-
-            <div className="mx-auto mt-7 inline-flex rounded-[7px] bg-[#07091b] px-4 py-2 text-[16px] font-medium text-[#1557E8]">
-              1:00
-            </div>
-
             <button
               type="button"
               onClick={() =>
@@ -5427,6 +5413,8 @@ function BCodeView({
   const { wallets } = useWallets();
   const { sendTransaction } = useSendTransaction();
   const wallet = wallets[0];
+  const [downloadingBCode, setDownloadingBCode] =
+  useState<string | null>(null);
 
   type BCodeMode = "generate" | "redeem";
   type GenerateStep = 1 | 2;
@@ -9538,19 +9526,34 @@ const downloadMyBCodeImage =
                     {/* DOWNLOAD */}
                     <button
                       type="button"
-                      onClick={(
-                        event
-                      ) => {
+                      disabled={downloadingBCode === item.code}
+                      onClick={async (event) => {
                         event.stopPropagation();
 
-                        downloadMyBCodeImage(
-                          item
-                        );
+                        if (downloadingBCode === item.code) {
+                          return;
+                        }
+
+                        setDownloadingBCode(item.code);
+
+                        try {
+                          await downloadMyBCodeImage(item);
+                        } finally {
+                          setDownloadingBCode(null);
+                        }
                       }}
-                      className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground"
-                      aria-label="Download B-Code image"
+                      className="flex h-8 w-8 items-center justify-center rounded-[7px] bg-secondary text-muted-foreground transition hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+                      aria-label={
+                        downloadingBCode === item.code
+                          ? "Downloading B-Code image"
+                          : "Download B-Code image"
+                      }
                     >
-                      <Download className="h-4 w-4" />
+                      {downloadingBCode === item.code ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
                     </button>
 
                     {/* CANCEL */}
@@ -10111,43 +10114,56 @@ async function generateReceipt({
       238
     );
 
-    const formattedNaira =
-      Number(
-        amount
-      ).toLocaleString(
-        "en-NG",
-        {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }
-      );
+    const numericAmount = Number(amount);
+const naira = Math.floor(numericAmount);
+const kobo = Math.round((numericAmount - naira) * 100);
 
-    ctx.textAlign =
-      "center";
+const formattedNaira = `₦${naira.toLocaleString("en-NG")}`;
+const formattedKobo = `.${kobo.toString().padStart(2, "0")}`;
 
-    ctx.font =
-      `700 82px ${RECEIPT_FONT}`;
+ctx.textAlign = "left";
 
-    ctx.fillStyle =
-      "#ffffff";
+// Naira
+ctx.font = `700 82px ${RECEIPT_FONT}`;
+const nairaWidth = ctx.measureText(formattedNaira).width;
 
-    ctx.fillText(
-      `₦${formattedNaira}`,
-      width / 2,
-      370
-    );
+// Kobo
+ctx.font = `600 72px ${RECEIPT_FONT}`;
+const koboWidth = ctx.measureText(formattedKobo).width;
 
-    ctx.font =
-      `600 34px ${RECEIPT_FONT}`;
+const totalWidth = nairaWidth + koboWidth;
+const startX = (width - totalWidth) / 2;
 
-    ctx.fillStyle =
-      "#ffffff";
+// Draw naira
+ctx.font = `700 82px ${RECEIPT_FONT}`;
+ctx.fillStyle = "#ffffff";
 
-    ctx.fillText(
-      "Transaction Successful",
-      width / 2,
-      470
-    );
+ctx.fillText(
+  formattedNaira,
+  startX,
+  370
+);
+
+// Draw kobo at 65% opacity
+ctx.font = `600 72px ${RECEIPT_FONT}`;
+ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+
+ctx.fillText(
+  formattedKobo,
+  startX + nairaWidth,
+  370
+);
+
+// Transaction Successful
+ctx.textAlign = "center";
+ctx.font = `600 32px ${RECEIPT_FONT}`;
+ctx.fillStyle = "#ffffff";
+
+ctx.fillText(
+  "Transaction Successful",
+  width / 2,
+  470
+);
 
     const labelX = 116;
     const valueX = 908;
@@ -10229,154 +10245,173 @@ async function generateReceipt({
     );
 
     const bottomContainerX = 128;
-    const bottomContainerY = 1118;
-    const bottomContainerWidth = 768;
-    const bottomContainerHeight = 150;
-    const bottomContainerRadius = 24;
+const bottomContainerY = 1118;
+const bottomContainerWidth = 768;
+const bottomContainerHeight = 120;
+const bottomContainerRadius = 24;
 
-    ctx.beginPath();
+const bottomPadding = 14;
 
-    roundRect(
-      ctx,
-      bottomContainerX,
-      bottomContainerY,
-      bottomContainerWidth,
-      bottomContainerHeight,
-      bottomContainerRadius
-    );
+ctx.beginPath();
 
-    ctx.fillStyle =
-      "#050511";
+roundRect(
+  ctx,
+  bottomContainerX,
+  bottomContainerY,
+  bottomContainerWidth,
+  bottomContainerHeight,
+  bottomContainerRadius
+);
 
-    ctx.fill();
+ctx.fillStyle = "#050511";
+ctx.fill();
 
-    ctx.strokeStyle =
-      "rgba(255,255,255,0.06)";
+ctx.strokeStyle = "rgba(255,255,255,0.06)";
+ctx.lineWidth = 1;
+ctx.stroke();
 
-    ctx.lineWidth = 1;
 
-    ctx.stroke();
+// ==============================
+// ICON
+// ==============================
 
-    try {
-      const icon =
-        await loadImage(
-          "/Biyaport-icon.svg"
-        );
+try {
+  const icon =
+    await loadImage("/Biyaport-icon.svg");
 
-      const iconSize = 92;
+  const iconSize = 92;
 
-      ctx.drawImage(
-        icon,
-        156,
-        bottomContainerY +
-          (bottomContainerHeight -
-            iconSize) /
-            2,
-        iconSize,
-        iconSize
-      );
-    } catch {
-      ctx.fillStyle =
-        "#1557E8";
+  const iconX =
+    bottomContainerX + bottomPadding;
 
-      ctx.beginPath();
+  const iconY =
+    bottomContainerY +
+    (bottomContainerHeight - iconSize) / 2;
 
-      ctx.arc(
-        202,
-        bottomContainerY +
-          bottomContainerHeight /
-            2,
-        40,
-        0,
-        Math.PI * 2
-      );
+  ctx.drawImage(
+    icon,
+    iconX,
+    iconY,
+    iconSize,
+    iconSize
+  );
+} catch {
+  ctx.fillStyle = "#1557E8";
 
-      ctx.fill();
+  ctx.beginPath();
+
+  ctx.arc(
+    bottomContainerX +
+      bottomPadding +
+      46,
+    bottomContainerY +
+      bottomContainerHeight / 2,
+    40,
+    0,
+    Math.PI * 2
+  );
+
+  ctx.fill();
+}
+
+
+// ==============================
+// TEXT
+// ==============================
+
+ctx.textAlign = "left";
+
+ctx.font =
+  `500 23px ${RECEIPT_FONT}`;
+
+ctx.fillStyle = "#ffffff";
+
+const textX =
+  bottomContainerX +
+  bottomPadding +
+  92 +
+  24;
+
+ctx.fillText(
+  "Scan code to verify this",
+  textX,
+  bottomContainerY + 52
+);
+
+ctx.fillText(
+  "transaction on-chain",
+  textX,
+  bottomContainerY + 83
+);
+
+
+// ==============================
+// QR CODE
+// ==============================
+
+const explorerUrl =
+  `${getNetworkConfig(network).explorerTx}${transactionHash}`;
+
+const qrDataUrl =
+  await QRCode.toDataURL(
+    explorerUrl,
+    {
+      width: 82,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#050511",
+        light: "#ffffff",
+      },
     }
+  );
 
-    ctx.textAlign =
-      "left";
+const qrImage =
+  await loadImage(qrDataUrl);
 
-    ctx.font =
-      `500 23px ${RECEIPT_FONT}`;
+const qrContainerSize = 92;
 
-    ctx.fillStyle =
-      "#ffffff";
+const qrContainerX =
+  bottomContainerX +
+  bottomContainerWidth -
+  bottomPadding -
+  qrContainerSize;
 
-    ctx.fillText(
-      "Scan code to verify this",
-      280,
-      bottomContainerY +
-        67
-    );
+const qrContainerY =
+  bottomContainerY +
+  (bottomContainerHeight -
+    qrContainerSize) / 2;
 
-    ctx.fillText(
-      "transaction on-chain",
-      280,
-      bottomContainerY +
-        101
-    );
 
-    const explorerUrl =
-      `${getNetworkConfig(network).explorerTx}${transactionHash}`;
+// QR container
+ctx.beginPath();
 
-    const qrDataUrl =
-      await QRCode.toDataURL(
-        explorerUrl,
-        {
-          width: 120,
-          margin: 1,
-          errorCorrectionLevel:
-            "M",
-          color: {
-            dark: "#050511",
-            light: "#ffffff",
-          },
-        }
-      );
+roundRect(
+  ctx,
+  qrContainerX,
+  qrContainerY,
+  qrContainerSize,
+  qrContainerSize,
+  10
+);
 
-    const qrImage =
-      await loadImage(
-        qrDataUrl
-      );
+ctx.fillStyle = "#ffffff";
+ctx.fill();
 
-    const qrContainerSize = 130;
 
-    const qrContainerX =
-      bottomContainerX +
-      bottomContainerWidth -
-      qrContainerSize -
-      10;
+// Center QR inside container
+const qrSize = 82;
 
-    const qrContainerY =
-      bottomContainerY +
-      (bottomContainerHeight -
-        qrContainerSize) /
-        2;
+const qrOffset =
+  (qrContainerSize - qrSize) / 2;
 
-    ctx.beginPath();
-
-    roundRect(
-      ctx,
-      qrContainerX,
-      qrContainerY,
-      qrContainerSize,
-      qrContainerSize,
-      16
-    );
-
-    ctx.fillStyle =
-      "#ffffff";
-
-    ctx.fill();
-
-    ctx.drawImage(
-      qrImage,
-      qrContainerX + 5,
-      qrContainerY + 5,
-      120,
-      120
-    );
+ctx.drawImage(
+  qrImage,
+  qrContainerX + qrOffset,
+  qrContainerY + qrOffset,
+  qrSize,
+  qrSize
+);
 
     ctx.textAlign =
       "center";

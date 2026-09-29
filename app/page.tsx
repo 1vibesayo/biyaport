@@ -5470,27 +5470,19 @@ ONRAMP MODAL 1
                       <div className="mt-3">
                         <div className="flex w-full items-center gap-2">
                           <div className="relative min-w-0 flex-1">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              placeholder={
-                                offrampInputMode === "crypto"
-                                  ? `Enter ${selectedCrypto?.symbol || "crypto"} amount`
-                                  : "Enter Amount (₦)"
-                              }
-                              value={
-                                amountInputValue
-                              }
-                              onChange={
-                                handleAmountChange
-                              }
-                              className={`h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px] ${
-                                offrampInputMode === "naira"
-                                  ? "pl-8 sm:pl-9"
-                                  : ""
-                              }`}
-                            />
-                          </div>
+  <input
+    type="text"
+    inputMode="decimal"
+    placeholder={
+      offrampInputMode === "crypto"
+        ? `Enter ${selectedCrypto?.symbol || "crypto"} amount`
+        : "Enter Amount (₦)"
+    }
+    value={amountInputValue}
+    onChange={handleAmountChange}
+    className="h-[52px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:h-[56px] sm:px-5 sm:text-[16px]"
+  />
+</div>
 
                           <button
                             type="button"

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Special_Gothic_Expanded_One } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -81,6 +82,12 @@ const BSCSCAN_TX_URL =
   "https://bscscan.com/tx/";
 
 const RECEIPT_FONT = '"DM Sans", sans-serif';
+
+const specialGothic = Special_Gothic_Expanded_One({
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
+});
 
 /*
  * ====================================================
@@ -1803,252 +1810,464 @@ useEffect(() => {
   };
 
   /*
-   * ====================================================
-   * OFFRAMP NAIRA AMOUNT
-   * ====================================================
-   */
+ * ====================================================
+ * OFFRAMP NAIRA AMOUNT
+ * ====================================================
+ */
 
-  const handleAmountChange = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value =
-      event.target.value.replace(
-        /[^0-9.]/g,
-        ""
+const handleAmountChange = (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+  const value =
+    event.target.value.replace(
+      /[^0-9.]/g,
+      ""
+    );
+
+  if (offrampInputMode === "crypto") {
+    setCryptoInputValue(value);
+
+    /*
+     * When entering crypto, immediately convert
+     * it back to the equivalent NGN amount using
+     * the current quote rate.
+     *
+     * This updates `amount`, which triggers the
+     * quote effect immediately.
+     */
+    if (
+      quoteRate &&
+      Number(value) > 0
+    ) {
+      setAmount(
+        (
+          Number(value) /
+          quoteRate
+        ).toString()
       );
-
-    if (offrampInputMode === "crypto") {
-      setCryptoInputValue(value);
-
-      if (quoteRate && Number(value) > 0) {
-        setAmount(
-          (Number(value) / quoteRate).toString()
-        );
-      } else {
-        setAmount("");
-      }
     } else {
-      setAmount(value);
+      setAmount("");
+    }
+  } else {
+    /*
+     * NGN input mode
+     */
+    setAmount(value);
+  }
+
+  setCryptoAmount("");
+  setQuoteError("");
+  setPaymentError("");
+};
+
+const handleOfframpInputModeToggle = () => {
+  if (!selectedCrypto) {
+    return;
+  }
+
+  if (offrampInputMode === "naira") {
+    /*
+     * Switch to crypto input.
+     * Use the current quoted crypto amount
+     * as the initial value.
+     */
+    const currentCryptoAmount =
+      cryptoAmount || "";
+
+    setCryptoInputValue(
+      currentCryptoAmount
+    );
+
+    /*
+     * Convert the current crypto amount
+     * back to NGN so the quote effect runs.
+     */
+    if (
+      currentCryptoAmount &&
+      quoteRate &&
+      Number(currentCryptoAmount) > 0
+    ) {
+      setAmount(
+        (
+          Number(
+            currentCryptoAmount
+          ) / quoteRate
+        ).toString()
+      );
+    } else {
+      setAmount("");
     }
 
+    setOfframpInputMode("crypto");
+  } else {
+    /*
+     * Switch back to NGN input.
+     */
+    setOfframpInputMode("naira");
+    setCryptoInputValue("");
+  }
+
+  setQuoteError("");
+  setPaymentError("");
+};
+
+/*
+ * ====================================================
+ * OFFRAMP CRYPTO QUOTE
+ * ====================================================
+ */
+
+ /*
+  * ====================================================
+  * OFFRAMP CRYPTO QUOTE
+  * ====================================================
+  */
+
+useEffect(() => {
+  if (
+    tradeMode !== "sell" ||
+    !selectedCrypto
+  ) {
+    setCryptoAmount("");
+    return;
+  }
+
+  const isCryptoInput =
+    offrampInputMode ===
+    "crypto";
+
+  const inputValue =
+    isCryptoInput
+      ? Number(
+          cryptoInputValue
+        )
+      : Number(amount);
+
+  if (
+    !Number.isFinite(
+      inputValue
+    ) ||
+    inputValue <= 0
+  ) {
     setCryptoAmount("");
     setQuoteError("");
-    setPaymentError("");
-  };
+    return;
+  }
 
-  const handleOfframpInputModeToggle = () => {
-    if (!selectedCrypto) {
-      return;
-    }
+  let cancelled = false;
 
-    if (offrampInputMode === "naira") {
-      setCryptoInputValue(cryptoAmount || "");
-      setOfframpInputMode("crypto");
-    } else {
-      setOfframpInputMode("naira");
-      setCryptoInputValue("");
-    }
-
-    setQuoteError("");
-    setPaymentError("");
-  };
-
-  /*
-   * ====================================================
-   * OFFRAMP CRYPTO QUOTE
-   * ====================================================
-   */
-
-  useEffect(() => {
-    if (
-      tradeMode !== "sell" ||
-      !selectedCrypto ||
-      !amount ||
-      Number(amount) <= 0
-    ) {
+  const getQuote =
+    async () => {
+      setLoadingQuote(true);
+      setQuoteError("");
       setCryptoAmount("");
-      return;
-    }
 
-    let cancelled = false;
+      try {
+        const response =
+          await fetch(
+            "/api/quote",
+            {
+              method: "POST",
 
-    const getQuote = async () => {
-  setLoadingQuote(true);
-  setQuoteError("");
-  setCryptoAmount("");
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
 
-  try {
-    const response = await fetch(
-      "/api/quote",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-        body: JSON.stringify({
-          token:
-            selectedCrypto.symbol,
-          network:
-            selectedCrypto.network,
-          currency:
-            selectedCurrency,
-          nairaAmount:
-            Number(amount),
-          walletAddress:
-            wallet?.address,
-        }),
-      }
-    );
+              body:
+                JSON.stringify(
+                  isCryptoInput
+                    ? {
+                        token:
+                          selectedCrypto.symbol,
 
-    const data =
-      await response.json();
+                        network:
+                          selectedCrypto.network,
 
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-          data?.message ||
-          "Couldn't get a quote right now. Please try again."
-      );
-    }
+                        currency:
+                          selectedCurrency,
 
-    const value = Number(
-  data?.cryptoAmount
-);
+                        inputMode:
+                          "crypto",
 
-if (
-  !Number.isFinite(value) ||
-  value <= 0
-) {
-  throw new Error(
-    "Couldn't calculate the crypto amount. Please try again."
-  );
-}
+                        cryptoAmount:
+                          inputValue,
 
-const returnedSettlementAmount =
-  Number(data?.settlementAmount);
+                        walletAddress:
+                          wallet?.address,
+                      }
+                    : {
+                        token:
+                          selectedCrypto.symbol,
 
-if (
-  selectedCrypto.symbol === "ETH" &&
-  (!Number.isFinite(
-    returnedSettlementAmount
-  ) ||
-    returnedSettlementAmount <= 0)
-) {
-  throw new Error(
-    "Couldn't calculate the ETH conversion. Please try again."
-  );
-}
+                        network:
+                          selectedCrypto.network,
 
-const paycrestAmountInUsdc =
-  selectedCrypto.symbol === "ETH"
-    ? returnedSettlementAmount
-    : value;
+                        currency:
+                          selectedCurrency,
 
-const amountLimitError =
-  getPaycrestAmountError(
-    paycrestAmountInUsdc
-  );
+                        inputMode:
+                          "naira",
 
-if (amountLimitError) {
-  throw new Error(amountLimitError);
-}
+                        nairaAmount:
+                          inputValue,
 
-if (!cancelled) {
-  setCryptoAmount(
-    value.toFixed(6)
-  );
+                        walletAddress:
+                          wallet?.address,
+                      }
+                ),
+            }
+          );
 
-  if (Number(amount) > 0) {
-    setQuoteRate(
-      value / Number(amount)
-    );
-  }
+        const data =
+          await response.json();
 
-  setSettlementAmount(
-    selectedCrypto.symbol === "ETH"
-      ? returnedSettlementAmount
-      : null
-  );
-}
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              "Couldn't get a quote right now. Please try again."
+          );
+        }
 
-  } catch (error) {
-    if (!cancelled) {
-      console.error(
-        "QUOTE ERROR:",
-        error
-      );
+        const value =
+          Number(
+            data?.cryptoAmount
+          );
 
-      const amountError =
-        getPaycrestErrorMessage(error);
+        if (
+          !Number.isFinite(
+            value
+          ) ||
+          value <= 0
+        ) {
+          throw new Error(
+            "Couldn't calculate the crypto amount. Please try again."
+          );
+        }
 
-      setQuoteError(
-        amountError ||
-          "Couldn't get a quote right now. Please try again."
-      );
-    }
-  } finally {
-    if (!cancelled) {
-      setLoadingQuote(false);
-    }
-  }
-};
+        const returnedSettlementAmount =
+          Number(
+            data?.settlementAmount
+          );
 
-const timeout = setTimeout(
-  getQuote,
-  500
-);
+        if (
+          selectedCrypto.symbol ===
+            "ETH" &&
+          (!Number.isFinite(
+            returnedSettlementAmount
+          ) ||
+            returnedSettlementAmount <=
+              0)
+        ) {
+          throw new Error(
+            "Couldn't calculate the ETH conversion. Please try again."
+          );
+        }
 
-return () => {
-  cancelled = true;
-  clearTimeout(timeout);
-};
-  }, [
-    amount,
-    selectedCrypto,
-    tradeMode,
-  ]);
+        const paycrestAmountInUsdc =
+          selectedCrypto.symbol ===
+          "ETH"
+            ? returnedSettlementAmount
+            : isCryptoInput
+              ? returnedSettlementAmount
+              : value;
 
-  /*
-   * ====================================================
-   * OFFRAMP DISPLAY PAYMENT AMOUNT
-   * ====================================================
-   */
+        const amountLimitError =
+          getPaycrestAmountError(
+            paycrestAmountInUsdc
+          );
 
-  const estimatedPayAmount =
-    cryptoAmount &&
-    Number.isFinite(Number(cryptoAmount))
-      ? Number(cryptoAmount) * 1.05
-      : 0;
+        if (
+          amountLimitError
+        ) {
+          throw new Error(
+            amountLimitError
+          );
+        }
 
-  const estimatedPayAmountFormatted =
-    estimatedPayAmount > 0
-      ? estimatedPayAmount.toFixed(6)
-      : "";
-
-  const amountInputValue =
-    offrampInputMode === "crypto"
-      ? cryptoInputValue
-      : amount;
-
-  const nairaAmountFormatted =
-    Number(amount) > 0
-      ? Number(amount).toLocaleString(
-          "en-NG",
-          {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
+        if (
+          !cancelled
+        ) {
+          /*
+           * The displayed crypto amount should
+           * always remain the user's total amount.
+           *
+           * Example:
+           * User enters 100 USDT
+           * Pay button = Pay 100 USDT
+           */
+          if (
+            isCryptoInput
+          ) {
+            setCryptoAmount(
+              inputValue.toFixed(
+                6
+              )
+            );
+          } else {
+            setCryptoAmount(
+              value.toFixed(6)
+            );
           }
-        )
-      : "";
 
-  const showPayButton =
-    !!selectedCrypto &&
-    !!amount &&
-    Number(amount) > 0 &&
-    !!cryptoAmount &&
-    !loadingQuote &&
-    !quoteError;
+          /*
+           * Rate is only updated for Naira input.
+           */
+          if (
+            !isCryptoInput &&
+            Number(amount) >
+              0
+          ) {
+            setQuoteRate(
+              value /
+                Number(
+                  amount
+                )
+            );
+          }
+
+          /*
+           * Settlement amount is the amount
+           * that actually goes to Paycrest
+           * after the sender fee.
+           */
+          setSettlementAmount(
+            selectedCrypto.symbol ===
+              "ETH"
+              ? returnedSettlementAmount
+              : isCryptoInput
+                ? returnedSettlementAmount
+                : null
+          );
+
+          /*
+           * When the user enters crypto,
+           * update the Naira amount using the
+           * post-fee payout returned by the API.
+           */
+          if (
+            isCryptoInput
+          ) {
+            const quotedNairaAmount =
+              Number(
+                data?.nairaAmount
+              );
+
+            if (
+              Number.isFinite(
+                quotedNairaAmount
+              ) &&
+              quotedNairaAmount >
+                0
+            ) {
+              setAmount(
+                quotedNairaAmount.toFixed(
+                  2
+                )
+              );
+            }
+          }
+        }
+      } catch (
+        error
+      ) {
+        if (
+          !cancelled
+        ) {
+          console.error(
+            "QUOTE ERROR:",
+            error
+          );
+
+          const amountError =
+            getPaycrestErrorMessage(
+              error
+            );
+
+          setQuoteError(
+            amountError ||
+              "Couldn't get a quote right now. Please try again."
+          );
+        }
+      } finally {
+        if (
+          !cancelled
+        ) {
+          setLoadingQuote(
+            false
+          );
+        }
+      }
+    };
+
+  const timeout =
+    setTimeout(
+      getQuote,
+      500
+    );
+
+  return () => {
+    cancelled = true;
+
+    clearTimeout(
+      timeout
+    );
+  };
+}, [
+  amount,
+  selectedCrypto,
+  tradeMode,
+  offrampInputMode,
+  cryptoInputValue,
+  selectedCurrency,
+  wallet?.address,
+]);
+
+/*
+ * ====================================================
+ * OFFRAMP DISPLAY PAYMENT AMOUNT
+ * ====================================================
+ */
+
+const estimatedPayAmount =
+  cryptoAmount &&
+  Number.isFinite(
+    Number(cryptoAmount)
+  )
+    ? Number(cryptoAmount) * 1.05
+    : 0;
+
+const estimatedPayAmountFormatted =
+  estimatedPayAmount > 0
+    ? estimatedPayAmount.toFixed(6)
+    : "";
+
+const amountInputValue =
+  offrampInputMode === "crypto"
+    ? cryptoInputValue
+    : amount;
+
+const nairaAmountFormatted =
+  Number(amount) > 0
+    ? Number(amount).toLocaleString(
+        "en-NG",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }
+      )
+    : "";
+
+const showPayButton =
+  !!selectedCrypto &&
+  !!amount &&
+  Number(amount) > 0 &&
+  !!cryptoAmount &&
+  !loadingQuote &&
+  !quoteError;
 
   /*
    * ====================================================
@@ -3523,7 +3742,7 @@ if (selectedCrypto.symbol === "ETH") {
               </div>
             </div>
 
-            <h1 className="mt-7 text-[25px] font-semibold tracking-[-0.03em]">
+            <h1 className="mt-7 text-[25px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
               Payment Processing
             </h1>
 
@@ -3682,7 +3901,7 @@ if (selectedCrypto.symbol === "ETH") {
               </div>
             </div>
 
-            <h1 className="mt-7 text-[25px] font-semibold tracking-[-0.03em]">
+            <h1 className="mt-7 text-[25px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
               Transfer Successful
             </h1>
 
@@ -3768,7 +3987,7 @@ if (selectedCrypto.symbol === "ETH") {
               !
             </div>
 
-            <h1 className="mt-7 text-[25px] font-semibold tracking-[-0.03em]">
+            <h1 className="mt-7 text-[25px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
               Payment Failed
             </h1>
 
@@ -3862,7 +4081,7 @@ if (selectedCrypto.symbol === "ETH") {
        ========================================= */}
 
     <div className="mb-5 flex items-center justify-between">
-      <h1 className="text-[20px] font-semibold tracking-[-0.02em] sm:text-[22px]">
+      <h1 className="text-[20px] font-regular tracking-[-0.02em] sm:text-[22px]" style={{ fontFamily: specialGothic.style.fontFamily }}>
         Quick Port
       </h1>
 
@@ -4636,7 +4855,7 @@ ONRAMP MODAL 1
               </div>
             </div>
 
-    <h2 className="mt-6 text-[20px] font-semibold">
+    <h2 className="mt-6 text-[20px] font-regular" style={{ fontFamily: specialGothic.style.fontFamily }}>
       Transfer Processing
     </h2>
 
@@ -4658,7 +4877,7 @@ ONRAMP MODAL 1
                             </div>
                           </div>
 
-                          <h2 className="mt-6 text-[20px] font-semibold">
+                          <h2 className="mt-6 text-[20px] font-regular" style={{ fontFamily: specialGothic.style.fontFamily }}>
                             Purchase Successful
                           </h2>
 
@@ -5251,11 +5470,6 @@ ONRAMP MODAL 1
                       <div className="mt-3">
                         <div className="flex w-full items-center gap-2">
                           <div className="relative min-w-0 flex-1">
-                            {offrampInputMode === "naira" && (
-                              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[15px] text-muted-foreground sm:left-5 sm:text-[16px]">
-                                ₦
-                              </span>
-                            )}
                             <input
                               type="text"
                               inputMode="decimal"
@@ -5300,70 +5514,67 @@ ONRAMP MODAL 1
                         )}
 
                         {cryptoAmount &&
-                          !loadingQuote &&
-                          !quoteError && (
-                            <div className="mt-2 px-1 text-[13px] text-muted-foreground">
-                              {offrampInputMode === "crypto" ? (
-                                <>
-                                  You will get{" "}
-                                  <span className="font-medium text-foreground">
-                                    ₦{nairaAmountFormatted}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  You will pay approximately{" "}
-                                  <span className="font-medium text-foreground">
-                                    {estimatedPayAmountFormatted}{" "}
-                                    {selectedCrypto?.symbol}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          )}
+  !loadingQuote &&
+  !quoteError && (
+    <div className="mt-2 px-1 text-[13px] text-muted-foreground">
+      {offrampInputMode === "crypto" ? (
+        <>
+          You will pay{" "}
+          <span className="font-medium text-foreground">
+            ₦{nairaAmountFormatted}
+          </span>{" "}
+          <span className="text-muted-foreground">
+            (5% fees applied.)
+          </span>
+        </>
+      ) : (
+        <>
+          You will pay approximately{" "}
+          <span className="font-medium text-foreground">
+            {estimatedPayAmountFormatted}{" "}
+            {selectedCrypto?.symbol}
+          </span>
+        </>
+      )}
+    </div>
+  )}
 
-                        {quoteError && (
-                          <div className="mt-2 px-1 text-[13px] text-[#F04438]">
-                            {
-                              quoteError
-                            }
-                          </div>
-                        )}
-                      </div>
+{quoteError && (
+  <div className="mt-2 px-1 text-[13px] text-[#F04438]">
+    {quoteError}
+  </div>
+)}
+</div>
 
-                      <div className="mt-4 flex w-full items-center gap-2">
+<div className="mt-4 flex w-full items-center gap-2">
 
-                        <button
-                          type="button"
-                          onClick={
-                            handleBack
-                          }
-                          className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium text-foreground transition hover:bg-secondary sm:h-[56px] sm:px-5 sm:text-[16px]"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </button>
+  <button
+    type="button"
+    onClick={handleBack}
+    className="flex h-[52px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium text-foreground transition hover:bg-secondary sm:h-[56px] sm:px-5 sm:text-[16px]"
+  >
+    <ArrowLeft className="h-4 w-4" />
+    Back
+  </button>
 
-                        <button
-                          type="button"
-                          onClick={
-                            handlePay
-                          }
-                          disabled={
-                            !showPayButton
-                          }
-                          className={`flex h-[52px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:h-[56px] sm:text-[16px] ${
-                            showPayButton
-                              ? "bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.99]"
-                              : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
-                          }`}
-                        >
-                          {showPayButton
-                            ? `Pay ${estimatedPayAmountFormatted} ${selectedCrypto?.symbol}`
-                            : "Pay"}
-                        </button>
+  <button
+    type="button"
+    onClick={handlePay}
+    disabled={!showPayButton}
+    className={`flex h-[52px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:h-[56px] sm:text-[16px] ${
+      showPayButton
+        ? "bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.99]"
+        : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
+    }`}
+  >
+    {showPayButton
+      ? offrampInputMode === "crypto"
+        ? `Pay ${cryptoInputValue} ${selectedCrypto?.symbol}`
+        : `Pay ${estimatedPayAmountFormatted} ${selectedCrypto?.symbol}`
+      : "Pay"}
+  </button>
 
-                      </div>
+</div>
 
                       {paymentError && (
                         <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
@@ -6802,7 +7013,7 @@ function BCodeView({
     link.click();
   };
 
-  /*
+/*
  * ====================================================
  * DOWNLOAD / SHARE B-CODE IMAGE
  * ====================================================
@@ -6992,12 +7203,39 @@ const downloadShareImage =
 
       ctx.restore();
 
+      /*
+       * ==================================================
+       * LOGO
+       * ==================================================
+       */
+
+      const logoBoxWidth = 138;
+      const logoBoxHeight = 38;
+
+      const logoScale = Math.min(
+        logoBoxWidth /
+          logoImage.width,
+        logoBoxHeight /
+          logoImage.height
+      );
+
+      const logoWidth =
+        logoImage.width *
+        logoScale;
+
+      const logoHeight =
+        logoImage.height *
+        logoScale;
+
       ctx.drawImage(
         logoImage,
         padding,
-        padding,
-        138,
-        44
+        padding +
+          (logoBoxHeight -
+            logoHeight) /
+            2,
+        logoWidth,
+        logoHeight
       );
 
       ctx.fillStyle =
@@ -7240,15 +7478,7 @@ const downloadShareImage =
 
             return;
           }
-
-          /*
-           * If the mobile browser supports sharing
-           * but not file sharing, download the image.
-           */
         } catch (shareError) {
-          /*
-           * User cancelled the native share sheet.
-           */
           if (
             shareError instanceof
               DOMException &&
@@ -7558,12 +7788,33 @@ const downloadMyBCodeImage =
        * ==================================================
        */
 
+      const logoBoxWidth = 138;
+      const logoBoxHeight = 38;
+
+      const logoScale = Math.min(
+        logoBoxWidth /
+          logoImage.width,
+        logoBoxHeight /
+          logoImage.height
+      );
+
+      const logoWidth =
+        logoImage.width *
+        logoScale;
+
+      const logoHeight =
+        logoImage.height *
+        logoScale;
+
       ctx.drawImage(
         logoImage,
         padding,
-        padding,
-        138,
-        44
+        padding +
+          (logoBoxHeight -
+            logoHeight) /
+            2,
+        logoWidth,
+        logoHeight
       );
 
       /*
@@ -8410,7 +8661,7 @@ const downloadMyBCodeImage =
                 )
               ) && (
                 <div className="mb-6 flex items-center justify-between gap-4">
-                  <h1 className="text-[22px] font-semibold tracking-[-0.03em]">
+                  <h1 className="text-[22px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
                     B-Codes
                   </h1>
 
@@ -8531,7 +8782,7 @@ const downloadMyBCodeImage =
                             </div>
                           </div>
 
-                          <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                          <h2 className="mt-6 text-[24px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
                             B-Code Generated
                           </h2>
 
@@ -8988,7 +9239,7 @@ const downloadMyBCodeImage =
                             </div>
                           </div>
 
-                          <h2 className="mt-6 text-[24px] font-semibold tracking-[-0.03em]">
+                          <h2 className="mt-6 text-[24px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
                             Redemption Successful
                           </h2>
 
@@ -9602,7 +9853,7 @@ const downloadMyBCodeImage =
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
             <div className="w-full max-w-[400px] rounded-[16px] border border-border bg-[#050511] p-5 shadow-2xl sm:p-6">
 
-              <h2 className="text-[18px] font-semibold">
+              <h2 className="text-[18px] font-regular" style={{ fontFamily: specialGothic.style.fontFamily }}>
                 Cancel B-Code?
               </h2>
 
@@ -9697,7 +9948,7 @@ function BCodeProgress({
         <Loader2 className="h-7 w-7 animate-spin text-white" />
       </div>
 
-      <h2 className="mt-7 text-[24px] font-semibold tracking-[-0.03em]">
+      <h2 className="mt-7 text-[24px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
         {title}
       </h2>
 
@@ -13131,7 +13382,7 @@ function SwapView({
                         </div>
                       </div>
 
-                  <h2 className="mt-5 text-[24px] font-semibold tracking-[-0.03em]">
+                  <h2 className="mt-5 text-[24px] font-regular tracking-[-0.03em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
                     Swap success
                   </h2>
 
@@ -13194,14 +13445,9 @@ function SwapView({
                 <>
               <div className="mb-6 flex items-center justify-between">
                 <div>
-                  <h1 className="text-[22px] font-semibold tracking-[-0.02em]">
+                  <h1 className="text-[22px] font-regular tracking-[-0.02em]" style={{ fontFamily: specialGothic.style.fontFamily }}>
                     Swap
                   </h1>
-                  {sellNetwork && buyNetwork && sellNetwork.chainId !== buyNetwork.chainId ? (
-                    <p className="mt-1 text-[12px] text-muted-foreground">
-                      Cross-chain swap
-                    </p>
-                  ) : null}
                 </div>
 
                 <div
@@ -13861,9 +14107,9 @@ function SiteNav({
             <Image
               src="/biyaport_logo.svg"
               alt="Biyaport"
-              width={160}
-              height={44}
-              className="h-[36px] w-auto object-contain sm:h-[44px]"
+              width={120}
+              height={33}
+              className="h-[27px] w-auto object-contain sm:h-[33px]"
               priority
             />
           </div>

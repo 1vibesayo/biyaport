@@ -60,144 +60,82 @@ type SupportedToken =
 type SupportedNetwork =
   (typeof SUPPORTED_NETWORKS)[number];
 
-/*
- * ------------------------------------------------
- * NORMALIZE NETWORK
- * ------------------------------------------------
- */
-
 function normalizeNetwork(
   value: unknown
 ): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const normalized =
-    value
-      .trim()
-      .toLowerCase()
-      .replace(
-        /\s+network$/i,
-        ""
-      );
+  const network = String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
 
   if (
-    normalized === "base" ||
-    normalized === "base mainnet"
-  ) {
-    return "base";
-  }
-
-  if (
-    normalized === "bnb-smart-chain" ||
-    normalized === "bnb smart chain" ||
-    normalized === "bnb smart chain mainnet" ||
-    normalized === "bsc" ||
-    normalized === "bsc mainnet"
+    network === "bsc" ||
+    network === "bnb" ||
+    network === "binance-smart-chain"
   ) {
     return "bnb-smart-chain";
   }
 
-  return normalized;
-}
+  if (network === "ethereum") {
+    return "ethereum";
+  }
 
-/*
- * ------------------------------------------------
- * CONVERT DECIMAL AMOUNT TO BASE UNITS
- * ------------------------------------------------
- */
+  if (network === "polygon") {
+    return "polygon";
+  }
+
+  if (network === "arbitrum") {
+    return "arbitrum";
+  }
+
+  if (network === "base") {
+    return "base";
+  }
+
+  return network;
+}
 
 function toBaseUnits(
   amount: number,
   decimals: number
 ): string {
-  if (
-    !Number.isFinite(amount) ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "Invalid amount."
-    );
-  }
-
-  const fixed =
-    amount.toFixed(decimals);
-
   const [whole, fraction = ""] =
-    fixed.split(".");
+    amount
+      .toFixed(decimals)
+      .split(".");
 
   const paddedFraction =
-    fraction
-      .padEnd(decimals, "0")
-      .slice(0, decimals);
+    fraction.padEnd(
+      decimals,
+      "0"
+    );
 
-  const result =
-    whole +
-    paddedFraction;
-
-  return result.replace(
+  return `${whole}${paddedFraction}`.replace(
     /^0+(?=\d)/,
     ""
   );
 }
 
-/*
- * ------------------------------------------------
- * CONVERT BASE UNITS TO DECIMAL
- * ------------------------------------------------
- */
-
 function fromBaseUnits(
   amount: string,
   decimals: number
 ): number {
-  const normalized =
-    String(amount);
-
-  if (decimals === 0) {
-    return Number(normalized);
+  if (!amount) {
+    return 0;
   }
 
-  const padded =
-    normalized.padStart(
-      decimals + 1,
-      "0"
-    );
+  const raw = BigInt(amount);
 
-  const splitPosition =
-    padded.length - decimals;
+  if (decimals === 0) {
+    return Number(raw);
+  }
 
-  const whole =
-    padded.slice(
-      0,
-      splitPosition
-    );
+  const divisor =
+    10 ** decimals;
 
-  const fraction =
-    padded.slice(
-      splitPosition
-    );
-
-  return Number(
-    `${whole}.${fraction}`
-  );
+  return Number(raw) / divisor;
 }
-
-/*
- * ------------------------------------------------
- * PAYCREST SENDER FEE
- * ------------------------------------------------
- *
- * Keep this synchronized with the sender fee
- * configured in your Paycrest Sender Dashboard.
- *
- * You can override it with:
- *
- * PAYCREST_SENDER_FEE_PERCENT=5
- *
- * If the env variable is missing, default to 5%.
- */
 
 function getSenderFeePercent(): number {
   const configured =
@@ -216,11 +154,79 @@ function getSenderFeePercent(): number {
   return 5;
 }
 
-/*
- * ------------------------------------------------
- * POST
- * ------------------------------------------------
- */
+async function getPaycrestRate(
+  network: string,
+  token: string,
+  amount: number
+) {
+  const safeAmount = Math.max(
+    amount,
+    0.000001
+  );
+
+  const url =
+    `${PAYCREST_API}/` +
+    `${network}/` +
+    `${token}/` +
+    `${safeAmount}/` +
+    `${FIAT}` +
+    `?side=sell`;
+
+  const response =
+    await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Accept:
+          "application/json",
+      },
+    });
+
+  let data: any = null;
+
+  try {
+    data =
+      await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (
+    !response.ok ||
+    data?.status !== "success"
+  ) {
+    console.error(
+      "PAYCREST RATE ERROR:",
+      {
+        status:
+          response.status,
+        data,
+      }
+    );
+
+    throw new Error(
+      "Unable to get crypto rate."
+    );
+  }
+
+  const rate =
+    Number(
+      data?.data?.sell?.rate
+    );
+
+  if (
+    !Number.isFinite(rate) ||
+    rate <= 0
+  ) {
+    throw new Error(
+      "Invalid crypto rate returned by Paycrest."
+    );
+  }
+
+  return {
+    rate,
+    data,
+  };
+}
 
 export async function POST(
   request: NextRequest
@@ -229,24 +235,12 @@ export async function POST(
     const body =
       await request.json();
 
-    /*
-     * ------------------------------------------------
-     * TOKEN
-     * ------------------------------------------------
-     */
-
     const token =
       String(
         body.token || ""
       )
         .trim()
         .toUpperCase();
-
-    /*
-     * ------------------------------------------------
-     * NETWORK
-     * ------------------------------------------------
-     */
 
     const rawNetwork =
       body.network ??
@@ -259,11 +253,11 @@ export async function POST(
         rawNetwork
       );
 
-    /*
-     * ------------------------------------------------
-     * WALLET ADDRESS
-     * ------------------------------------------------
-     */
+    const inputMode =
+      body.inputMode ===
+      "crypto"
+        ? "crypto"
+        : "naira";
 
     const walletAddress =
       String(
@@ -272,16 +266,18 @@ export async function POST(
           ""
       ).trim();
 
-    /*
-     * ------------------------------------------------
-     * NAIRA AMOUNT
-     * ------------------------------------------------
-     */
-
     const nairaAmount =
       Number(
         body.nairaAmount
       );
+
+    const cryptoAmountInput =
+      Number(
+        body.cryptoAmount
+      );
+
+    const senderFeePercent =
+      getSenderFeePercent();
 
     console.log(
       "OFFRAMP QUOTE REQUEST:",
@@ -290,14 +286,17 @@ export async function POST(
         rawNetwork,
         normalizedNetwork:
           network,
+        inputMode,
         nairaAmount,
+        cryptoAmountInput,
+        senderFeePercent,
         walletAddress,
       }
     );
 
     /*
      * ------------------------------------------------
-     * TOKEN VALIDATION
+     * VALIDATION
      * ------------------------------------------------
      */
 
@@ -309,28 +308,12 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Unsupported cryptocurrency.",
-
-          receivedToken:
-            body.token,
-
-          normalizedToken:
-            token,
-
-          supportedTokens:
-            SUPPORTED_TOKENS,
+            "Unsupported crypto.",
         },
         { status: 400 }
       );
     }
-
-    /*
-     * ------------------------------------------------
-     * NETWORK VALIDATION
-     * ------------------------------------------------
-     */
 
     if (
       !SUPPORTED_NETWORKS.includes(
@@ -340,28 +323,12 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Unsupported network. Biyaport currently supports Base and BNB Smart Chain.",
-
-          receivedNetwork:
-            rawNetwork,
-
-          normalizedNetwork:
-            network,
-
-          supportedNetworks:
-            SUPPORTED_NETWORKS,
+            "Unsupported network.",
         },
         { status: 400 }
       );
     }
-
-    /*
-     * ------------------------------------------------
-     * NETWORK / TOKEN COMPATIBILITY
-     * ------------------------------------------------
-     */
 
     if (
       token === "ETH" &&
@@ -370,9 +337,8 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "ETH is currently supported only on Base.",
+            "ETH offramp is currently available on Base only.",
         },
         { status: 400 }
       );
@@ -386,42 +352,46 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "BNB is currently supported only on BNB Smart Chain.",
+            "BNB offramp is currently available on BSC only.",
         },
         { status: 400 }
       );
     }
 
-    /*
-     * ------------------------------------------------
-     * NAIRA AMOUNT VALIDATION
-     * ------------------------------------------------
-     */
-
     if (
-      !Number.isFinite(
+      inputMode === "naira" &&
+      (!Number.isFinite(
         nairaAmount
       ) ||
-      nairaAmount <= 0
+        nairaAmount <= 0)
     ) {
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Invalid Naira amount.",
+            "Enter a valid Naira amount.",
         },
         { status: 400 }
       );
     }
 
-    /*
-     * ------------------------------------------------
-     * TOKEN CONFIG
-     * ------------------------------------------------
-     */
+    if (
+      inputMode === "crypto" &&
+      (!Number.isFinite(
+        cryptoAmountInput
+      ) ||
+        cryptoAmountInput <= 0)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Enter a valid crypto amount.",
+        },
+        { status: 400 }
+      );
+    }
 
     const tokenConfig =
       TOKEN_CONFIG[
@@ -429,11 +399,10 @@ export async function POST(
       ];
 
     /*
-     * =================================================
-     * DIRECT PAYCREST TOKENS
-     * =================================================
-     *
-     * USDT and USDC keep the existing flow.
+     * ==================================================
+     * DIRECT TOKENS
+     * USDT / USDC
+     * ==================================================
      */
 
     if (
@@ -442,235 +411,154 @@ export async function POST(
     ) {
       /*
        * ------------------------------------------------
-       * FIRST PAYCREST QUOTE
+       * CRYPTO INPUT
+       *
+       * The user's entered amount is the TOTAL amount
+       * they want to spend.
+       *
+       * Example:
+       *
+       * User enters 100 USDT
+       * Sender fee = 5%
+       *
+       * Paycrest receives:
+       *
+       * 100 / 1.05
+       * = 95.238095 USDT
+       *
+       * The remaining 4.761905 USDT is the sender fee.
        * ------------------------------------------------
        */
 
-      const initialUrl =
-        `${PAYCREST_API}/${network}/${token}/1/${FIAT}?side=sell`;
-
-      console.log(
-        "PAYCREST INITIAL QUOTE URL:",
-        initialUrl
-      );
-
-      const initialResponse =
-        await fetch(
-          initialUrl,
-          {
-            cache:
-              "no-store",
-
-            headers: {
-              Accept:
-                "application/json",
-            },
-          }
-        );
-
-      let initialData: any =
-        null;
-
-      try {
-        initialData =
-          await initialResponse.json();
-      } catch {
-        initialData =
-          null;
-      }
-
       if (
-        !initialResponse.ok ||
-        initialData?.status !==
-          "success"
+        inputMode === "crypto"
       ) {
-        console.error(
-          "PAYCREST INITIAL QUOTE ERROR:",
-          {
-            status:
-              initialResponse.status,
+        const totalCryptoAmount =
+          cryptoAmountInput;
 
-            data:
-              initialData,
-          }
-        );
+        const settlementAmount =
+          totalCryptoAmount /
+          (1 +
+            senderFeePercent /
+              100);
+
+        if (
+          !Number.isFinite(
+            settlementAmount
+          ) ||
+          settlementAmount <= 0
+        ) {
+          throw new Error(
+            "Unable to calculate the crypto amount after fees."
+          );
+        }
+
+        const {
+          rate,
+        } =
+          await getPaycrestRate(
+            network,
+            token,
+            settlementAmount
+          );
+
+        const calculatedNairaAmount =
+          settlementAmount *
+          rate;
+
+        if (
+          !Number.isFinite(
+            calculatedNairaAmount
+          ) ||
+          calculatedNairaAmount <= 0
+        ) {
+          throw new Error(
+            "Unable to calculate the Naira equivalent."
+          );
+        }
 
         return NextResponse.json(
           {
-            success: false,
+            success: true,
 
-            error:
-              "Unable to get crypto rate.",
+            token,
 
-            details:
-              initialData,
-          },
-          { status: 502 }
+            network,
+
+            fiat: FIAT,
+
+            inputMode:
+              "crypto",
+
+            /*
+             * Total amount the user entered
+             * and will pay from their wallet.
+             */
+            cryptoAmount:
+              totalCryptoAmount,
+
+            /*
+             * Amount actually sent through
+             * Paycrest after the sender fee
+             * is removed.
+             */
+            settlementAmount,
+
+            /*
+             * Amount charged as the sender fee.
+             */
+            senderFeePercent,
+
+            senderFee:
+              totalCryptoAmount -
+              settlementAmount,
+
+            /*
+             * Naira payout is based on the
+             * post-fee amount.
+             */
+            nairaAmount:
+              calculatedNairaAmount,
+
+            rate,
+
+            requiresSwap:
+              false,
+          }
         );
       }
 
       /*
        * ------------------------------------------------
-       * INITIAL RATE
+       * NAIRA INPUT
        * ------------------------------------------------
        */
 
-      const initialRate =
-        Number(
-          initialData
-            ?.data
-            ?.sell
-            ?.rate
+      const {
+        rate: initialRate,
+      } =
+        await getPaycrestRate(
+          network,
+          token,
+          1
         );
-
-      if (
-        !Number.isFinite(
-          initialRate
-        ) ||
-        initialRate <= 0
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            error:
-              "Invalid crypto rate returned by Paycrest.",
-          },
-          { status: 502 }
-        );
-      }
-
-      /*
-       * ------------------------------------------------
-       * ESTIMATE CRYPTO AMOUNT
-       * ------------------------------------------------
-       */
 
       let cryptoAmount =
         nairaAmount /
         initialRate;
 
-      /*
-       * ------------------------------------------------
-       * REFINE QUOTE
-       * ------------------------------------------------
-       */
-
-      const quoteAmount =
-        Math.max(
-          cryptoAmount,
-          0.000001
+      const {
+        rate,
+      } =
+        await getPaycrestRate(
+          network,
+          token,
+          cryptoAmount
         );
-
-      const quoteUrl =
-        `${PAYCREST_API}/${network}/${token}/${quoteAmount}/${FIAT}?side=sell`;
-
-      console.log(
-        "PAYCREST FINAL QUOTE URL:",
-        quoteUrl
-      );
-
-      const quoteResponse =
-        await fetch(
-          quoteUrl,
-          {
-            cache:
-              "no-store",
-
-            headers: {
-              Accept:
-                "application/json",
-            },
-          }
-        );
-
-      let quoteData: any =
-        null;
-
-      try {
-        quoteData =
-          await quoteResponse.json();
-      } catch {
-        quoteData =
-          null;
-      }
-
-      if (
-        !quoteResponse.ok ||
-        quoteData?.status !==
-          "success"
-      ) {
-        console.error(
-          "PAYCREST QUOTE ERROR:",
-          {
-            status:
-              quoteResponse.status,
-
-            data:
-              quoteData,
-          }
-        );
-
-        return NextResponse.json(
-          {
-            success: false,
-
-            error:
-              "Unable to calculate crypto equivalent.",
-
-            details:
-              quoteData,
-          },
-          { status: 502 }
-        );
-      }
-
-      /*
-       * ------------------------------------------------
-       * FINAL RATE
-       * ------------------------------------------------
-       */
-
-      const rate =
-        Number(
-          quoteData
-            ?.data
-            ?.sell
-            ?.rate
-        );
-
-      if (
-        !Number.isFinite(
-          rate
-        ) ||
-        rate <= 0
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-
-            error:
-              "Invalid quote rate returned by Paycrest.",
-          },
-          { status: 502 }
-        );
-      }
-
-      /*
-       * ------------------------------------------------
-       * FINAL CRYPTO AMOUNT
-       * ------------------------------------------------
-       */
 
       cryptoAmount =
         nairaAmount /
         rate;
-
-      /*
-       * ------------------------------------------------
-       * RESPONSE
-       * ------------------------------------------------
-       */
 
       return NextResponse.json(
         {
@@ -680,8 +568,10 @@ export async function POST(
 
           network,
 
-          fiat:
-            FIAT,
+          fiat: FIAT,
+
+          inputMode:
+            "naira",
 
           nairaAmount,
 
@@ -696,36 +586,10 @@ export async function POST(
     }
 
     /*
-     * =================================================
-     * NATIVE ASSET SWAP
-     * =================================================
-     *
-     * ETH → USDC on Base
-     *
-     * BNB → USDT on BSC
-     */
-
-    if (
-      !walletAddress ||
-      !/^0x[a-fA-F0-9]{40}$/.test(
-        walletAddress
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "A valid wallet address is required for ETH and BNB quotes.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * SWAP CONFIG
-     * ------------------------------------------------
+     * ==================================================
+     * NATIVE TOKENS
+     * ETH / BNB
+     * ==================================================
      */
 
     if (
@@ -735,37 +599,12 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
             "Invalid swap configuration.",
         },
         { status: 500 }
       );
     }
-
-    if (
-      tokenConfig.network !==
-      network
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "The selected native asset is not available on this network.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * PAYCREST SETTLEMENT TOKEN
-     * ------------------------------------------------
-     */
-
-    const settlementToken =
-      tokenConfig.settlementToken;
 
     /*
      * ------------------------------------------------
@@ -789,12 +628,6 @@ export async function POST(
           .BSC_USDT_ADDRESS
           ?.trim() || "";
 
-      /*
-       * IMPORTANT:
-       * Verify the actual decimals of the
-       * BSC USDT contract before enabling BNB.
-       */
-
       settlementDecimals = 18;
     }
 
@@ -808,7 +641,6 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
             `Biyaport is not fully configured for ${token} yet.`,
         },
@@ -816,273 +648,377 @@ export async function POST(
       );
     }
 
+    const settlementToken =
+      tokenConfig
+        .settlementToken;
+
     /*
      * ------------------------------------------------
-     * PAYCREST INITIAL SETTLEMENT RATE
+     * CRYPTO INPUT
+     *
+     * The entered native crypto amount is the
+     * user's TOTAL wallet spend.
+     *
+     * We first convert that total amount into
+     * its post-fee settlement value.
      * ------------------------------------------------
      */
 
-    const settlementInitialUrl =
-      `${PAYCREST_API}/${network}/${settlementToken}/1/${FIAT}?side=sell`;
+    if (
+      inputMode === "crypto"
+    ) {
+      if (
+        !walletAddress ||
+        !/^0x[a-fA-F0-9]{40}$/.test(
+          walletAddress
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "A valid wallet address is required.",
+          },
+          { status: 400 }
+        );
+      }
 
-    console.log(
-      "PAYCREST NATIVE SWAP INITIAL RATE:",
-      settlementInitialUrl
-    );
+      const zeroXApiKey =
+        process.env
+          .ZEROX_API_KEY
+          ?.trim();
 
-    const settlementInitialResponse =
-      await fetch(
-        settlementInitialUrl,
+      if (!zeroXApiKey) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "0x API key is not configured.",
+          },
+          { status: 500 }
+        );
+      }
+
+      /*
+       * First determine how much settlement
+       * token the user's FULL native amount
+       * represents.
+       */
+      const totalNativeAmount =
+        cryptoAmountInput;
+
+      const sellAmount =
+        toBaseUnits(
+          totalNativeAmount,
+          tokenConfig.nativeDecimals
+        );
+
+      const zeroXParams =
+        new URLSearchParams({
+          chainId:
+            String(
+              tokenConfig.chainId
+            ),
+
+          sellToken:
+            NATIVE_TOKEN_ADDRESS,
+
+          buyToken:
+            settlementTokenAddress,
+
+          sellAmount,
+
+          taker:
+            walletAddress,
+        });
+
+      const zeroXUrl =
+        `${ZEROX_API}?${zeroXParams.toString()}`;
+
+      const zeroXResponse =
+        await fetch(
+          zeroXUrl,
+          {
+            method: "GET",
+
+            headers: {
+              "0x-api-key":
+                zeroXApiKey,
+
+              "0x-version":
+                "v2",
+
+              Accept:
+                "application/json",
+            },
+
+            cache:
+              "no-store",
+          }
+        );
+
+      const zeroXText =
+        await zeroXResponse.text();
+
+      let zeroXData: any =
+        null;
+
+      try {
+        zeroXData =
+          JSON.parse(
+            zeroXText
+          );
+      } catch {
+        zeroXData = {
+          raw: zeroXText,
+        };
+      }
+
+      if (
+        !zeroXResponse.ok
+      ) {
+        console.error(
+          "0X QUOTE ERROR:",
+          {
+            status:
+              zeroXResponse.status,
+            data:
+              zeroXData,
+          }
+        );
+
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              zeroXData?.reason ||
+              zeroXData?.message ||
+              "Unable to calculate the crypto conversion.",
+          },
+          {
+            status:
+              zeroXResponse.status,
+          }
+        );
+      }
+
+      if (
+        zeroXData?.liquidityAvailable ===
+        false
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Insufficient liquidity for this conversion.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const totalSettlementAmountBaseUnits =
+        zeroXData?.buyAmount;
+
+      if (
+        !totalSettlementAmountBaseUnits
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Unable to calculate the settlement amount.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const totalSettlementAmount =
+        fromBaseUnits(
+          totalSettlementAmountBaseUnits,
+          settlementDecimals
+        );
+
+      /*
+       * Remove the sender fee from the settlement
+       * value while keeping the user's total native
+       * payment unchanged.
+       *
+       * Example:
+       *
+       * 100 USDT equivalent
+       * / 1.05
+       * = 95.238095 USDT equivalent
+       */
+      const settlementAmount =
+        totalSettlementAmount /
+        (1 +
+          senderFeePercent /
+            100);
+
+      const senderFee =
+        totalSettlementAmount -
+        settlementAmount;
+
+      const {
+        rate:
+          settlementRate,
+      } =
+        await getPaycrestRate(
+          network,
+          settlementToken,
+          settlementAmount
+        );
+
+      const calculatedNairaAmount =
+        settlementAmount *
+        settlementRate;
+
+      if (
+        !Number.isFinite(
+          calculatedNairaAmount
+        ) ||
+        calculatedNairaAmount <= 0
+      ) {
+        throw new Error(
+          "Unable to calculate the Naira equivalent."
+        );
+      }
+
+      return NextResponse.json(
         {
-          cache:
-            "no-store",
+          success: true,
 
-          headers: {
-            Accept:
-              "application/json",
+          token,
+
+          network,
+
+          fiat: FIAT,
+
+          inputMode:
+            "crypto",
+
+          /*
+           * Full amount the user will pay.
+           */
+          cryptoAmount:
+            totalNativeAmount,
+
+          /*
+           * Settlement amount after
+           * sender fee.
+           */
+          settlementAmount,
+
+          senderFeePercent,
+
+          senderFee,
+
+          /*
+           * Naira payout is calculated
+           * from the post-fee settlement.
+           */
+          nairaAmount:
+            calculatedNairaAmount,
+
+          rate:
+            settlementRate,
+
+          requiresSwap:
+            true,
+
+          settlementToken,
+
+          swap: {
+            sellToken:
+              token,
+
+            buyToken:
+              settlementToken,
+
+            sellTokenAddress:
+              NATIVE_TOKEN_ADDRESS,
+
+            buyTokenAddress:
+              settlementTokenAddress,
+
+            chainId:
+              tokenConfig.chainId,
+
+            settlementAmount,
+
+            nativeAmount:
+              totalNativeAmount,
+
+            nativeAmountBaseUnits:
+              sellAmount,
+
+            indicative:
+              true,
           },
         }
       );
-
-    let settlementInitialData:
-      any = null;
-
-    try {
-      settlementInitialData =
-        await settlementInitialResponse.json();
-    } catch {
-      settlementInitialData =
-        null;
-    }
-
-    if (
-      !settlementInitialResponse.ok ||
-      settlementInitialData?.status !==
-        "success"
-    ) {
-      console.error(
-        "PAYCREST SETTLEMENT INITIAL RATE ERROR:",
-        {
-          status:
-            settlementInitialResponse.status,
-
-          data:
-            settlementInitialData,
-        }
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            `Unable to get the ${settlementToken} rate.`,
-        },
-        { status: 502 }
-      );
-    }
-
-    const settlementInitialRate =
-      Number(
-        settlementInitialData
-          ?.data
-          ?.sell
-          ?.rate
-      );
-
-    if (
-      !Number.isFinite(
-        settlementInitialRate
-      ) ||
-      settlementInitialRate <= 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            `Invalid ${settlementToken} rate returned by Paycrest.`,
-        },
-        { status: 502 }
-      );
     }
 
     /*
      * ------------------------------------------------
-     * ESTIMATE SETTLEMENT TOKEN AMOUNT
+     * NAIRA INPUT
+     *
+     * Existing behaviour remains unchanged.
      * ------------------------------------------------
      */
+
+    if (
+      !walletAddress ||
+      !/^0x[a-fA-F0-9]{40}$/.test(
+        walletAddress
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "A valid wallet address is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const {
+      rate:
+        settlementInitialRate,
+    } =
+      await getPaycrestRate(
+        network,
+        settlementToken,
+        1
+      );
 
     let settlementAmount =
       nairaAmount /
       settlementInitialRate;
 
-    /*
-     * ------------------------------------------------
-     * REFINE SETTLEMENT TOKEN QUOTE
-     * ------------------------------------------------
-     */
-
-    const settlementQuoteAmount =
-      Math.max(
-        settlementAmount,
-        0.000001
+    const {
+      rate:
+        settlementRate,
+    } =
+      await getPaycrestRate(
+        network,
+        settlementToken,
+        settlementAmount
       );
-
-    const settlementQuoteUrl =
-      `${PAYCREST_API}/${network}/${settlementToken}/${settlementQuoteAmount}/${FIAT}?side=sell`;
-
-    console.log(
-      "PAYCREST NATIVE SWAP FINAL RATE:",
-      settlementQuoteUrl
-    );
-
-    const settlementQuoteResponse =
-      await fetch(
-        settlementQuoteUrl,
-        {
-          cache:
-            "no-store",
-
-          headers: {
-            Accept:
-              "application/json",
-          },
-        }
-      );
-
-    let settlementQuoteData:
-      any = null;
-
-    try {
-      settlementQuoteData =
-        await settlementQuoteResponse.json();
-    } catch {
-      settlementQuoteData =
-        null;
-    }
-
-    if (
-      !settlementQuoteResponse.ok ||
-      settlementQuoteData?.status !==
-        "success"
-    ) {
-      console.error(
-        "PAYCREST SETTLEMENT QUOTE ERROR:",
-        {
-          status:
-            settlementQuoteResponse.status,
-
-          data:
-            settlementQuoteData,
-        }
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            `Unable to calculate ${settlementToken} equivalent.`,
-        },
-        { status: 502 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * FINAL SETTLEMENT RATE
-     * ------------------------------------------------
-     */
-
-    const settlementRate =
-      Number(
-        settlementQuoteData
-          ?.data
-          ?.sell
-          ?.rate
-      );
-
-    if (
-      !Number.isFinite(
-        settlementRate
-      ) ||
-      settlementRate <= 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            `Invalid ${settlementToken} quote rate returned by Paycrest.`,
-        },
-        { status: 502 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * NET SETTLEMENT AMOUNT
-     * ------------------------------------------------
-     *
-     * This is the Paycrest principal amount
-     * corresponding to the requested NGN amount.
-     */
 
     settlementAmount =
       nairaAmount /
       settlementRate;
 
-    /*
-     * ------------------------------------------------
-     * PAYCREST SENDER FEE
-     * ------------------------------------------------
-     *
-     * Paycrest documentation states that the
-     * total crypto sent for an offramp is:
-     *
-     * amount + senderFee + transactionFee
-     *
-     * The public rate endpoint does not give us
-     * the final transactionFee before the order
-     * is created.
-     *
-     * Therefore this quote includes the configured
-     * sender fee, but transactionFee is still
-     * finalized during order creation.
-     */
-
-    const senderFeePercent =
-      getSenderFeePercent();
-
     const senderFee =
       settlementAmount *
-      (senderFeePercent / 100);
-
-    /*
-     * ------------------------------------------------
-     * TOTAL SETTLEMENT AMOUNT
-     * ------------------------------------------------
-     *
-     * This is the amount we ask 0x to acquire.
-     *
-     * settlementAmount
-     * + senderFee
-     *
-     * Transaction fee is not added here because
-     * Paycrest only gives the exact transaction fee
-     * on the created order.
-     */
+      (senderFeePercent /
+        100);
 
     const totalSettlementAmount =
       settlementAmount +
       senderFee;
-
-    /*
-     * ------------------------------------------------
-     * CONVERT TO BASE UNITS
-     * ------------------------------------------------
-     */
 
     const buyAmount =
       toBaseUnits(
@@ -1090,44 +1026,21 @@ export async function POST(
         settlementDecimals
       );
 
-    /*
-     * ------------------------------------------------
-     * 0x API KEY
-     * ------------------------------------------------
-     */
-
     const zeroXApiKey =
       process.env
         .ZEROX_API_KEY
         ?.trim();
 
     if (!zeroXApiKey) {
-      console.error(
-        "ZEROX_API_KEY is missing."
-      );
-
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Swap API configuration is missing.",
+            "0x API key is not configured.",
         },
         { status: 500 }
       );
     }
-
-    /*
-     * ------------------------------------------------
-     * 0x EXACT BUY PRICE
-     * ------------------------------------------------
-     *
-     * We ask:
-     *
-     * "How much ETH/BNB is required to obtain
-     * exactly the total amount of USDC/USDT that
-     * Paycrest will require, including our sender fee?"
-     */
 
     const zeroXParams =
       new URLSearchParams({
@@ -1151,34 +1064,11 @@ export async function POST(
     const zeroXUrl =
       `${ZEROX_API}?${zeroXParams.toString()}`;
 
-    console.log(
-      "0x NATIVE SWAP PRICE REQUEST:",
-      {
-        token,
-
-        settlementToken,
-
-        chainId:
-          tokenConfig.chainId,
-
-        settlementAmount,
-
-        senderFeePercent,
-
-        senderFee,
-
-        totalSettlementAmount,
-
-        buyAmount,
-      }
-    );
-
     const zeroXResponse =
       await fetch(
         zeroXUrl,
         {
-          method:
-            "GET",
+          method: "GET",
 
           headers: {
             "0x-api-key":
@@ -1199,8 +1089,8 @@ export async function POST(
     const zeroXText =
       await zeroXResponse.text();
 
-    let zeroXData:
-      any = null;
+    let zeroXData: any =
+      null;
 
     try {
       zeroXData =
@@ -1209,8 +1099,7 @@ export async function POST(
         );
     } catch {
       zeroXData = {
-        raw:
-          zeroXText,
+        raw: zeroXText,
       };
     }
 
@@ -1218,11 +1107,10 @@ export async function POST(
       !zeroXResponse.ok
     ) {
       console.error(
-        "0x NATIVE SWAP PRICE ERROR:",
+        "0X QUOTE ERROR:",
         {
           status:
             zeroXResponse.status,
-
           data:
             zeroXData,
         }
@@ -1231,25 +1119,17 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Unable to calculate the native token swap.",
-
-          details:
-            zeroXData,
+            zeroXData?.reason ||
+            zeroXData?.message ||
+            "Unable to calculate the crypto conversion.",
         },
         {
           status:
-            502,
+            zeroXResponse.status,
         }
       );
     }
-
-    /*
-     * ------------------------------------------------
-     * LIQUIDITY CHECK
-     * ------------------------------------------------
-     */
 
     if (
       zeroXData?.liquidityAvailable ===
@@ -1258,42 +1138,27 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-
           error:
-            `Insufficient ${token} liquidity for this transaction.`,
+            "Insufficient liquidity for this conversion.",
         },
-        { status: 502 }
+        { status: 400 }
       );
     }
 
-    /*
-     * ------------------------------------------------
-     * EXTRACT NATIVE TOKEN AMOUNT
-     * ------------------------------------------------
-     */
-
     const nativeAmountBaseUnits =
-      zeroXData
-        ?.maxSellAmount ??
-      zeroXData
-        ?.sellAmount;
+      zeroXData?.maxSellAmount ??
+      zeroXData?.sellAmount;
 
     if (
       !nativeAmountBaseUnits
     ) {
-      console.error(
-        "0x response did not contain maxSellAmount/sellAmount:",
-        zeroXData
-      );
-
       return NextResponse.json(
         {
           success: false,
-
           error:
-            "Invalid native-token swap quote returned by 0x.",
+            "Unable to calculate the native crypto amount.",
         },
-        { status: 502 }
+        { status: 400 }
       );
     }
 
@@ -1303,12 +1168,6 @@ export async function POST(
         tokenConfig.nativeDecimals
       );
 
-    /*
-     * ------------------------------------------------
-     * RESPONSE
-     * ------------------------------------------------
-     */
-
     return NextResponse.json(
       {
         success: true,
@@ -1317,15 +1176,12 @@ export async function POST(
 
         network,
 
-        fiat:
-          FIAT,
+        fiat: FIAT,
+
+        inputMode:
+          "naira",
 
         nairaAmount,
-
-        /*
-         * Amount of native ETH/BNB the user
-         * approximately needs to send.
-         */
 
         cryptoAmount:
           nativeAmount,
@@ -1333,27 +1189,11 @@ export async function POST(
         requiresSwap:
           true,
 
-        /*
-         * Paycrest principal amount that
-         * corresponds to the requested NGN.
-         */
-
         settlementAmount,
-
-        /*
-         * Biyaport's sender fee.
-         */
 
         senderFeePercent,
 
         senderFee,
-
-        /*
-         * Principal + sender fee.
-         *
-         * This is the amount 0x is currently
-         * targeting.
-         */
 
         totalSettlementAmount,
 
@@ -1373,15 +1213,7 @@ export async function POST(
           chainId:
             tokenConfig.chainId,
 
-          /*
-           * Principal only.
-           */
-
           settlementAmount,
-
-          /*
-           * Principal + sender fee.
-           */
 
           totalSettlementAmount,
 
@@ -1413,7 +1245,10 @@ export async function POST(
         success: false,
 
         error:
-          "Unable to calculate crypto equivalent.",
+          error instanceof
+          Error
+            ? error.message
+            : "Unable to calculate crypto equivalent.",
       },
       { status: 500 }
     );

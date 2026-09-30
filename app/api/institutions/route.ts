@@ -1,25 +1,61 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+const SUPPORTED_FIAT_CURRENCIES = [
+  "NGN",
+  "KES",
+  "UGX",
+  "TZS",
+] as const;
+
+type SupportedFiatCurrency =
+  (typeof SUPPORTED_FIAT_CURRENCIES)[number];
+
+export async function GET(request: NextRequest) {
   const apiKey = process.env.PAYCREST_API_KEY?.trim();
 
   if (!apiKey) {
-    console.error(
-      "PAYCREST_API_KEY is missing."
-    );
+    console.error("PAYCREST_API_KEY is missing.");
 
     return NextResponse.json(
       {
-        error:
-          "Paycrest API key is not configured.",
+        error: "Paycrest API key is not configured.",
       },
       { status: 500 }
     );
   }
 
+  const currency = request.nextUrl.searchParams
+    .get("currency")
+    ?.trim()
+    .toUpperCase();
+
+  if (!currency) {
+    return NextResponse.json(
+      {
+        error: "Fiat currency is required.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (
+    !SUPPORTED_FIAT_CURRENCIES.includes(
+      currency as SupportedFiatCurrency
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error: "Unsupported fiat currency.",
+        supportedCurrencies:
+          SUPPORTED_FIAT_CURRENCIES,
+      },
+      { status: 400 }
+    );
+  }
+
   try {
     const response = await fetch(
-      "https://api.paycrest.io/v2/institutions/NGN",
+      `https://api.paycrest.io/v2/institutions/${currency}`,
       {
         headers: {
           "API-Key": apiKey,
@@ -35,6 +71,11 @@ export async function GET() {
     console.log(
       "PAYCREST INSTITUTIONS STATUS:",
       response.status
+    );
+
+    console.log(
+      "PAYCREST INSTITUTIONS CURRENCY:",
+      currency
     );
 
     console.log(
@@ -81,8 +122,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        error:
-          "Unable to connect to Paycrest.",
+        error: "Unable to connect to Paycrest.",
       },
       { status: 500 }
     );

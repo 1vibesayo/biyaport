@@ -42,7 +42,7 @@ import {
   keccak256,
   stringToHex,
 } from "viem";
-import { base, bsc, mainnet, polygon } from "viem/chains";
+import { arbitrum, base, bsc, mainnet, polygon } from "viem/chains";
 import QRCode from "qrcode";
 
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
@@ -56,6 +56,9 @@ import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
 
 const BASE_CHAIN_ID = 8453;
 const BSC_CHAIN_ID = 56;
+const ETHEREUM_CHAIN_ID = 1;
+const ARBITRUM_CHAIN_ID = 42161;
+const POLYGON_CHAIN_ID = 137;
 
 const BASE_USDT_ADDRESS =
   "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" as `0x${string}`;
@@ -68,6 +71,24 @@ const BSC_USDT_ADDRESS =
 
 const BSC_USDC_ADDRESS =
   "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" as `0x${string}`;
+
+const ETHEREUM_USDT_ADDRESS =
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
+
+const ETHEREUM_USDC_ADDRESS =
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
+
+const ARBITRUM_USDT_ADDRESS =
+  "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9" as `0x${string}`;
+
+const ARBITRUM_USDC_ADDRESS =
+  "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" as `0x${string}`;
+
+const POLYGON_USDT_ADDRESS =
+  "0xc2132D05D31c914a87C6611C10748AaCbA0A" as `0x${string}`;
+
+const POLYGON_USDC_ADDRESS =
+  "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" as `0x${string}`;
 
 const USDT_DECIMALS = 6;
 const USDC_DECIMALS = 6;
@@ -270,6 +291,9 @@ const BSC_RPC_URL =
   process.env.NEXT_PUBLIC_BSC_RPC_URL?.trim() ||
   "https://bsc-dataseed.bnbchain.org";
 
+const ARBITRUM_RPC_URL =
+  process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL?.trim();
+
 const BASE_PUBLIC_CLIENT = createPublicClient({
   chain: base,
   transport: fallback(
@@ -339,6 +363,25 @@ const ETHEREUM_PUBLIC_CLIENT = createPublicClient({
   ),
 });
 
+const ARBITRUM_PUBLIC_CLIENT = createPublicClient({
+  chain: arbitrum,
+  transport: fallback(
+    [
+      ...(ARBITRUM_RPC_URL
+        ? [
+            http(ARBITRUM_RPC_URL, {
+              timeout: 10_000,
+              retryCount: 2,
+              retryDelay: 400,
+            }),
+          ]
+        : []),
+      http(),
+    ],
+    { rank: false }
+  ),
+});
+
 const POLYGON_PUBLIC_CLIENT = createPublicClient({
   chain: polygon,
   transport: fallback(
@@ -402,19 +445,33 @@ function isValidBCodeFormat(code: string) {
   );
 }
 
-type NetworkKey = "base" | "bnb-smart-chain";
+type NetworkKey =
+  | "ethereum"
+  | "base"
+  | "arbitrum"
+  | "polygon"
+  | "bnb-smart-chain";
 
 type NetworkConfig = {
   key: NetworkKey;
   name: string;
   shortName: string;
   chainId: number;
-  chain: typeof base | typeof bsc;
+  chain: typeof mainnet | typeof base | typeof arbitrum | typeof polygon | typeof bsc;
   explorerTx: string;
   logo: string;
 };
 
 const NETWORKS: NetworkConfig[] = [
+  {
+    key: "ethereum",
+    name: "Ethereum",
+    shortName: "Ethereum",
+    chainId: ETHEREUM_CHAIN_ID,
+    chain: mainnet,
+    explorerTx: "https://etherscan.io/tx/",
+    logo: "/eth-logo.svg",
+  },
   {
     key: "base",
     name: "Base",
@@ -423,6 +480,24 @@ const NETWORKS: NetworkConfig[] = [
     chain: base,
     explorerTx: BASESCAN_TX_URL,
     logo: "/base-logo.svg",
+  },
+  {
+    key: "arbitrum",
+    name: "Arbitrum",
+    shortName: "Arbitrum",
+    chainId: ARBITRUM_CHAIN_ID,
+    chain: arbitrum,
+    explorerTx: "https://arbiscan.io/tx/",
+    logo: "/arbitrum-logo.svg",
+  },
+  {
+    key: "polygon",
+    name: "Polygon",
+    shortName: "Polygon",
+    chainId: POLYGON_CHAIN_ID,
+    chain: polygon,
+    explorerTx: "https://polygonscan.com/tx/",
+    logo: "/pol-logo.svg",
   },
   {
     key: "bnb-smart-chain",
@@ -446,33 +521,47 @@ const getTokenConfig = (
   network: NetworkKey,
   symbol: "USDT" | "USDC"
 ) => {
-  if (network === "base") {
-    return symbol === "USDT"
-      ? {
-          address: BASE_USDT_ADDRESS,
-          decimals: USDT_DECIMALS,
-        }
-      : {
-          address: BASE_USDC_ADDRESS,
-          decimals: USDC_DECIMALS,
-        };
-  }
+  const configs: Record<NetworkKey, Record<"USDT" | "USDC", { address: `0x${string}`; decimals: number }>> = {
+    ethereum: {
+      USDT: { address: ETHEREUM_USDT_ADDRESS, decimals: 6 },
+      USDC: { address: ETHEREUM_USDC_ADDRESS, decimals: 6 },
+    },
+    base: {
+      USDT: { address: BASE_USDT_ADDRESS, decimals: USDT_DECIMALS },
+      USDC: { address: BASE_USDC_ADDRESS, decimals: USDC_DECIMALS },
+    },
+    arbitrum: {
+      USDT: { address: ARBITRUM_USDT_ADDRESS, decimals: 6 },
+      USDC: { address: ARBITRUM_USDC_ADDRESS, decimals: 6 },
+    },
+    polygon: {
+      USDT: { address: POLYGON_USDT_ADDRESS, decimals: 6 },
+      USDC: { address: POLYGON_USDC_ADDRESS, decimals: 6 },
+    },
+    "bnb-smart-chain": {
+      USDT: { address: BSC_USDT_ADDRESS, decimals: BSC_USDT_DECIMALS },
+      USDC: { address: BSC_USDC_ADDRESS, decimals: BSC_USDC_DECIMALS },
+    },
+  };
 
-  return symbol === "USDT"
-    ? {
-        address: BSC_USDT_ADDRESS,
-        decimals: BSC_USDT_DECIMALS,
-      }
-    : {
-        address: BSC_USDC_ADDRESS,
-        decimals: BSC_USDC_DECIMALS,
-      };
+  return configs[network][symbol];
 };
 
-const getPublicClient = (network: NetworkKey) =>
-  network === "bnb-smart-chain"
-    ? BSC_PUBLIC_CLIENT
-    : BASE_PUBLIC_CLIENT;
+const getPublicClient = (network: NetworkKey) => {
+  switch (network) {
+    case "ethereum":
+      return ETHEREUM_PUBLIC_CLIENT;
+    case "arbitrum":
+      return ARBITRUM_PUBLIC_CLIENT;
+    case "polygon":
+      return POLYGON_PUBLIC_CLIENT;
+    case "bnb-smart-chain":
+      return BSC_PUBLIC_CLIENT;
+    case "base":
+    default:
+      return BASE_PUBLIC_CLIENT;
+  }
+};
 
 /*
  * ====================================================
@@ -565,7 +654,7 @@ type TokenBalance = {
   BNB?: string;
 };
 
-type CurrencyCode = "NGN" | "KES";
+type CurrencyCode = "NGN";
 
 type PaymentState =
   | "form"
@@ -613,22 +702,29 @@ type OnrampOrder = {
  */
 
 const CRYPTO_OPTIONS: CryptoOption[] = [
-  {
-    symbol: "USDT",
-    name: "Tether USD",
-    network: "base",
-    address: BASE_USDT_ADDRESS,
-    decimals: USDT_DECIMALS,
-    logo: "/usdt-logo.svg",
-  },
-  {
-    symbol: "USDC",
-    name: "USD Coin",
-    network: "base",
-    address: BASE_USDC_ADDRESS,
-    decimals: USDC_DECIMALS,
-    logo: "/usdc-logo.svg",
-  },
+  ...NETWORKS.flatMap((network) => {
+    const tokens = getTokenConfig(network.key, "USDT");
+    const usdc = getTokenConfig(network.key, "USDC");
+
+    return [
+      {
+        symbol: "USDT" as const,
+        name: "Tether USD",
+        network: network.key,
+        address: tokens.address,
+        decimals: tokens.decimals,
+        logo: "/usdt-logo.svg",
+      },
+      {
+        symbol: "USDC" as const,
+        name: "USD Coin",
+        network: network.key,
+        address: usdc.address,
+        decimals: usdc.decimals,
+        logo: "/usdc-logo.svg",
+      },
+    ];
+  }),
   {
     symbol: "ETH",
     name: "Ethereum",
@@ -636,23 +732,6 @@ const CRYPTO_OPTIONS: CryptoOption[] = [
     address: null,
     decimals: 18,
     logo: "/eth-logo.svg",
-  },
-
-  {
-    symbol: "USDT",
-    name: "Tether USD",
-    network: "bnb-smart-chain",
-    address: BSC_USDT_ADDRESS,
-    decimals: BSC_USDT_DECIMALS,
-    logo: "/usdt-logo.svg",
-  },
-  {
-    symbol: "USDC",
-    name: "USD Coin",
-    network: "bnb-smart-chain",
-    address: BSC_USDC_ADDRESS,
-    decimals: BSC_USDC_DECIMALS,
-    logo: "/usdc-logo.svg",
   },
 ];
 
@@ -673,12 +752,6 @@ const CURRENCIES: {
     name: "Nigerian naira",
     flag: "/nigeria-flag.svg",
     symbol: "₦",
-  },
-  {
-    code: "KES",
-    name: "Kenyan shillings",
-    flag: "/kenya-flag.svg",
-    symbol: "KSh",
   },
 ];
 
@@ -1242,7 +1315,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        "/api/institutions",
+        "/api/institutions?currency=NGN",
         {
           cache: "no-store",
         }
@@ -1646,10 +1719,9 @@ useEffect(() => {
               "application/json",
           },
           body: JSON.stringify({
-            institution:
-              selectedBank.code,
-            accountIdentifier:
-              value,
+            institution: selectedBank.code,
+            accountIdentifier: value,
+            currency: "NGN",
           }),
         }
       );
@@ -1775,6 +1847,7 @@ useEffect(() => {
   const filteredOnrampCryptoOptions =
   CRYPTO_OPTIONS.filter(
     (crypto) =>
+      crypto.symbol !== "ETH" &&
       crypto.network === selectedNetwork &&
       (
         crypto.symbol
@@ -2555,10 +2628,9 @@ const showPayButton =
               "application/json",
           },
           body: JSON.stringify({
-            institution:
-              onrampRefundBank.code,
-            accountIdentifier:
-              value,
+            institution: onrampRefundBank.code,
+            accountIdentifier: value,
+            currency: "NGN",
           }),
         }
       );
@@ -3853,6 +3925,30 @@ if (selectedCrypto.symbol === "ETH") {
             will-change: transform, opacity;
           }
 
+
+          .biyaport-scrollable {
+            scrollbar-width: thin;
+            scrollbar-color: #0F0F1B #050511;
+          }
+
+          .biyaport-scrollable::-webkit-scrollbar {
+            width: 8px;
+          }
+
+          .biyaport-scrollable::-webkit-scrollbar-track {
+            background: #050511;
+          }
+
+          .biyaport-scrollable::-webkit-scrollbar-thumb {
+            background: #0F0F1B;
+            border-radius: 999px;
+            border: 2px solid #050511;
+          }
+
+          .biyaport-scrollable::-webkit-scrollbar-thumb:hover {
+            background: #0F0F1B;
+          }
+
           @media (prefers-reduced-motion: reduce) {
             .biyaport-dropdown {
               animation: none;
@@ -4066,7 +4162,7 @@ if (selectedCrypto.symbol === "ETH") {
           onSwap={handleSwapNavigation}
         />
 
-        <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
+        <section className="flex min-h-screen items-start justify-center px-4 pb-32 pt-[112px] sm:px-6 sm:pb-16 sm:pt-[128px]">
           <div className="flex w-full max-w-[590px] flex-col items-center">
 
             <div className="w-full rounded-[16px] border border-border bg-card p-5">
@@ -4281,8 +4377,8 @@ ONRAMP MODAL 1
                         <span
                           className={
                             selectedCrypto
-                              ? "text-[16px] font-semibold"
-                              : "text-[16px] text-muted-foreground"
+                              ? "text-[15px] font-semibold"
+                              : "text-[15px] text-muted-foreground"
                           }
                         >
                           {selectedCrypto?.symbol ||
@@ -4316,7 +4412,7 @@ ONRAMP MODAL 1
                     </div>
 
                     {onrampCryptoDropdownOpen && (
-                      <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                      <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                         <div className="border-b border-border p-3">
   <div className="flex items-center gap-2">
@@ -4656,7 +4752,7 @@ ONRAMP MODAL 1
 
       {/* BANK DROPDOWN */}
       {onrampBankDropdownOpen && (
-        <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+        <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
           {/* SEARCH */}
           <div className="border-b border-border p-3">
@@ -5126,7 +5222,7 @@ ONRAMP MODAL 1
                         </button>
 
                         {bankDropdownOpen && (
-                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                             <div className="border-b border-border p-3">
                               <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
@@ -5354,7 +5450,7 @@ ONRAMP MODAL 1
                         </button>
 
                         {cryptoDropdownOpen && (
-                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+                          <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
 
                             <div className="border-b border-border p-3">
                               <div className="flex items-center gap-2">
@@ -8715,7 +8811,7 @@ const downloadMyBCodeImage =
                             1
                           );
                         }}
-                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-300 ease-out ${
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                           mode ===
                           "generate"
                             ? "bg-[#050511] text-foreground shadow-sm"
@@ -8735,7 +8831,7 @@ const downloadMyBCodeImage =
                             1
                           );
                         }}
-                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-300 ease-out ${
+                        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                           mode ===
                           "redeem"
                             ? "bg-[#050511] text-foreground shadow-sm"
@@ -8911,7 +9007,7 @@ const downloadMyBCodeImage =
   </button>
 
   {generateCryptoDropdownOpen && (
-    <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[12px] border border-border bg-[#070812] shadow-2xl">
+    <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
       <div className="flex items-center gap-2 border-b border-border p-3">
         <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -13359,7 +13455,7 @@ function SwapView({
           onSwap={onSwap}
         />
 
-        <section className="flex min-h-screen items-start justify-center px-4 pb-10 pt-[112px] sm:px-6 sm:pt-[128px]">
+        <section className="flex min-h-screen items-start justify-center px-4 pb-32 pt-[112px] sm:px-6 sm:pb-16 sm:pt-[128px]">
           <div className="w-full max-w-[590px]">
             <div className="rounded-[16px] border border-border bg-card p-5 sm:p-6">
               {swapSuccess ? (
@@ -14017,7 +14113,7 @@ function NetworkSelector({
       {open && (
         <div
           role="listbox"
-          className="biyaport-dropdown absolute right-0 top-[calc(100%+8px)] z-[60] w-[220px] overflow-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 shadow-2xl"
+          className="biyaport-dropdown biyaport-scrollable absolute right-0 top-[calc(100%+8px)] z-[60] max-h-[min(320px,calc(100dvh-140px))] w-[220px] overflow-y-auto overscroll-contain overflow-x-hidden rounded-[10px] border border-border bg-[#070812] p-1.5 pb-2 shadow-2xl"
         >
           {NETWORKS.map(
             (
@@ -14117,7 +14213,7 @@ function SiteNav({
                 setActiveMobileTab("quick-port");
                 onQuickPort?.();
               }}
-              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 activeMobileTab === "quick-port"
                   ? "text-[#0B50EA]"
                   : "text-muted-foreground hover:text-foreground"
@@ -14132,7 +14228,7 @@ function SiteNav({
                 setActiveMobileTab("b-codes");
                 onBCodes?.();
               }}
-              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 activeMobileTab === "b-codes"
                   ? "text-[#0B50EA]"
                   : "text-muted-foreground hover:text-foreground"
@@ -14147,7 +14243,7 @@ function SiteNav({
                 setActiveMobileTab("swap");
                 onSwap?.();
               }}
-              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-300 ease-out ${
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 activeMobileTab === "swap"
                   ? "text-[#0B50EA]"
                   : "text-muted-foreground hover:text-foreground"
@@ -14174,7 +14270,7 @@ function SiteNav({
               setActiveMobileTab("quick-port");
               onQuickPort?.();
             }}
-            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
               activeMobileTab === "quick-port"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -14200,7 +14296,7 @@ function SiteNav({
     setActiveMobileTab("b-codes");
     onBCodes?.();
   }}
-  className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
+  className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
     activeMobileTab === "b-codes"
       ? "bg-[#0B50EA] px-6 text-white"
       : "w-11 px-0 text-muted-foreground active:scale-95"
@@ -14226,7 +14322,7 @@ function SiteNav({
               setActiveMobileTab("swap");
               onSwap?.();
             }}
-            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-300 ease-out ${
+            className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
               activeMobileTab === "swap"
                 ? "bg-[#0B50EA] px-6 text-white"
                 : "w-11 px-0 text-muted-foreground active:scale-95"

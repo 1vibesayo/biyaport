@@ -3968,6 +3968,44 @@ if (selectedCrypto.symbol === "ETH") {
               transform: rotate(360deg);
             }
           }
+
+          @keyframes biyaport-promo-in {
+          0% {
+            opacity: 0;
+            transform: translateY(18px) scale(0.82);
+            filter: blur(4px);
+          }
+
+          60% {
+            opacity: 1;
+            filter: blur(0);
+          }
+
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            filter: blur(0);
+          }
+        }
+
+        @keyframes biyaport-help-in {
+          0% {
+            opacity: 0;
+            transform: translateY(18px) scale(0.82);
+            filter: blur(4px);
+          }
+
+          60% {
+            opacity: 1;
+            filter: blur(0);
+          }
+
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            filter: blur(0);
+          }
+        }
         `}</style>
       </PaymentShell>
     );
@@ -14197,36 +14235,50 @@ function SiteNav({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const key = "biyaport-promo-shown";
+
     if (window.sessionStorage.getItem(key)) return;
+
     window.sessionStorage.setItem(key, "1");
     setPromoOpen(true);
-    const timeout = window.setTimeout(() => setPromoOpen(false), 10_000);
+
+    const timeout = window.setTimeout(
+      () => setPromoOpen(false),
+      10_000
+    );
+
     return () => window.clearTimeout(timeout);
   }, []);
 
   const closeHelp = () => setHelpOpen(false);
   const closePromo = () => setPromoOpen(false);
+
   const faqs = [
     {
       question: "What is Biyaport?",
-      answer: "Biyaport lets you buy and sell supported crypto with local currency, swap tokens, and create or redeem B-Codes.",
+      answer:
+        "Biyaport lets you buy and sell supported crypto with local currency, swap tokens, and create or redeem B-Codes.",
     },
     {
       question: "How do I buy crypto?",
-      answer: "Connect your wallet, choose Buy, enter an amount, and follow the payment instructions to complete your order.",
+      answer:
+        "Connect your wallet, choose Buy, enter an amount, and follow the payment instructions to complete your order.",
     },
     {
       question: "How do I sell crypto?",
-      answer: "Connect your wallet, choose Sell, select a supported token and network, then provide your bank details and follow the transaction steps.",
+      answer:
+        "Connect your wallet, choose Sell, select a supported token and network, then provide your bank details and follow the transaction steps.",
     },
     {
       question: "What are B-Codes?",
-      answer: "B-Codes are on-chain codes you can create and share. A recipient can redeem a valid code to receive its supported tokens.",
+      answer:
+        "B-Codes are on-chain codes you can create and share. A recipient can redeem a valid code to receive its supported tokens.",
     },
     {
       question: "Which networks and tokens are supported?",
-      answer: "Biyaport supports selected tokens across Ethereum, Base, Arbitrum, Polygon, and BNB Smart Chain. Available assets depend on the feature you use.",
+      answer:
+        "Biyaport supports selected tokens across Ethereum, Base, Arbitrum, Polygon, and BNB Smart Chain. Available assets depend on the feature you use.",
     },
   ];
 
@@ -14240,7 +14292,11 @@ function SiteNav({
         setPromoOpen(false);
         setFaqOpen(false);
       }}
-      className={`${mobile ? "h-12 w-12 rounded-[12px]" : "h-12 w-12 rounded-full"} relative z-[141] flex shrink-0 items-center justify-center border border-[#0F0F1B] bg-[#050511] text-white shadow-lg transition-transform duration-300 hover:scale-105 active:scale-95`}
+      className={`${
+        mobile
+          ? "h-12 w-12 rounded-[12px]"
+          : "h-12 w-12 rounded-full"
+      } relative z-[141] flex shrink-0 items-center justify-center border border-[#0F0F1B] bg-[#050511] text-white shadow-lg transition-transform duration-300 hover:scale-105 active:scale-95`}
     >
       <CircleHelp className="h-5 w-5" strokeWidth={2} />
     </button>
@@ -14256,7 +14312,11 @@ function SiteNav({
         setHelpOpen(false);
         setFaqOpen(false);
       }}
-      className={`${mobile ? "h-12 w-12 rounded-[12px]" : "h-12 w-12 rounded-full"} relative z-[141] flex shrink-0 items-center justify-center border border-[#0F0F1B] bg-[#050511] text-white shadow-lg transition-transform duration-300 hover:scale-105 active:scale-95`}
+      className={`${
+        mobile
+          ? "h-12 w-12 rounded-[12px]"
+          : "h-12 w-12 rounded-full"
+      } relative z-[141] flex shrink-0 items-center justify-center border border-[#0F0F1B] bg-[#050511] text-white shadow-lg transition-transform duration-300 hover:scale-105 active:scale-95`}
     >
       <Gift className="h-5 w-5" strokeWidth={2} />
     </button>
@@ -14267,38 +14327,147 @@ function SiteNav({
       <header className="fixed left-0 right-0 top-0 z-[100] px-4 pt-4 sm:px-6 sm:pt-6">
         <div className="flex items-center justify-between rounded-[16px] border border-[#0F0F1B] bg-[#050511]/95 p-3 shadow-2xl backdrop-blur-md">
           <div className="flex min-w-0 items-center">
-            <Image src="/biyaport_logo.svg" alt="Biyaport" width={120} height={33} className="h-[27px] w-auto object-contain sm:h-[33px]" priority />
+            <Image
+              src="/biyaport_logo.svg"
+              alt="Biyaport"
+              width={120}
+              height={33}
+              className="h-[27px] w-auto object-contain sm:h-[33px]"
+              priority
+            />
           </div>
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-[11px] md:flex" aria-label="Main navigation">
-            <button type="button" onClick={() => { setActiveMobileTab("quick-port"); onQuickPort?.(); }} className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "quick-port" ? "text-[#0B50EA]" : "text-muted-foreground hover:text-foreground"}`}>Quick Port</button>
-            <button type="button" onClick={() => { setActiveMobileTab("b-codes"); onBCodes?.(); }} className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "b-codes" ? "text-[#0B50EA]" : "text-muted-foreground hover:text-foreground"}`}>B-Codes</button>
-            <button type="button" onClick={() => { setActiveMobileTab("swap"); onSwap?.(); }} className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "swap" ? "text-[#0B50EA]" : "text-muted-foreground hover:text-foreground"}`}>Swap</button>
+
+          <nav
+            className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-[11px] md:flex"
+            aria-label="Main navigation"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("quick-port");
+                onQuickPort?.();
+              }}
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "quick-port"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Quick Port
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("b-codes");
+                onBCodes?.();
+              }}
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "b-codes"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              B-Codes
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("swap");
+                onSwap?.();
+              }}
+              className={`rounded-[8px] px-3 py-2 text-[14px] font-semibold transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "swap"
+                  ? "text-[#0B50EA]"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Swap
+            </button>
           </nav>
+
           <ConnectWalletButton />
         </div>
       </header>
 
       {(helpOpen || faqOpen || promoOpen) && (
-        <button type="button" aria-label="Close overlay" onClick={() => { closeHelp(); setFaqOpen(false); closePromo(); }} className="fixed inset-0 z-[120] cursor-default bg-[#050511]/25 backdrop-blur-[6px]" />
+        <button
+          type="button"
+          aria-label="Close overlay"
+          onClick={() => {
+            closeHelp();
+            setFaqOpen(false);
+            closePromo();
+          }}
+          className="fixed inset-0 z-[120] cursor-default bg-[#050511]/25 backdrop-blur-[6px]"
+        />
       )}
 
-      {/* Desktop utility buttons */}
+      {/* Desktop promotion */}
       <div className="fixed bottom-5 left-5 z-[140] hidden items-end md:flex">
         {promoOpen && (
-          <div className="absolute bottom-14 left-0 w-[310px] origin-bottom-left animate-[biyaport-pop-in_260ms_cubic-bezier(0.22,1,0.36,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 pr-10 text-[14px] leading-6 text-white shadow-2xl">
-            <button type="button" aria-label="Close promotion" onClick={closePromo} className="absolute right-3 top-3 rounded p-1 text-white/70 transition hover:text-white"><X className="h-4 w-4" /></button>
-            Get <strong className="font-bold">₦5k</strong> when you Buy/sell up to $150! Join now <a href="https://t.me/biyaport" target="_blank" rel="noreferrer" className="font-bold text-white underline underline-offset-2">Claim</a>
-          </div>
+          <div className="absolute bottom-14 left-0 origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 text-[14px] leading-6 text-white shadow-2xl whitespace-nowrap">
+  <button
+    type="button"
+    onClick={closePromo}
+    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+    aria-label="Close promotion"
+  >
+    <X className="h-4 w-4" />
+  </button>
+
+  <p className="pr-6">
+    Get <strong>₦5k</strong> cashback when you Buy/sell up to $150!{" "}
+    <a
+      href="https://t.me/biyaport"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-bold text-[#4D8DFF] transition hover:text-white"
+    >
+      Claim now
+    </a>
+  </p>
+</div>
         )}
+
         {promoButton(false)}
       </div>
+
+      {/* Desktop help */}
       <div className="fixed bottom-5 right-5 z-[140] hidden items-end md:flex">
         {helpOpen && !faqOpen && (
-          <div className="absolute bottom-14 right-0 flex origin-bottom-right flex-col items-end gap-2 animate-[biyaport-pop-in_260ms_cubic-bezier(0.22,1,0.36,1)]">
-            <button type="button" onClick={() => { setFaqOpen(true); setHelpOpen(false); }} className="rounded-[11px] border border-[#242434] bg-[#0F0F1B] px-5 py-3 text-sm font-medium text-white shadow-xl transition hover:bg-[#171725]">FAQ</button>
-            <button type="button" onClick={() => { setHelpOpen(false); window.open("https://t.me/biyaport", "_blank", "noopener,noreferrer"); }} className="rounded-[11px] border border-[#242434] bg-[#0F0F1B] px-5 py-3 text-sm font-medium text-white shadow-xl transition hover:bg-[#171725]">Support</button>
+          <div className="absolute bottom-14 right-0 w-[170px] origin-bottom-right animate-[biyaport-help-in_500ms_cubic-bezier(0.16,1,0.3,1)] overflow-hidden rounded-[13px] border border-[#242434] bg-[#0F0F1B] shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setFaqOpen(true);
+                setHelpOpen(false);
+              }}
+              className="flex w-full items-center px-4 py-3.5 text-left text-sm font-medium text-white transition hover:bg-[#171725]"
+            >
+              FAQ
+            </button>
+
+            <div className="mx-3 h-px bg-[#292938]" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setHelpOpen(false);
+                window.open(
+                  "https://t.me/biyaport",
+                  "_blank",
+                  "noopener,noreferrer"
+                );
+              }}
+              className="flex w-full items-center px-4 py-3.5 text-left text-sm font-medium text-white transition hover:bg-[#171725]"
+            >
+              Support
+            </button>
           </div>
         )}
+
         {helpButton(false)}
       </div>
 
@@ -14307,59 +14476,256 @@ function SiteNav({
         <div className="flex w-full max-w-[430px] items-center justify-between gap-2">
           {promoOpen ? (
             <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-              <button type="button" aria-label="Close promotion" onClick={closePromo} className="relative z-[141] flex h-12 w-12 items-center justify-center rounded-[12px] border border-[#0F0F1B] bg-[#050511] text-white"><Gift className="h-5 w-5" /></button>
+              <button
+                type="button"
+                aria-label="Close promotion"
+                onClick={closePromo}
+                className="relative z-[141] flex h-12 w-12 items-center justify-center rounded-[12px] border border-[#0F0F1B] bg-[#050511] text-white"
+              >
+                <Gift className="h-5 w-5" />
+              </button>
             </div>
-          ) : promoButton(true)}
-          <nav className="flex w-fit max-w-[calc(100vw-152px)] items-center gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2" aria-label="Mobile navigation">
-            <button type="button" onClick={() => { setActiveMobileTab("quick-port"); onQuickPort?.(); }} className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "quick-port" ? "bg-[#0B50EA] px-4 text-white" : "w-10 px-0 text-muted-foreground active:scale-95"}`}><HomeIcon className="h-5 w-5 shrink-0" strokeWidth={2} /><span className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${activeMobileTab === "quick-port" ? "ml-2 max-w-[100px] opacity-100" : "ml-0 max-w-0 opacity-0"}`}>Quick Port</span></button>
-            <button type="button" onClick={() => { setActiveMobileTab("b-codes"); onBCodes?.(); }} className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "b-codes" ? "bg-[#0B50EA] px-4 text-white" : "w-10 px-0 text-muted-foreground active:scale-95"}`}><Coins className="h-5 w-5 shrink-0" strokeWidth={2} /><span className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${activeMobileTab === "b-codes" ? "ml-2 max-w-[100px] opacity-100" : "ml-0 max-w-0 opacity-0"}`}>B-Codes</span></button>
-            <button type="button" onClick={() => { setActiveMobileTab("swap"); onSwap?.(); }} className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${activeMobileTab === "swap" ? "bg-[#0B50EA] px-4 text-white" : "w-10 px-0 text-muted-foreground active:scale-95"}`}><ArrowLeftRight className="h-5 w-5 shrink-0" strokeWidth={2} /><span className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${activeMobileTab === "swap" ? "ml-2 max-w-[100px] opacity-100" : "ml-0 max-w-0 opacity-0"}`}>Swap</span></button>
+          ) : (
+            promoButton(true)
+          )}
+
+          <nav
+            className="flex w-fit max-w-[calc(100vw-152px)] items-center gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2"
+            aria-label="Mobile navigation"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("quick-port");
+                onQuickPort?.();
+              }}
+              className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "quick-port"
+                  ? "bg-[#0B50EA] px-4 text-white"
+                  : "w-10 px-0 text-muted-foreground active:scale-95"
+              }`}
+            >
+              <HomeIcon
+                className="h-5 w-5 shrink-0"
+                strokeWidth={2}
+              />
+              <span
+                className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
+                  activeMobileTab === "quick-port"
+                    ? "ml-2 max-w-[100px] opacity-100"
+                    : "ml-0 max-w-0 opacity-0"
+                }`}
+              >
+                Quick Port
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("b-codes");
+                onBCodes?.();
+              }}
+              className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "b-codes"
+                  ? "bg-[#0B50EA] px-4 text-white"
+                  : "w-10 px-0 text-muted-foreground active:scale-95"
+              }`}
+            >
+              <Coins
+                className="h-5 w-5 shrink-0"
+                strokeWidth={2}
+              />
+              <span
+                className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
+                  activeMobileTab === "b-codes"
+                    ? "ml-2 max-w-[100px] opacity-100"
+                    : "ml-0 max-w-0 opacity-0"
+                }`}
+              >
+                B-Codes
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMobileTab("swap");
+                onSwap?.();
+              }}
+              className={`flex h-13 items-center justify-center rounded-[10px] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                activeMobileTab === "swap"
+                  ? "bg-[#0B50EA] px-4 text-white"
+                  : "w-10 px-0 text-muted-foreground active:scale-95"
+              }`}
+            >
+              <ArrowLeftRight
+                className="h-5 w-5 shrink-0"
+                strokeWidth={2}
+              />
+              <span
+                className={`overflow-hidden whitespace-nowrap text-[14px] font-medium transition-all duration-300 ${
+                  activeMobileTab === "swap"
+                    ? "ml-2 max-w-[100px] opacity-100"
+                    : "ml-0 max-w-0 opacity-0"
+                }`}
+              >
+                Swap
+              </span>
+            </button>
           </nav>
+
           {helpOpen ? (
             <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-              <button type="button" aria-label="Close help menu" onClick={closeHelp} className="relative z-[141] flex h-12 w-12 items-center justify-center rounded-[12px] border border-[#0F0F1B] bg-[#050511] text-white"><CircleHelp className="h-5 w-5" /></button>
+              <button
+                type="button"
+                aria-label="Close help menu"
+                onClick={closeHelp}
+                className="relative z-[141] flex h-12 w-12 items-center justify-center rounded-[12px] border border-[#0F0F1B] bg-[#050511] text-white"
+              >
+                <CircleHelp className="h-5 w-5" />
+              </button>
             </div>
-          ) : helpButton(true)}
+          ) : (
+            helpButton(true)
+          )}
         </div>
       </div>
 
-      {/* Mobile help menu floats from the help control */}
+      {/* Mobile help menu */}
       {helpOpen && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] right-5 z-[141] flex flex-col items-end gap-2 animate-[biyaport-pop-in_260ms_cubic-bezier(0.22,1,0.36,1)] md:hidden">
-          <button type="button" onClick={() => { setFaqOpen(true); setHelpOpen(false); }} className="rounded-[11px] border border-[#242434] bg-[#0F0F1B] px-5 py-3 text-sm font-medium text-white shadow-xl">FAQ</button>
-          <button type="button" onClick={() => { setHelpOpen(false); window.open("https://t.me/biyaport", "_blank", "noopener,noreferrer"); }} className="rounded-[11px] border border-[#242434] bg-[#0F0F1B] px-5 py-3 text-sm font-medium text-white shadow-xl">Support</button>
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] right-5 z-[141] w-[170px] origin-bottom-right animate-[biyaport-help-in_500ms_cubic-bezier(0.16,1,0.3,1)] overflow-hidden rounded-[13px] border border-[#242434] bg-[#0F0F1B] shadow-2xl md:hidden">
+          <button
+            type="button"
+            onClick={() => {
+              setFaqOpen(true);
+              setHelpOpen(false);
+            }}
+            className="flex w-full items-center px-4 py-3.5 text-left text-sm font-medium text-white transition hover:bg-[#171725]"
+          >
+            FAQ
+          </button>
+
+          <div className="mx-3 h-px bg-[#292938]" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setHelpOpen(false);
+              window.open(
+                "https://t.me/biyaport",
+                "_blank",
+                "noopener,noreferrer"
+              );
+            }}
+            className="flex w-full items-center px-4 py-3.5 text-left text-sm font-medium text-white transition hover:bg-[#171725]"
+          >
+            Support
+          </button>
         </div>
       )}
 
-      {/* Promotion dialogue floats above its icon on mobile */}
+      {/* Mobile promotion */}
       {promoOpen && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] left-5 z-[141] w-[min(310px,calc(100vw-40px))] origin-bottom-left animate-[biyaport-pop-in_260ms_cubic-bezier(0.22,1,0.36,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 pr-10 text-[14px] leading-6 text-white shadow-2xl md:hidden">
-          <button type="button" aria-label="Close promotion" onClick={closePromo} className="absolute right-3 top-3 rounded p-1 text-white/70"><X className="h-4 w-4" /></button>
-          Get <strong className="font-bold">₦5k</strong> when you Buy/sell up to $150! Join now <a href="https://t.me/biyaport" target="_blank" rel="noreferrer" className="font-bold text-white underline underline-offset-2">Claim</a>
-        </div>
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] left-5 z-[141] w-max max-w-[calc(100vw-40px)] origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 text-[14px] leading-6 text-white shadow-2xl md:hidden">
+  <button
+    type="button"
+    onClick={closePromo}
+    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+    aria-label="Close promotion"
+  >
+    <X className="h-4 w-4" />
+  </button>
+
+  <p className="pr-6">
+    Get <strong>₦5k</strong> cashback when you Buy/sell up to $150!{" "}
+    <a
+      href="https://t.me/biyaport"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-bold text-[#4D8DFF] transition hover:text-white"
+    >
+      Claim now
+    </a>
+  </p>
+</div>
       )}
 
+      {/* FAQ dialog */}
       {faqOpen && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6" role="dialog" aria-modal="true" aria-label="Frequently asked questions">
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Frequently asked questions"
+        >
           <div className="max-h-[min(80vh,680px)] w-full max-w-[520px] overflow-y-auto rounded-[18px] border border-[#242434] bg-[#0F0F1B] p-5 text-white shadow-2xl sm:p-6">
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Frequently asked questions</h2>
-              <button type="button" aria-label="Close FAQ" onClick={() => { setFaqOpen(false); setOpenFaq(null); }} className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"><X className="h-5 w-5" /></button>
+              <h2 className="text-lg font-semibold">
+                Frequently asked questions
+              </h2>
+
+              <button
+                type="button"
+                aria-label="Close FAQ"
+                onClick={() => {
+                  setFaqOpen(false);
+                  setOpenFaq(null);
+                }}
+                className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
+
             <div className="space-y-2">
               {faqs.map((faq, index) => (
-                <div key={faq.question} className="overflow-hidden rounded-[11px] border border-[#292938] bg-[#141421]">
-                  <button type="button" aria-expanded={openFaq === index} onClick={() => setOpenFaq((current) => current === index ? null : index)} className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left text-sm font-medium text-white">
+                <div
+                  key={faq.question}
+                  className="overflow-hidden rounded-[11px] border border-[#292938] bg-[#141421]"
+                >
+                  <button
+                    type="button"
+                    aria-expanded={openFaq === index}
+                    onClick={() =>
+                      setOpenFaq((current) =>
+                        current === index ? null : index
+                      )
+                    }
+                    className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left text-sm font-medium text-white"
+                  >
                     <span>{faq.question}</span>
-                    {openFaq === index ? <Minus className="h-4 w-4 shrink-0" /> : <Plus className="h-4 w-4 shrink-0" />}
+
+                    {openFaq === index ? (
+                      <Minus className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <Plus className="h-4 w-4 shrink-0" />
+                    )}
                   </button>
-                  {openFaq === index && <p className="px-4 pb-4 text-[13px] leading-5 text-white/70">{faq.answer}</p>}
+
+                  {openFaq === index && (
+                    <p className="px-4 pb-4 text-[13px] leading-5 text-white/70">
+                      {faq.answer}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
+
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[#292938] pt-5">
-              <p className="text-sm text-white/80">Still got questions?</p>
-              <a href="https://t.me/biyaport" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-[9px] bg-[#0B50EA] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1557E8]">Contact <Send className="h-4 w-4" /></a>
+              <p className="text-sm text-white/80">
+                Still got questions?
+              </p>
+
+              <a
+                href="https://t.me/biyaport"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-[9px] bg-[#0B50EA] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1557E8]"
+              >
+                Contact
+                <Send className="h-4 w-4" />
+              </a>
             </div>
           </div>
         </div>

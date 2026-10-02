@@ -14594,7 +14594,7 @@ function SiteNav({
 
       {/* Mobile help menu */}
       {helpOpen && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] right-5 z-[141] w-[170px] origin-bottom-right animate-[biyaport-help-in_500ms_cubic-bezier(0.16,1,0.3,1)] overflow-hidden rounded-[13px] border border-[#242434] bg-[#0F0F1B] shadow-2xl md:hidden">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+80px)] right-5 z-[141] w-[170px] origin-bottom-right animate-[biyaport-help-in_500ms_cubic-bezier(0.16,1,0.3,1)] overflow-hidden rounded-[13px] border border-[#242434] bg-[#0F0F1B] shadow-2xl md:hidden">
           <button
             type="button"
             onClick={() => {
@@ -14627,7 +14627,7 @@ function SiteNav({
 
       {/* Mobile promotion */}
       {promoOpen && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+68px)] left-5 z-[141] w-max max-w-[calc(100vw-40px)] origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 text-[14px] leading-6 text-white shadow-2xl md:hidden">
+        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+80px)] left-5 z-[141] w-max max-w-[calc(100vw-40px)] origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#0F0F1B] p-4 text-[14px] leading-6 text-white shadow-2xl md:hidden">
   <button
     type="button"
     onClick={closePromo}

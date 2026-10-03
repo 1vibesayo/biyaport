@@ -14659,7 +14659,7 @@ function SiteNav({
           aria-modal="true"
           aria-label="Frequently asked questions"
         >
-          <div className="max-h-[min(80vh,680px)] w-full max-w-[520px] overflow-y-auto rounded-[18px] border border-[#242434] bg-[#0F0F1B] p-5 text-white shadow-2xl sm:p-6">
+          <div className="max-h-[min(80vh,680px)] w-full max-w-[520px] overflow-y-auto rounded-[18px] border border-[#242434] bg-[#070812] p-5 text-white shadow-2xl sm:p-6">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-lg font-semibold">
                 Frequently asked questions
@@ -14682,7 +14682,7 @@ function SiteNav({
               {faqs.map((faq, index) => (
                 <div
                   key={faq.question}
-                  className="overflow-hidden rounded-[11px] border border-[#292938] bg-[#141421]"
+                  className="overflow-hidden rounded-[11px] border border-[#292938] bg-input"
                 >
                   <button
                     type="button"

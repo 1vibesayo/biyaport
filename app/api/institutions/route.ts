@@ -1,130 +1,115 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SUPPORTED_FIAT_CURRENCIES = [
-  "NGN",
-  "KES",
-  "UGX",
-  "TZS",
-] as const;
-
-type SupportedFiatCurrency =
-  (typeof SUPPORTED_FIAT_CURRENCIES)[number];
+const FIAT_CURRENCY = "NGN" as const;
 
 export async function GET(request: NextRequest) {
   const apiKey = process.env.PAYCREST_API_KEY?.trim();
 
   if (!apiKey) {
-    console.error("PAYCREST_API_KEY is missing.");
-
     return NextResponse.json(
-      {
-        error: "Paycrest API key is not configured.",
-      },
+      { error: "Paycrest API key is not configured." },
       { status: 500 }
     );
   }
 
-  const currency = request.nextUrl.searchParams
-    .get("currency")
-    ?.trim()
-    .toUpperCase();
+  // Accept the query for clarity, but default to NGN so the page can never
+  // fail simply because a currency parameter was omitted.
+  const requestedCurrency =
+    request.nextUrl.searchParams
+      .get("currency")
+      ?.trim()
+      .toUpperCase() || FIAT_CURRENCY;
 
-  if (!currency) {
+  if (requestedCurrency !== FIAT_CURRENCY) {
     return NextResponse.json(
       {
-        error: "Fiat currency is required.",
+        error: "Only NGN institutions are currently supported.",
+        supportedCurrencies: [FIAT_CURRENCY],
       },
       { status: 400 }
     );
   }
 
-  if (
-    !SUPPORTED_FIAT_CURRENCIES.includes(
-      currency as SupportedFiatCurrency
-    )
-  ) {
-    return NextResponse.json(
-      {
-        error: "Unsupported fiat currency.",
-        supportedCurrencies:
-          SUPPORTED_FIAT_CURRENCIES,
-      },
-      { status: 400 }
-    );
-  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
     const response = await fetch(
-      `https://api.paycrest.io/v2/institutions/${currency}`,
+      `https://api.paycrest.io/v2/institutions/${FIAT_CURRENCY}`,
       {
+        method: "GET",
         headers: {
           "API-Key": apiKey,
-          "Content-Type": "application/json",
+          Accept: "application/json",
         },
         cache: "no-store",
+        signal: controller.signal,
       }
     );
 
-    const responseText =
-      await response.text();
+    const text = await response.text();
 
-    console.log(
-      "PAYCREST INSTITUTIONS STATUS:",
-      response.status
-    );
+    console.log("PAYCREST INSTITUTIONS STATUS:", response.status);
+    console.log("PAYCREST INSTITUTIONS CURRENCY:", FIAT_CURRENCY);
 
-    console.log(
-      "PAYCREST INSTITUTIONS CURRENCY:",
-      currency
-    );
-
-    console.log(
-      "PAYCREST INSTITUTIONS RESPONSE:",
-      responseText
-    );
-
-    let data: any;
+    let data: unknown;
 
     try {
-      data = JSON.parse(responseText);
+      data = JSON.parse(text);
     } catch {
-      data = {
-        raw: responseText,
-      };
+      return NextResponse.json(
+        { error: "Paycrest returned an invalid response." },
+        { status: 502 }
+      );
     }
 
     if (!response.ok) {
-      console.error(
-        "PAYCREST INSTITUTIONS ERROR:",
-        data
-      );
+      const errorData = data as {
+        message?: string;
+        error?: string;
+      } | null;
 
       return NextResponse.json(
         {
           error:
-            data?.message ||
-            data?.error ||
-            "Failed to fetch institutions.",
+            errorData?.message ||
+            errorData?.error ||
+            "Paycrest could not load institutions.",
           details: data,
         },
-        {
-          status: response.status,
-        }
+        { status: response.status }
       );
     }
 
     return NextResponse.json(data);
-  } catch (error) {
-    console.error(
-      "INSTITUTIONS FETCH ERROR:",
-      error
-    );
+  } catch (error: unknown) {
+    console.error("INSTITUTIONS ERROR:", error);
+
+    const errorName =
+      error instanceof Error ? error.name : "";
+    const errorCause =
+      error && typeof error === "object" && "cause" in error
+        ? (error as { cause?: { code?: string } }).cause
+        : undefined;
+
+    if (
+      errorName === "AbortError" ||
+      errorCause?.code === "UND_ERR_CONNECT_TIMEOUT"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Paycrest is taking too long to respond. Please try again.",
+        },
+        { status: 504 }
+      );
+    }
 
     return NextResponse.json(
-      {
-        error: "Unable to connect to Paycrest.",
-      },
-      { status: 500 }
+      { error: "Unable to connect to Paycrest." },
+      { status: 502 }
     );
+  } finally {
+    clearTimeout(timeout);
   }
 }

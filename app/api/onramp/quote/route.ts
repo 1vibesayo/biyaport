@@ -1,477 +1,129 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PAYCREST_API = "https://api.paycrest.io/v2/rates";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const SUPPORTED_TOKENS = ["USDT", "USDC"] as const;
-const SUPPORTED_NETWORKS = [
+const API_BASE = "https://api.paycrest.io";
+const SUPPORTED_NETWORKS = new Set([
+  "ethereum",
   "base",
+  "arbitrum",
+  "polygon",
   "bnb-smart-chain",
-] as const;
+]);
+const SUPPORTED_TOKENS = new Set(["USDT", "USDC"]);
+const SUPPORTED_FIAT = new Set(["NGN"]);
+const MIN_USD = 0.5;
+const MAX_USD = 2000;
 
-const FIAT = "NGN";
-
-type SupportedToken =
-  (typeof SUPPORTED_TOKENS)[number];
-
-type SupportedNetwork =
-  (typeof SUPPORTED_NETWORKS)[number];
-
-/*
- * ------------------------------------------------
- * TOKEN NORMALIZATION
- * ------------------------------------------------
- */
-
-function normalizeToken(value: unknown): string {
-  if (typeof value === "string") {
-    return value
-      .trim()
-      .toUpperCase()
-      .replace(/\s+ON\s+BASE$/i, "")
-      .replace(/\s+ON\s+BASE\s+NETWORK$/i, "")
-      .replace(/\s+ON\s+BNB\s+SMART\s+CHAIN$/i, "")
-      .replace(/\s+ON\s+BSC$/i, "")
-      .replace(/-BASE$/i, "")
-      .replace(/_BASE$/i, "")
-      .replace(/-BSC$/i, "")
-      .replace(/_BSC$/i, "")
-      .trim();
-  }
-
-  if (value && typeof value === "object") {
-    const crypto = value as {
-      symbol?: unknown;
-      token?: unknown;
-      name?: unknown;
-      currency?: unknown;
-    };
-
-    if (typeof crypto.symbol === "string") {
-      return normalizeToken(crypto.symbol);
-    }
-
-    if (typeof crypto.token === "string") {
-      return normalizeToken(crypto.token);
-    }
-
-    if (typeof crypto.currency === "string") {
-      return normalizeToken(crypto.currency);
-    }
-
-    if (typeof crypto.name === "string") {
-      return normalizeToken(crypto.name);
-    }
-  }
-
-  return "";
+function jsonError(message: string, status = 400) {
+  return NextResponse.json({ success: false, error: message }, { status });
 }
 
-/*
- * ------------------------------------------------
- * NETWORK NORMALIZATION
- * ------------------------------------------------
- */
-
-function normalizeNetwork(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
+function numberFrom(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
-
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+network$/i, "");
-
-  /*
-   * Base aliases
-   */
-  if (
-    normalized === "base mainnet" ||
-    normalized === "base"
-  ) {
-    return "base";
-  }
-
-  /*
-   * BNB Smart Chain aliases
-   *
-   * Frontend can send:
-   * - bnb-smart-chain
-   * - bnb smart chain
-   * - bnb smart chain mainnet
-   * - bsc
-   * - bsc mainnet
-   */
-  if (
-    normalized === "bnb-smart-chain" ||
-    normalized === "bnb smart chain" ||
-    normalized === "bnb smart chain mainnet" ||
-    normalized === "bsc" ||
-    normalized === "bsc mainnet"
-  ) {
-    return "bnb-smart-chain";
-  }
-
-  return normalized;
+  return null;
 }
 
-/*
- * ------------------------------------------------
- * POST
- * ------------------------------------------------
- */
-
-export async function POST(
-  request: NextRequest
-) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const amount = numberFrom(body?.amount);
+    const token = String(body?.crypto ?? "").trim().toUpperCase();
+    const network = String(body?.network ?? "").trim().toLowerCase();
+    const currency = String(body?.currency ?? "NGN").trim().toUpperCase();
 
-    /*
-     * ------------------------------------------------
-     * TOKEN
-     * ------------------------------------------------
-     */
+    if (amount === null || amount <= 0) {
+      return jsonError("Enter a valid crypto amount.");
+    }
+    if (!SUPPORTED_TOKENS.has(token)) {
+      return jsonError("Onramp currently supports USDT and USDC.");
+    }
+    if (!SUPPORTED_NETWORKS.has(network)) {
+      return jsonError("This network is not supported for onramp.");
+    }
+    if (!SUPPORTED_FIAT.has(currency)) {
+      return jsonError("Only NGN is currently supported.");
+    }
+    if (amount < MIN_USD || amount > MAX_USD) {
+      return jsonError(
+        amount < MIN_USD ? "amount too small" : "amount too much"
+      );
+    }
 
-    const rawToken =
-      body.token ??
-      body.crypto ??
-      body.symbol ??
-      body.selectedCrypto;
+    // Paycrest documents the v2 rate endpoint as public. Buy rate is used
+    // for fiat -> stablecoin quotes. Keep the API key server-side for order
+    // creation and never expose it to the browser.
+    const url =
+      `${API_BASE}/v2/rates/${encodeURIComponent(network)}/` +
+      `${encodeURIComponent(token)}/${encodeURIComponent(String(amount))}/` +
+      `${encodeURIComponent(currency)}`;
 
-    const token = normalizeToken(rawToken);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    });
 
-    /*
-     * ------------------------------------------------
-     * NETWORK
-     * ------------------------------------------------
-     */
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      console.error("PAYCREST ONRAMP RATE ERROR:", response.status, payload);
+      return jsonError(
+        payload?.message || payload?.error || "Unable to get a Paycrest quote right now.",
+        response.status >= 400 && response.status < 500 ? response.status : 502
+      );
+    }
 
-    const rawNetwork =
-      body.network ??
-      body.chain ??
-      body.selectedNetwork;
-
-    const network = normalizeNetwork(rawNetwork);
-
-    /*
-     * ------------------------------------------------
-     * CRYPTO AMOUNT
-     *
-     * The crypto amount is the INPUT.
-     *
-     * Example:
-     *
-     * User selects:
-     * USDT
-     * BNB Smart Chain
-     * 1 USDT
-     *
-     * cryptoAmount = 1
-     * ------------------------------------------------
-     */
-
-    const rawCryptoAmount =
-      body.cryptoAmount ??
-      body.amount ??
-      body.tokenAmount ??
-      body.amountIn;
-
-    const cryptoAmount = Number(
-      rawCryptoAmount
+    // Paycrest responses may expose the applicable rate under `buy` or
+    // `sell`, depending on the route/provider configuration. Prefer `buy`
+    // when present, but accept the documented response shape seen in live
+    // responses where only `data.sell.rate` is returned.
+    const rateSource =
+      payload?.data?.buy?.rate != null ? "buy" :
+      payload?.data?.sell?.rate != null ? "sell" :
+      payload?.data?.buyRate != null ? "buyRate" :
+      payload?.data?.rate != null ? "rate" :
+      payload?.buy?.rate != null ? "buy" :
+      null;
+    const rate = numberFrom(
+      payload?.data?.buy?.rate ??
+      payload?.data?.sell?.rate ??
+      payload?.data?.buyRate ??
+      payload?.data?.rate ??
+      payload?.buy?.rate
     );
 
-    console.log(
-      "ONRAMP QUOTE REQUEST:",
-      {
-        rawToken,
-        normalizedToken: token,
-
-        rawNetwork,
-        normalizedNetwork: network,
-
-        rawCryptoAmount,
-        cryptoAmount,
-      }
-    );
-
-    /*
-     * ------------------------------------------------
-     * VALIDATE TOKEN
-     * ------------------------------------------------
-     */
-
-    if (
-      !SUPPORTED_TOKENS.includes(
-        token as SupportedToken
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Unsupported cryptocurrency.",
-
-          receivedToken: rawToken,
-          normalizedToken: token,
-
-          supportedTokens:
-            SUPPORTED_TOKENS,
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * VALIDATE NETWORK
-     * ------------------------------------------------
-     */
-
-    if (
-      !SUPPORTED_NETWORKS.includes(
-        network as SupportedNetwork
-      )
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "Unsupported network.",
-
-          receivedNetwork:
-            rawNetwork,
-
-          normalizedNetwork:
-            network,
-
-          supportedNetworks:
-            SUPPORTED_NETWORKS,
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * VALIDATE CRYPTO AMOUNT
-     * ------------------------------------------------
-     */
-
-    if (
-      !Number.isFinite(cryptoAmount) ||
-      cryptoAmount <= 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Invalid crypto amount.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * PAYCREST BUY RATE
-     *
-     * Fiat -> Crypto
-     *
-     * Example:
-     *
-     * 1 USDT = ₦1,500
-     *
-     * 1 USDT on Base:
-     *
-     * /base/USDT/1/NGN
-     *
-     * 1 USDT on BNB Smart Chain:
-     *
-     * /bnb-smart-chain/USDT/1/NGN
-     * ------------------------------------------------
-     */
-
-    const rateUrl =
-      `${PAYCREST_API}/${network}/${token}/${cryptoAmount}/${FIAT}?side=buy`;
-
-    console.log(
-      "PAYCREST ONRAMP RATE URL:",
-      rateUrl
-    );
-
-    const rateResponse = await fetch(
-      rateUrl,
-      {
-        cache: "no-store",
-
-        headers: {
-          Accept:
-            "application/json",
-        },
-      }
-    );
-
-    let rateData: any = null;
-
-    try {
-      rateData =
-        await rateResponse.json();
-    } catch {
-      rateData = null;
-    }
-
-    /*
-     * ------------------------------------------------
-     * PAYCREST RESPONSE VALIDATION
-     * ------------------------------------------------
-     */
-
-    if (
-      !rateResponse.ok ||
-      rateData?.status !== "success"
-    ) {
-      console.error(
-        "PAYCREST ONRAMP RATE ERROR:",
-        {
-          status:
-            rateResponse.status,
-
-          data:
-            rateData,
-        }
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "Unable to get crypto rate.",
-
-          details:
-            rateData?.message ||
-            rateData?.error ||
-            "Paycrest rate request failed.",
-        },
-        { status: 502 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * EXTRACT BUY RATE
-     * ------------------------------------------------
-     */
-
-    const rate = Number(
-      rateData?.data?.buy?.rate
-    );
-
-    if (
-      !Number.isFinite(rate) ||
-      rate <= 0
-    ) {
-      console.error(
-        "INVALID PAYCREST ONRAMP RATE:",
-        rateData
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "Invalid crypto rate returned by Paycrest.",
-        },
-        { status: 502 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * CALCULATE NGN AMOUNT
-     * ------------------------------------------------
-     */
-
+    // The returned rate is NGN per unit of the selected stablecoin.
     const localAmount =
-      cryptoAmount * rate;
+      rate !== null && rate > 0 ? amount * rate : null;
 
-    if (
-      !Number.isFinite(localAmount) ||
-      localAmount <= 0
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-
-          error:
-            "Unable to calculate local currency amount.",
-        },
-        { status: 502 }
-      );
+    if (rate === null || rate <= 0 || localAmount === null || localAmount <= 0) {
+      console.error("PAYCREST ONRAMP RATE SHAPE UNRECOGNIZED:", payload);
+      return jsonError("Paycrest returned an invalid quote. Please try again.", 502);
     }
-
-    /*
-     * ------------------------------------------------
-     * RESPONSE
-     * ------------------------------------------------
-     */
 
     return NextResponse.json({
       success: true,
-
-      token,
-
-      network,
-
-      fiat: FIAT,
-
-      /*
-       * Amount the user wants to receive
-       */
-      cryptoAmount,
-
-      /*
-       * NGN equivalent
-       */
-      localAmount,
-
-      /*
-       * Compatibility alias
-       */
-      nairaAmount:
-        localAmount,
-
-      /*
-       * Paycrest rate
-       */
+      localAmount: Number(localAmount.toFixed(2)),
+      fiatAmount: Number(localAmount.toFixed(2)),
+      amountToPay: Number(localAmount.toFixed(2)),
+      amount,
+      usdcAmount: amount,
+      usdAmount: amount,
       rate,
-
-      /*
-       * Currency labels
-       */
-      cryptoCurrency:
-        token,
-
-      localCurrency:
-        FIAT,
+      rateSource,
+      currency,
+      crypto: token,
+      network,
+      source: "paycrest",
     });
   } catch (error) {
-    console.error(
-      "ONRAMP QUOTE ERROR:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        success: false,
-
-        error:
-          "Unable to calculate on-ramp quote.",
-      },
-      { status: 500 }
-    );
+    console.error("ONRAMP QUOTE ROUTE ERROR:", error);
+    return jsonError("Unable to get a quote right now. Please try again.", 500);
   }
 }

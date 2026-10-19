@@ -1,279 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PAYCREST_API =
-  "https://api.paycrest.io/v2/sender/orders";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: NextRequest
-) {
+const API_BASE = "https://api.paycrest.io";
+
+export async function GET(request: NextRequest) {
+  const apiKey = process.env.PAYCREST_API_KEY?.trim();
+  if (!apiKey) {
+    console.error("PAYCREST_API_KEY is not configured.");
+    return NextResponse.json(
+      { success: false, error: "Onramp status is temporarily unavailable." },
+      { status: 503 }
+    );
+  }
+
+  const orderId = request.nextUrl.searchParams.get("orderId")?.trim();
+  if (!orderId) {
+    return NextResponse.json(
+      { success: false, error: "orderId is required." },
+      { status: 400 }
+    );
+  }
+
   try {
-    /*
-     * ------------------------------------------------
-     * ORDER ID
-     * ------------------------------------------------
-     */
-
-    const orderId =
-      request.nextUrl.searchParams.get(
-        "orderId"
-      );
-
-    if (!orderId) {
-      return NextResponse.json(
-        {
-          success:
-            false,
-
-          error:
-            "Missing orderId.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * API KEY
-     * ------------------------------------------------
-     */
-
-    const apiKey =
-      process.env.PAYCREST_API_KEY?.trim();
-
-    if (!apiKey) {
-      console.error(
-        "PAYCREST STATUS ERROR: PAYCREST_API_KEY is missing."
-      );
-
-      return NextResponse.json(
-        {
-          success:
-            false,
-
-          error:
-            "Paycrest API key is not configured.",
-        },
-        { status: 500 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * PAYCREST STATUS URL
-     * ------------------------------------------------
-     */
-
-    const url =
-      `${PAYCREST_API}/${encodeURIComponent(
-        orderId
-      )}`;
-
-    console.log(
-      "PAYCREST ONRAMP STATUS REQUEST:",
+    const response = await fetch(
+      `${API_BASE}/v2/sender/orders/${encodeURIComponent(orderId)}`,
       {
-        orderId,
-        url,
+        method: "GET",
+        headers: {
+          "API-Key": apiKey,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12_000),
       }
     );
 
-    /*
-     * ------------------------------------------------
-     * GET PAYCREST ORDER
-     * ------------------------------------------------
-     */
-
-    const response =
-      await fetch(
-        url,
-        {
-          method:
-            "GET",
-
-          headers: {
-            "API-Key":
-              apiKey,
-
-            Accept:
-              "application/json",
-          },
-
-          cache:
-            "no-store",
-        }
-      );
-
-    /*
-     * ------------------------------------------------
-     * RAW RESPONSE
-     * ------------------------------------------------
-     */
-
-    const responseText =
-      await response.text();
-
-    console.log(
-      "PAYCREST STATUS RAW HTTP STATUS:",
-      response.status
-    );
-
-    console.log(
-      "PAYCREST STATUS RAW RESPONSE TEXT:",
-      responseText
-    );
-
-    let paycrestData: any;
-
-    try {
-      paycrestData =
-        JSON.parse(
-          responseText
-        );
-    } catch {
-      console.error(
-        "PAYCREST STATUS RESPONSE WAS NOT VALID JSON."
-      );
-
-      return NextResponse.json(
-        {
-          success:
-            false,
-
-          error:
-            "Paycrest returned an invalid response.",
-        },
-        { status: 502 }
-      );
-    }
-
-    /*
-     * ------------------------------------------------
-     * HANDLE PAYCREST ERROR
-     * ------------------------------------------------
-     */
-
+    const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      console.error(
-        "PAYCREST STATUS REQUEST FAILED:",
-        {
-          status:
-            response.status,
-
-          response:
-            paycrestData,
-        }
-      );
-
+      console.error("PAYCREST ONRAMP STATUS ERROR:", response.status, payload);
       return NextResponse.json(
         {
-          success:
-            false,
-
+          success: false,
           error:
-            paycrestData?.message ||
-            paycrestData?.error ||
-            "Unable to retrieve Paycrest order status.",
-
-          details:
-            paycrestData?.data ||
-            null,
+            payload?.message ||
+            payload?.error ||
+            "Unable to retrieve the order status.",
         },
-        {
-          status:
-            response.status,
-        }
+        { status: response.status >= 400 && response.status < 500 ? response.status : 502 }
       );
     }
-
-    /*
-     * ------------------------------------------------
-     * EXTRACT ORDER
-     * ------------------------------------------------
-     */
 
     const order =
-      paycrestData?.data ||
-      paycrestData?.order ||
-      paycrestData;
+      payload?.data?.order ??
+      payload?.order ??
+      payload?.data ??
+      payload;
+    const status = order?.status ?? payload?.status;
 
-    const status =
-      String(
-        order?.status ||
-          ""
-      )
-        .trim()
-        .toLowerCase();
-
-    console.log(
-      "EXTRACTED PAYCREST ONRAMP ORDER:",
-      JSON.stringify(
-        order,
-        null,
-        2
-      )
-    );
-
-    console.log(
-      "EXTRACTED PAYCREST ONRAMP STATUS:",
-      status
-    );
-
-    /*
-     * ------------------------------------------------
-     * RETURN STATUS
-     * ------------------------------------------------
-     */
-
-    return NextResponse.json(
-      {
-        success:
-          true,
-
-        orderId,
-
-        status,
-
-        order,
-
-        /*
-         * Useful when frontend needs to know
-         * which network the order belongs to.
-         */
-        network:
-          order?.destination?.recipient?.network ||
-          order?.destination?.network ||
-          order?.network ||
-          null,
-
-        message:
-          paycrestData?.message ||
-          "Order status retrieved successfully.",
-      },
-      {
-        status:
-          200,
-
-        headers: {
-          "Cache-Control":
-            "no-store, no-cache, must-revalidate",
-        },
-      }
-    );
+    return NextResponse.json({
+      success: true,
+      ...payload,
+      order,
+      status: status ? String(status).toLowerCase() : "",
+    });
   } catch (error) {
-    console.error(
-      "ONRAMP STATUS ERROR:",
-      error
-    );
-
+    console.error("ONRAMP STATUS ROUTE ERROR:", error);
     return NextResponse.json(
-      {
-        success:
-          false,
-
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to check onramp order status.",
-      },
+      { success: false, error: "Unable to check order status. Please try again." },
       { status: 500 }
     );
   }

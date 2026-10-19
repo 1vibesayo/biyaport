@@ -23,7 +23,6 @@ import {
   Settings,
   X,
   CircleHelp,
-  Gift,
   Plus,
   Minus,
 } from "lucide-react";
@@ -45,9 +44,13 @@ import {
   http,
   keccak256,
   stringToHex,
+  getAddress,
 } from "viem";
 import { arbitrum, base, bsc, mainnet, polygon } from "viem/chains";
-import QRCode from "qrcode";
+const getQRCode = async () => {
+  const module = await import("qrcode");
+  return module.default;
+};
 
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet";
 import { QuickSendWalletButton } from "@/components/wallet/quick-send-wallet";
@@ -1309,51 +1312,89 @@ export default function Home() {
 
   /*
    * ====================================================
-   * LOAD BANKS
+   * LAZY LOAD PAYCREST BANKS
    * ====================================================
+   *
+   * Do not contact Paycrest while the homepage is loading.
+   * The institution list is only needed when a bank selector
+   * is opened. Both the offramp and onramp refund selector
+   * reuse this single request.
    */
 
-  useEffect(() => {
-  const fetchBanks = async () => {
-    setLoadingBanks(true);
+  const institutionsLoadedRef = useRef(false);
+  const institutionsRequestRef = useRef<Promise<void> | null>(null);
 
-    try {
-      const response = await fetch(
-        "/api/institutions?currency=NGN",
-        {
-          cache: "no-store",
-        }
-      );
+  const loadInstitutions = async () => {
+    if (institutionsLoadedRef.current && institutions.length > 0) {
+      return;
+    }
 
-      const data = await response.json();
+    if (institutionsRequestRef.current) {
+      return institutionsRequestRef.current;
+    }
 
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            data?.message ||
-            "Couldn't load the banks. Please try again."
+    const request = (async () => {
+      setLoadingBanks(true);
+
+      try {
+        const response = await fetch(
+          "/api/institutions?currency=NGN",
+          {
+            cache: "no-store",
+          }
         );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              data?.message ||
+              "Couldn't load the banks. Please try again."
+          );
+        }
+
+        const banks = Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        setInstitutions(banks);
+        institutionsLoadedRef.current = banks.length > 0;
+      } catch (error) {
+        console.error(
+          "BANK FETCH ERROR:",
+          error
+        );
+        institutionsLoadedRef.current = false;
+      } finally {
+        setLoadingBanks(false);
+        institutionsRequestRef.current = null;
       }
+    })();
 
-      const banks = Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data)
-        ? data
-        : [];
+    institutionsRequestRef.current = request;
+    return request;
+  };
 
-      setInstitutions(banks);
-    } catch (error) {
-      console.error(
-        "BANK FETCH ERROR:",
-        error
-      );
-    } finally {
-      setLoadingBanks(false);
+  const handleBankDropdownToggle = async () => {
+    const nextOpen = !bankDropdownOpen;
+    setBankDropdownOpen(nextOpen);
+
+    if (nextOpen) {
+      await loadInstitutions();
     }
   };
 
-  fetchBanks();
-}, []);
+  const handleOnrampBankDropdownToggle = async () => {
+    const nextOpen = !onrampBankDropdownOpen;
+    setOnrampBankDropdownOpen(nextOpen);
+
+    if (nextOpen) {
+      await loadInstitutions();
+    }
+  };
 
   /*
  * ====================================================
@@ -1455,7 +1496,15 @@ const refreshTokenBalances = async () => {
   }
 };
 
+/*
+ * Balance RPCs are also lazy. Quick Port only needs these
+ * balances when its crypto selector is opened.
+ */
 useEffect(() => {
+  if (!cryptoDropdownOpen) {
+    return;
+  }
+
   if (!authenticated || !wallet?.address) {
     setTokenBalances({
       USDT: "0.00",
@@ -1468,6 +1517,7 @@ useEffect(() => {
 
   refreshTokenBalances();
 }, [
+  cryptoDropdownOpen,
   authenticated,
   wallet?.address,
   selectedNetwork,
@@ -3969,26 +4019,7 @@ if (selectedCrypto.symbol === "ETH") {
             }
           }
 
-          @keyframes biyaport-promo-in {
-          0% {
-            opacity: 0;
-            transform: translateY(18px) scale(0.82);
-            filter: blur(4px);
-          }
-
-          60% {
-            opacity: 1;
-            filter: blur(0);
-          }
-
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            filter: blur(0);
-          }
-        }
-
-        @keyframes biyaport-help-in {
+                  @keyframes biyaport-help-in {
           0% {
             opacity: 0;
             transform: translateY(18px) scale(0.82);
@@ -4209,14 +4240,9 @@ if (selectedCrypto.symbol === "ETH") {
 
             <div className="w-full rounded-[16px] border border-border bg-card p-5">
 
-              {!(
-  tradeMode === "buy" &&
-  onrampStep === 3 
-) && (
-  <>
-    {/* =========================================
-        HEADER
-       ========================================= */}
+              {/* =========================================
+                  HEADER
+                 ========================================= */}
 
     <div className="mb-5 flex items-center justify-between">
       <h1 className="text-[20px] font-regular tracking-[-0.02em] sm:text-[22px]" style={{ fontFamily: specialGothic.style.fontFamily }}>
@@ -4316,896 +4342,7 @@ if (selectedCrypto.symbol === "ETH") {
       </div>
     </div>
 
-    {/* =========================================
-        BUY / SELL SWITCHER
-       ========================================= */}
 
-    <div className="mb-5 flex h-[52px] rounded-[12px] bg-input p-1">
-
-      <button
-        type="button"
-        onClick={() => {
-          setTradeMode("buy");
-          setSelectedCrypto(null);
-          setOnrampStep(1);
-          setPaymentState("form");
-          setPaymentError("");
-        }}
-        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition sm:text-[15px] ${
-          tradeMode === "buy"
-            ? "bg-[#050511] text-foreground shadow-sm"
-            : "text-muted-foreground"
-        }`}
-      >
-        Buy Crypto
-      </button>
-
-      <button
-        type="button"
-        onClick={() => {
-          setTradeMode("sell");
-          setSelectedCrypto(null);
-          setOnrampStep(1);
-          setOnrampState("idle");
-          setPaymentError("");
-        }}
-        className={`flex flex-1 items-center justify-center rounded-[9px] text-[14px] font-semibold transition sm:text-[15px] ${
-          tradeMode === "sell"
-            ? "bg-[#050511] text-foreground shadow-sm"
-            : "text-muted-foreground"
-        }`}
-      >
-        Sell Crypto
-      </button>
-
-    </div>
-  </>
-)}
-
-              {/* =================================================
-                  ONRAMP
-                 ================================================= */}
-
-              {tradeMode ===
-                "buy" && (
-                <>
-
-                  {/* =========================================
-ONRAMP MODAL 1
-========================================= */}
-
-              {onrampStep ===
-                1 && (
-                <>
-
-                  <div
-                    ref={
-                      onrampCryptoDropdownRef
-                    }
-                    className="relative"
-                  >
-
-                    <div className="flex h-[56px] w-full items-center rounded-[10px] border border-border bg-input">
-
-                      {/* CRYPTO SELECTOR - LEFT */}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOnrampCryptoDropdownOpen(
-                            (open) =>
-                              !open
-                          )
-                        }
-                        className="flex h-full shrink-0 items-center gap-2 border-r border-border px-3.5"
-                      >
-
-                        {selectedCrypto ? (
-                          <Image
-                            src={
-                              selectedCrypto.logo
-                            }
-                            alt=""
-                            width={
-                              22
-                            }
-                            height={
-                              22
-                            }
-                            className="h-[22px] w-[22px] object-contain"
-                          />
-                        ) : null}
-
-                        <span
-                          className={
-                            selectedCrypto
-                              ? "text-[15px] font-semibold"
-                              : "text-[15px] text-muted-foreground"
-                          }
-                        >
-                          {selectedCrypto?.symbol ||
-                            "Select Crypto"}
-                        </span>
-
-                        <ChevronDown
-                          className={`h-4 w-4 text-muted-foreground transition-transform ${
-                            onrampCryptoDropdownOpen
-                              ? "rotate-180"
-                              : ""
-                          }`}
-                        />
-                      </button>
-
-                      {/* AMOUNT INPUT - RIGHT */}
-
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="Enter amount"
-                        value={
-                          onrampCryptoAmount
-                        }
-                        onChange={
-                          handleOnrampCryptoAmountChange
-                        }
-                        className="min-w-0 flex-1 bg-transparent px-4 text-left text-[16px] outline-none placeholder:text-muted-foreground"
-                      />
-
-                    </div>
-
-                    {onrampCryptoDropdownOpen && (
-                      <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-
-                        <div className="border-b border-border p-3">
-  <div className="flex items-center gap-2">
-
-    {/* SEARCH */}
-
-    <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-3">
-
-      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-
-      <input
-        type="text"
-        value={onrampCryptoSearch}
-        onChange={(event) =>
-          setOnrampCryptoSearch(
-            event.target.value
-          )
-        }
-        placeholder="Search supported crypto"
-        className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground"
-        autoFocus
-      />
-
-    </div>
-
-    {/* NETWORK SELECTOR */}
-
-    <div className="shrink-0">
-      <NetworkSelector
-        value={selectedNetwork}
-        onChange={handleNetworkChange}
-      />
-    </div>
-
-  </div>
-</div>
-
-                        <div className="max-h-[220px] overflow-y-auto p-1.5">
-
-                          {filteredOnrampCryptoOptions.length >
-                          0 ? (
-                            filteredOnrampCryptoOptions.map(
-                              (
-                                crypto
-                              ) => (
-                                <button
-                                  key={`${crypto.network}-${crypto.symbol}`}
-                                  type="button"
-                                  onClick={() =>
-                                    handleOnrampCryptoSelect(
-                                      crypto
-                                    )
-                                  }
-                                  className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left transition hover:bg-secondary"
-                                >
-
-                                  <div className="flex items-center gap-3">
-
-                                    <Image
-                                      src={
-                                        crypto.logo
-                                      }
-                                      alt=""
-                                      width={
-                                        40
-                                      }
-                                      height={
-                                        40
-                                      }
-                                      className="h-10 w-10 object-contain"
-                                    />
-
-                                    <div>
-
-                                      <div className="font-medium">
-                                        {
-                                          crypto.symbol
-                                        }
-                                      </div>
-
-                                      <div className="text-[12px] text-muted-foreground">
-                                        {
-                                          crypto.name
-                                        }
-                                      </div>
-
-                                    </div>
-
-                                  </div>
-
-                                  {selectedCrypto?.network ===
-                                    crypto.network &&
-                                    selectedCrypto?.symbol === crypto.symbol && (
-                                    <Check className="h-4 w-4 text-primary" />
-                                  )}
-
-                                </button>
-                              )
-                            )
-                          ) : (
-                            <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
-                              No supported crypto found.
-                            </div>
-                          )}
-
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* AMOUNT TO PAY */}
-
-{onrampCryptoAmount &&
-  selectedCrypto &&
-  !onrampQuoteError && (
-    <div className="mt-3 px-1 text-[14px]">
-      {onrampQuoteLoading ? (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Calculating ...
-        </div>
-      ) : onrampLocalAmount ? (
-        <div className="flex items-center gap-1 text-[14px]">
-          <span className="font-normal text-foreground">
-            Amount:
-          </span>
-
-          <span className="font-bold text-foreground">
-            {currentCurrency.symbol}
-            {(
-              Number(onrampLocalAmount) +
-              Number(onrampSenderFee || 0)
-            ).toLocaleString(
-              "en-NG",
-              {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              }
-            )}
-          </span>
-        </div>
-      ) : null}
-    </div>
-  )}
-
-                  {onrampQuoteError && (
-                    <div className="mt-3 px-1 text-[13px] text-[#F04438]">
-                      {
-                        onrampQuoteError
-                      }
-                    </div>
-                  )}
-
-                  {/* WALLET ADDRESS */}
-
-                  <div className="mt-5">
-                    <input
-                      type="text"
-                      value={
-                        onrampWalletAddress
-                      }
-                      onChange={(
-                        event
-                      ) =>
-                        setOnrampWalletAddress(
-                          event
-                            .target
-                            .value
-                        )
-                      }
-                      placeholder="Enter wallet address"
-                      className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground sm:px-5 sm:text-[16px]"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={
-                      !selectedCrypto ||
-                      !onrampCryptoAmount ||
-                      Number(
-                        onrampCryptoAmount
-                      ) <= 0 ||
-                      !onrampLocalAmount ||
-                      onrampQuoteLoading ||
-                      !onrampWalletAddress
-                    }
-                    onClick={
-                      handleOnrampStepOneContinue
-                    }
-                    className={`mt-4 flex h-[56px] w-full items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:text-[16px] ${
-                      selectedCrypto &&
-                      onrampCryptoAmount &&
-                      Number(
-                        onrampCryptoAmount
-                      ) > 0 &&
-                      onrampLocalAmount &&
-                      !onrampQuoteLoading &&
-                      onrampWalletAddress
-                        ? "bg-primary text-primary-foreground hover:opacity-90"
-                        : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
-                    }`}
-                  >
-                    Continue
-                  </button>
-                </>
-              )}
-
-                  {/* =========================================
-    ONRAMP MODAL 2
-   ========================================= */}
-
-{onrampStep === 2 && (
-  <>
-    {/* =========================================
-        ORDER SUMMARY
-       ========================================= */}
-
-    <div className="rounded-[10px] bg-input px-5 py-4">
-      <div className="space-y-4 text-[15px] leading-[22px]">
-
-        {/* RECIPIENT ADDRESS */}
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Recipient address
-          </span>
-
-          <span className="max-w-[240px] truncate text-right font-semibold text-foreground">
-            {shortenAddress(onrampWalletAddress)}
-          </span>
-        </div>
-
-        {/* AMOUNT TO RECEIVE */}
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Amount to receive
-          </span>
-
-          <span className="text-right font-semibold text-foreground">
-            {onrampCryptoAmount}{" "}
-            {selectedCrypto?.symbol}
-
-            <span className="block text-[12px] font-normal text-muted-foreground">
-              {selectedCrypto
-                ? getNetworkConfig(selectedCrypto.network).name
-                : "Network"}
-            </span>
-          </span>
-        </div>
-
-        {/* TRANSACTION FEE */}
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Transaction fee
-          </span>
-
-          <span className="text-right font-semibold text-foreground">
-            {currentCurrency.symbol}
-            {(
-              Number(onrampLocalAmount || 0) * 0.05
-            ).toLocaleString("en-NG", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-
-        {/* AMOUNT TO PAY */}
-        <div className="flex items-center justify-between gap-5">
-          <span className="shrink-0 text-muted-foreground">
-            Amount to pay
-          </span>
-
-          <span className="text-right font-semibold text-foreground">
-            {currentCurrency.symbol}
-            {(
-              Number(onrampLocalAmount || 0) * 1.05
-            ).toLocaleString("en-NG", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
-        </div>
-
-      </div>
-    </div>
-
-    {/* =========================================
-        REFUND BANK ACCOUNT
-       ========================================= */}
-
-    <div className="mt-5 mb-3 text-[15px] font-bold">
-      Refund bank account
-    </div>
-
-    {/* BANK SELECTOR */}
-    <div
-      ref={onrampBankDropdownRef}
-      className="relative"
-    >
-      <button
-        type="button"
-        disabled={loadingBanks}
-        onClick={() =>
-          setOnrampBankDropdownOpen(
-            (open) => !open
-          )
-        }
-        className="flex h-[56px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:px-5 sm:text-[16px]"
-      >
-        <span
-          className={
-            onrampRefundBank
-              ? "text-foreground"
-              : "text-muted-foreground"
-          }
-        >
-          {loadingBanks
-            ? "Loading banks..."
-            : onrampRefundBank?.name ||
-              "Select Bank"}
-        </span>
-
-        {loadingBanks ? (
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        ) : (
-          <ChevronDown
-            className={`h-5 w-5 text-muted-foreground transition-transform ${
-              onrampBankDropdownOpen
-                ? "rotate-180"
-                : ""
-            }`}
-          />
-        )}
-      </button>
-
-      {/* BANK DROPDOWN */}
-      {onrampBankDropdownOpen && (
-        <div className="biyaport-dropdown absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-visible rounded-[12px] border border-border bg-[#070812] shadow-2xl">
-
-          {/* SEARCH */}
-          <div className="border-b border-border p-3">
-            <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-input px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-
-              <input
-                type="text"
-                value={onrampBankSearch}
-                onChange={(event) =>
-                  setOnrampBankSearch(
-                    event.target.value
-                  )
-                }
-                placeholder="Search bank"
-                className="min-w-0 flex-1 bg-transparent text-[14px] outline-none"
-              />
-            </div>
-          </div>
-
-          {/* BANK LIST */}
-          <div className="max-h-[280px] overflow-y-auto p-1.5">
-            {filteredOnrampInstitutions.length >
-            0 ? (
-              filteredOnrampInstitutions.map(
-                (bank) => (
-                  <button
-                    key={bank.code}
-                    type="button"
-                    onClick={() =>
-                      handleOnrampRefundBankSelect(
-                        bank
-                      )
-                    }
-                    className="flex w-full items-center justify-between rounded-[8px] px-3 py-3 text-left text-[14px] hover:bg-secondary"
-                  >
-                    <span>
-                      {bank.name}
-                    </span>
-
-                    {onrampRefundBank?.code ===
-                      bank.code && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
-                  </button>
-                )
-              )
-            ) : (
-              <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
-                {loadingBanks
-                  ? "Loading banks..."
-                  : "No banks found."}
-              </div>
-            )}
-          </div>
-
-        </div>
-      )}
-    </div>
-
-    {/* =========================================
-        ACCOUNT NUMBER
-       ========================================= */}
-
-    <div className="mt-3">
-      <input
-        type="text"
-        inputMode="numeric"
-        placeholder="Enter Account number"
-        value={
-          onrampRefundAccountNumber
-        }
-        onChange={
-          handleOnrampRefundAccountNumberChange
-        }
-        disabled={!onrampRefundBank}
-        className="h-[56px] w-full rounded-[10px] border border-border bg-input px-4 text-[15px] outline-none placeholder:text-muted-foreground disabled:opacity-50 sm:px-5 sm:text-[16px]"
-      />
-
-      {/* VERIFYING */}
-      {onrampRefundVerifying && (
-        <div className="mt-2 flex items-center gap-2 px-1 text-[13px] text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Verifying account...
-        </div>
-      )}
-
-      {/* VERIFIED ACCOUNT NAME */}
-      {onrampRefundAccountName &&
-        !onrampRefundVerifying && (
-          <div className="mt-2 px-1 text-[14px] text-muted-foreground">
-            {onrampRefundAccountName}
-          </div>
-        )}
-
-      {/* ACCOUNT ERROR */}
-      {onrampRefundError && (
-        <div className="mt-2 px-1 text-[13px] text-[#F04438]">
-          {onrampRefundError}
-        </div>
-      )}
-    </div>
-
-    {/* =========================================
-        ACTION BUTTONS
-       ========================================= */}
-
-    <div className="mt-4 flex w-full items-center gap-2">
-
-      {/* BACK */}
-      <button
-        type="button"
-        onClick={
-          handleOnrampBackToStepOne
-        }
-        className="flex h-[56px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium transition hover:bg-secondary sm:px-5 sm:text-[16px]"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </button>
-
-      {/* CONTINUE */}
-      <button
-        type="button"
-        onClick={
-          handleCreateOnrampOrder
-        }
-        disabled={
-          !onrampRefundBank ||
-          onrampRefundAccountNumber.length !==
-            10 ||
-          !onrampRefundAccountName ||
-          onrampRefundVerifying ||
-          onrampState === "creating"
-        }
-        className={`flex h-[56px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:text-[16px] ${
-          onrampRefundBank &&
-          onrampRefundAccountNumber.length ===
-            10 &&
-          onrampRefundAccountName &&
-          !onrampRefundVerifying &&
-          onrampState !== "creating"
-            ? "bg-primary text-primary-foreground hover:opacity-90"
-            : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
-        }`}
-      >
-        {onrampState === "creating" ? (
-          <span className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Creating...
-          </span>
-        ) : (
-          "Continue"
-        )}
-      </button>
-
-    </div>
-
-    {/* ONRAMP ERROR */}
-    {onrampError && (
-      <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
-        {onrampError}
-      </div>
-    )}
-  </>
-)}
-                  {/* =========================================
-                      ONRAMP MODAL 3
-                     ========================================= */}
-
-                  {onrampStep ===
-                    3 && (
-                    <>
-{onrampState ===
-"processing" ? (
-  <div className="py-10 text-center">
-
-    <div className="relative mx-auto flex h-[96px] w-[96px] items-center justify-center rounded-full bg-[#050511]">
-              <div
-                className="absolute h-[96px] w-[96px] rounded-full"
-                style={{
-                  background:
-                    "conic-gradient(from 0deg, transparent 0deg, transparent 45deg, #1557E8 110deg, #1557E8 150deg, transparent 210deg, transparent 360deg)",
-                  animation:
-                    "biyaport-spin 1.5s linear infinite",
-                }}
-              />
-
-              <div className="absolute h-[90px] w-[90px] rounded-full bg-[#050511]" />
-
-              <div className="relative flex h-[60px] w-[60px] items-center justify-center rounded-full bg-[#1557E8]">
-                <Send
-                  className="h-7 w-7 -rotate-12 text-white"
-                  strokeWidth={2.2}
-                />
-              </div>
-            </div>
-
-    <h2 className="mt-6 text-[20px] font-regular" style={{ fontFamily: specialGothic.style.fontFamily }}>
-      Transfer Processing
-    </h2>
-
-    <p className="mt-2 text-[14px] leading-[21px] text-muted-foreground">
-      {onrampStatusMessage}
-    </p>
-
-    <div className="mt-5 inline-flex rounded-[7px] bg-[#05091C] px-4 py-2 text-[14px] font-medium text-[#1557E8]">
-      Checking payment status...
-    </div>
-  </div>
-                      ) : onrampState ===
-                        "success" ? (
-                        <div className="py-10 text-center">
-
-                          <div className="mx-auto flex h-[80px] w-[80px] items-center justify-center rounded-full border-[3px] border-[#1557E8]">
-                            <div className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-[#1557E8]">
-                              <Check className="h-7 w-7 text-white" />
-                            </div>
-                          </div>
-
-                          <h2 className="mt-6 text-[20px] font-regular" style={{ fontFamily: specialGothic.style.fontFamily }}>
-                            Purchase Successful
-                          </h2>
-
-                          <p className="mt-2 text-[14px] leading-[21px] text-muted-foreground">
-                            {
-                              onrampCryptoAmount
-                            }{" "}
-                            {
-                              selectedCrypto?.symbol
-                            }{" "}
-                            has been sent to your wallet.
-                          </p>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              resetOnramp();
-                            }}
-                            className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[10px] bg-primary text-[15px] font-medium text-primary-foreground transition hover:opacity-90"
-                          >
-                            Back Home
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-
-                          {/* PAYMENT SUMMARY */}
-
-                          <div className="rounded-[10px] bg-input px-5 py-4">
-                            <div className="space-y-4 text-[15px] leading-[22px]">
-
-                              <div className="flex items-center justify-between gap-5">
-                                <span className="shrink-0 text-muted-foreground">
-                                  Bank name
-                                </span>
-
-                                <span className="max-w-[250px] truncate text-right font-semibold text-foreground">
-                                  {
-                                    onrampPaymentAccount?.bankName ||
-                                    onrampPaymentAccount?.institution ||
-                                    "-"
-                                  }
-                                </span>
-                              </div>
-
-                              <div className="flex items-center justify-between gap-5">
-                                <span className="shrink-0 text-muted-foreground">
-                                  Account Number
-                                </span>
-
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <span className="max-w-[180px] truncate text-right font-semibold text-foreground">
-                                    {
-                                      onrampPaymentAccount?.accountIdentifier ||
-                                      onrampPaymentAccount?.accountNumber ||
-                                      "-"
-                                    }
-                                  </span>
-
-                                  <CopyButton
-                                    value={
-                                      onrampPaymentAccount?.accountIdentifier ||
-                                      onrampPaymentAccount?.accountNumber ||
-                                      ""
-                                    }
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between gap-5">
-                                <span className="shrink-0 text-muted-foreground">
-                                  Account Name
-                                </span>
-
-                                <span className="max-w-[250px] truncate text-right font-semibold text-foreground">
-                                  {
-                                    onrampPaymentAccount?.accountName ||
-                                    "-"
-                                  }
-                                </span>
-                              </div>
-
-                              <div className="flex items-center justify-between gap-5">
-                                <span className="shrink-0 text-muted-foreground">
-                                  Amount
-                                </span>
-
-                                <div className="flex items-center gap-2">
-                                  <span className="text-right font-semibold text-foreground">
-                                    {
-                                      currentCurrency.symbol
-                                    }
-                                    {Number(
-                                      onrampPaymentAmount ||
-                                        0
-                                    ).toLocaleString(
-                                      "en-NG",
-                                      {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      }
-                                    )}
-                                  </span>
-
-                                  <CopyButton
-                                    value={`${currentCurrency.symbol}${onrampPaymentAmount}`}
-                                  />
-                                </div>
-                              </div>
-
-                            </div>
-                          </div>
-
-                          {/* EXPIRY */}
-
-                          <div className="mt-5 text-center text-[14px] leading-[21px] text-muted-foreground">
-                            This account is for this transaction only and expires in
-                          </div>
-
-                          <div className="mt-3 flex justify-center">
-                            <div className="inline-flex rounded-[7px] bg-[#05091C] px-4 py-2 text-[16px] font-semibold text-[#1557E8]">
-                              {formatCountdown(
-                                onrampCountdown
-                              )}
-                            </div>
-                          </div>
-
-                          {onrampCountdown ===
-                            0 &&
-                            onrampExpiry && (
-                              <div className="mt-2 text-center text-[13px] text-[#F04438]">
-                                This payment account has expired.
-                              </div>
-                            )}
-
-                          <div className="mt-6 flex w-full items-center gap-2">
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOnrampStep(
-                                  2
-                                );
-                                setOnrampError(
-                                  ""
-                                );
-                              }}
-                              className="flex h-[56px] shrink-0 items-center justify-center gap-2 rounded-[10px] border border-border bg-input px-4 text-[15px] font-medium transition hover:bg-secondary sm:px-5 sm:text-[16px]"
-                            >
-                              <ArrowLeft className="h-4 w-4" />
-                              Back
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={
-                                !onrampOrderId ||
-                                (!!onrampExpiry &&
-                                  onrampCountdown ===
-                                    0)
-                              }
-                              onClick={
-                                handleOnrampTransferMade
-                              }
-                              className={`flex h-[56px] min-w-0 flex-1 items-center justify-center rounded-[10px] text-[15px] font-medium transition sm:text-[16px] ${
-                                onrampOrderId &&
-                                (!onrampExpiry ||
-                                  onrampCountdown >
-                                    0)
-                                  ? "bg-primary text-primary-foreground hover:opacity-90"
-                                  : "cursor-not-allowed bg-muted text-muted-foreground opacity-60"
-                              }`}
-                            >
-                              I have made the transfer
-                            </button>
-                          </div>
-
-                          {onrampError && (
-                            <div className="mt-3 rounded-[10px] border border-[#F04438]/30 bg-[#F04438]/10 px-4 py-3 text-[13px] text-[#F04438]">
-                              {
-                                onrampError
-                              }
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
 
               {/* =================================================
                   OFFRAMP
@@ -5229,12 +4366,7 @@ ONRAMP MODAL 1
                             !authenticated ||
                             loadingBanks
                           }
-                          onClick={() =>
-                            setBankDropdownOpen(
-                              (open) =>
-                                !open
-                            )
-                          }
+                          onClick={handleBankDropdownToggle}
                           className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
                         >
                           <span
@@ -5649,7 +4781,7 @@ ONRAMP MODAL 1
     <div className="mt-2 px-1 text-[13px] text-muted-foreground">
       {offrampInputMode === "crypto" ? (
         <>
-          You will pay{" "}
+          You will get{" "}
           <span className="font-medium text-foreground">
             ₦{nairaAmountFormatted}
           </span>{" "}
@@ -5991,6 +5123,10 @@ function BCodeView({
     let cancelled = false;
 
     const loadGenerateTokenBalances = async () => {
+      if (!generateCryptoDropdownOpen) {
+        return;
+      }
+
       if (!wallet?.address) {
         setGenerateTokenBalances({
           USDC: "0.00",
@@ -6040,7 +5176,7 @@ function BCodeView({
     return () => {
       cancelled = true;
     };
-  }, [wallet?.address]);
+  }, [wallet?.address, generateCryptoDropdownOpen]);
 
   /*
    * ====================================================
@@ -6971,6 +6107,8 @@ function BCodeView({
               code
             )}`;
 
+          const QRCode = await getQRCode();
+
           const qr =
             await QRCode.toDataURL(
               deepLink,
@@ -7077,6 +6215,8 @@ function BCodeView({
           `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
             code
           )}`;
+
+        const QRCode = await getQRCode();
 
         const qr =
           await QRCode.toDataURL(
@@ -7696,6 +6836,8 @@ const downloadMyBCodeImage =
         `${window.location.origin}/?${BCODE_APP_PARAM}=${encodeURIComponent(
           item.code
         )}`;
+
+      const QRCode = await getQRCode();
 
       const qrDataUrl =
         await QRCode.toDataURL(
@@ -10733,6 +9875,8 @@ ctx.fillText(
 const explorerUrl =
   `${getNetworkConfig(network).explorerTx}${transactionHash}`;
 
+const QRCode = await getQRCode();
+
 const qrDataUrl =
   await QRCode.toDataURL(
     explorerUrl,
@@ -11125,7 +10269,7 @@ const filterSwapTokens = (
 const swapTokenCache = new Map<number, SwapToken[]>();
 const swapTokenCachePromises = new Map<number, Promise<SwapToken[]>>();
 
-async function getSwapTokensOnce(chainId: number) {
+async function getSwapTokensOnce(chainId: number): Promise<SwapToken[]> {
   const cached = swapTokenCache.get(chainId);
 
   if (cached) {
@@ -11151,8 +10295,19 @@ async function getSwapTokensOnce(chainId: number) {
         );
       }
 
-      const loaded = Array.isArray(data?.tokens)
-        ? data.tokens
+      const loaded: SwapToken[] = Array.isArray(data?.tokens)
+        ? data.tokens.filter((token: unknown): token is SwapToken => {
+            if (!token || typeof token !== "object") return false;
+            const item = token as Partial<SwapToken>;
+            return (
+              typeof item.chainId === "number" &&
+              typeof item.address === "string" &&
+              typeof item.name === "string" &&
+              typeof item.symbol === "string" &&
+              typeof item.decimals === "number" &&
+              typeof item.isNative === "boolean"
+            );
+          })
         : [];
 
       swapTokenCache.set(chainId, loaded);
@@ -11266,12 +10421,16 @@ function SwapNetworkButton({
   networks,
   value,
   onChange,
+  onOpen,
+  loading = false,
   disabled = false,
 }: {
   network?: SwapNetwork | null;
   networks: SwapNetwork[];
   value: number | null;
   onChange: (chainId: number) => void;
+  onOpen?: () => void | Promise<void>;
+  loading?: boolean;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -11300,8 +10459,15 @@ function SwapNetworkButton({
     <div ref={ref} className="relative shrink-0">
       <button
         type="button"
-        disabled={disabled || networks.length === 0}
-        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        disabled={disabled}
+        onClick={() => {
+          const nextOpen = !open;
+          setOpen(nextOpen);
+
+          if (nextOpen) {
+            void onOpen?.();
+          }
+        }}
         className={`flex h-10 items-center gap-2 rounded-[8px] border border-border bg-[#050511] px-2.5 text-[13px] font-medium transition ${
           disabled
             ? "cursor-default opacity-60"
@@ -11334,14 +10500,21 @@ function SwapNetworkButton({
           {current?.name || "Network"}
         </span>
 
-        {!disabled && (
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : !disabled ? (
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        )}
+        ) : null}
       </button>
 
       {open && !disabled && (
         <div className="biyaport-dropdown absolute right-0 top-[calc(100%+8px)] z-[80] w-[220px] overflow-hidden rounded-[11px] border border-border bg-[#070812] p-1.5 shadow-2xl">
-          {networks.map((item) => (
+          {loading || networks.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 px-3 py-4 text-[13px] text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading networks...
+            </div>
+          ) : networks.map((item) => (
             <button
               key={item.chainId}
               type="button"
@@ -11401,6 +10574,7 @@ function SwapTokenSelector({
   search,
   onSearchChange,
   onSelect,
+  onOpen,
   networks,
   selectedNetwork,
   onNetworkChange,
@@ -11415,6 +10589,7 @@ function SwapTokenSelector({
   search: string;
   onSearchChange: (value: string) => void;
   onSelect: (token: SwapToken) => void;
+  onOpen?: () => void | Promise<void>;
   networks: SwapNetwork[];
   selectedNetwork: SwapNetwork | null;
   onNetworkChange?: (chainId: number) => void;
@@ -11446,7 +10621,14 @@ function SwapTokenSelector({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((currentOpen) => !currentOpen)}
+        onClick={() => {
+          const nextOpen = !open;
+          setOpen(nextOpen);
+
+          if (nextOpen) {
+            void onOpen?.();
+          }
+        }}
         className={`flex h-[52px] items-center gap-2 rounded-[9px] bg-[#10101B] px-3 transition ${
           disabled
             ? "cursor-default opacity-60"
@@ -11507,6 +10689,8 @@ function SwapTokenSelector({
                 onChange={(chainId) =>
                   onNetworkChange?.(chainId)
                 }
+                onOpen={onOpen}
+                loading={loading}
                 disabled={networkDisabled}
               />
             </div>
@@ -11639,8 +10823,16 @@ function SwapView({
   }, [wallet, wallet?.address, authenticated]);
 
   const [networks, setNetworks] = useState<SwapNetwork[]>([]);
-  const [networksLoading, setNetworksLoading] = useState(true);
+  const [networksLoading, setNetworksLoading] = useState(false);
   const [networkError, setNetworkError] = useState("");
+  const swapInitializedRef = useRef(false);
+  const swapInitializationRequestRef = useRef<Promise<void> | null>(null);
+
+  const [swapBalances, setSwapBalances] =
+    useState<Record<string, string>>({});
+  const [swapBalancesLoading, setSwapBalancesLoading] =
+    useState(false);
+  const swapBalanceRequestRef = useRef<Promise<void> | null>(null);
 
   const [sellNetwork, setSellNetwork] =
     useState<SwapNetwork | null>(null);
@@ -11959,127 +11151,18 @@ function SwapView({
   }, [settingsOpen]);
 
   // ============================================================
-  // LOAD NETWORKS
+  // LAZY SWAP INITIALIZATION
   // ============================================================
 
-  useEffect(() => {
-    let cancelled = false;
+  /*
+   * Nothing related to Swap talks to an API/RPC until the user
+   * opens a token selector. The initializer is triggered by the
+   * selector itself, then reused for the rest of the session.
+   */
 
-    const loadNetworks = async () => {
-      setNetworksLoading(true);
-      setNetworkError("");
-
-      try {
-        const response = await fetch(
-          "/api/swap/networks",
-          {
-            cache: "no-store",
-          }
-        );
-
-        const data =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data?.error ||
-              "Unable to load swap networks."
-          );
-        }
-
-        const loaded =
-          Array.isArray(data?.networks)
-            ? data.networks
-            : [];
-
-        if (!cancelled) {
-          setNetworks(loaded);
-
-          const defaultNetwork =
-            loaded.find(
-              (network: SwapNetwork) =>
-                network.chainId === 8453
-            ) ??
-            loaded[0] ??
-            null;
-
-          setSellNetwork(defaultNetwork);
-          setBuyNetwork(defaultNetwork);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setNetworkError(
-            getUserFacingErrorMessage(
-              error,
-              "Unable to load swap networks."
-            )
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setNetworksLoading(false);
-        }
-      }
-    };
-
-    loadNetworks();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadBalance = async (
-      token: SwapToken | null,
-      setter: (value: string) => void,
-      setLoading: (value: boolean) => void
-    ) => {
-      if (!activeWalletAddress || !token) {
-        setter("0");
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-
-      try {
-        const client = getPublicClientByChainId(token.chainId);
-        let balance: bigint;
-
-        if (token.isNative || token.address.toLowerCase() === "0x0000000000000000000000000000000000000000") {
-          balance = await client.getBalance({
-            address: activeWalletAddress as `0x${string}`,
-          });
-        } else {
-          balance = await client.readContract({
-            address: token.address as `0x${string}`,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [activeWalletAddress as `0x${string}`],
-          });
-        }
-
-        if (!cancelled) {
-          setter(formatTokenAmount(balance.toString(), token.decimals) || "0");
-        }
-      } catch (error) {
-        console.error("SWAP BALANCE ERROR:", error);
-        if (!cancelled) setter("0");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    loadBalance(sellToken, setSellTokenBalance, setSellBalanceLoading);
-    loadBalance(buyToken, setBuyTokenBalance, setBuyBalanceLoading);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWalletAddress, sellToken?.address, sellToken?.chainId, buyToken?.address, buyToken?.chainId]);
+  // Token-specific balance state is synchronized from the lazy
+  // network balance cache below. No RPC runs just because the
+  // Swap view mounted.
 
   // ============================================================
   // LOAD TOKENS
@@ -12169,12 +11252,203 @@ function SwapView({
   };
 
   // ============================================================
+  // LAZY SWAP DATA LOADERS
+  // ============================================================
+
+  const getSwapBalanceKey = (token: SwapToken) =>
+    `${token.chainId}:${token.address.toLowerCase()}`;
+
+  const loadSwapBalancesForNetwork = async (
+    chainId: number,
+    tokens?: SwapToken[]
+  ) => {
+    if (!activeWalletAddress) {
+      return;
+    }
+
+    if (swapBalanceRequestRef.current) {
+      return swapBalanceRequestRef.current;
+    }
+
+    const request = (async () => {
+      setSwapBalancesLoading(true);
+
+      try {
+        const loadedTokens =
+          tokens ?? (await getSwapTokensOnce(chainId));
+
+        const client = getPublicClientByChainId(chainId);
+        const walletAddress =
+          activeWalletAddress as `0x${string}`;
+
+        const results = await Promise.all(
+          loadedTokens.map(async (token) => {
+            try {
+              const balance = token.isNative
+                ? await client.getBalance({
+                    address: walletAddress,
+                  })
+                : await client.readContract({
+                    // API token addresses may be mixed-case without a valid
+                    // EIP-55 checksum. Normalize them before viem validates
+                    // the address.
+                    address: getAddress(
+                      token.address.toLowerCase() as `0x${string}`
+                    ),
+                    abi: erc20Abi,
+                    functionName: "balanceOf",
+                    args: [walletAddress],
+                  });
+
+              return [
+                getSwapBalanceKey(token),
+                formatTokenAmount(
+                  balance.toString(),
+                  token.decimals
+                ) || "0",
+              ] as const;
+            } catch (error) {
+              console.error(
+                "SWAP BALANCE ERROR:",
+                error
+              );
+              return [
+                getSwapBalanceKey(token),
+                "0",
+              ] as const;
+            }
+          })
+        );
+
+        setSwapBalances((current) => ({
+          ...current,
+          ...Object.fromEntries(results),
+        }));
+      } finally {
+        setSwapBalancesLoading(false);
+        swapBalanceRequestRef.current = null;
+      }
+    })();
+
+    swapBalanceRequestRef.current = request;
+    return request;
+  };
+
+  const initializeSwap = async () => {
+    if (swapInitializedRef.current) {
+      return;
+    }
+
+    if (swapInitializationRequestRef.current) {
+      return swapInitializationRequestRef.current;
+    }
+
+    const request = (async () => {
+      setNetworksLoading(true);
+      setNetworkError("");
+
+      try {
+        const response = await fetch(
+          "/api/swap/networks",
+          { cache: "no-store" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data?.error ||
+              "Unable to load swap networks."
+          );
+        }
+
+        const loaded = Array.isArray(data?.networks)
+          ? data.networks
+          : [];
+
+        const defaultNetwork =
+          loaded.find(
+            (network: SwapNetwork) =>
+              network.chainId === 8453
+          ) ?? loaded[0] ?? null;
+
+        setNetworks(loaded);
+        setSellNetwork(defaultNetwork);
+        setBuyNetwork(defaultNetwork);
+
+        if (defaultNetwork) {
+          const defaultTokens =
+            await getSwapTokensOnce(
+              defaultNetwork.chainId
+            );
+
+          setSellTokens(defaultTokens);
+          setBuyTokens(defaultTokens);
+
+          await loadSwapBalancesForNetwork(
+            defaultNetwork.chainId,
+            defaultTokens
+          );
+        }
+
+        swapInitializedRef.current = true;
+      } catch (error) {
+        setNetworkError(
+          getUserFacingErrorMessage(
+            error,
+            "Unable to load swap networks."
+          )
+        );
+      } finally {
+        setNetworksLoading(false);
+        swapInitializationRequestRef.current = null;
+      }
+    })();
+
+    swapInitializationRequestRef.current = request;
+    return request;
+  };
+
+  const handleSwapSelectorOpen = async () => {
+    await initializeSwap();
+  };
+
+  // Keep selected-token balance labels in sync with the lazy cache.
+  useEffect(() => {
+    if (!sellToken) {
+      setSellTokenBalance("0");
+      setSellBalanceLoading(false);
+    } else {
+      const key = getSwapBalanceKey(sellToken);
+      setSellTokenBalance(swapBalances[key] ?? "0");
+      setSellBalanceLoading(
+        swapBalancesLoading && !(key in swapBalances)
+      );
+    }
+
+    if (!buyToken) {
+      setBuyTokenBalance("0");
+      setBuyBalanceLoading(false);
+    } else {
+      const key = getSwapBalanceKey(buyToken);
+      setBuyTokenBalance(swapBalances[key] ?? "0");
+      setBuyBalanceLoading(
+        swapBalancesLoading && !(key in swapBalances)
+      );
+    }
+  }, [
+    sellToken,
+    buyToken,
+    swapBalances,
+    swapBalancesLoading,
+  ]);
+
+  // ============================================================
   // SELL TOKENS
   // ============================================================
 
   useEffect(() => {
-    if (!sellNetwork) {
-      setSellTokens([]);
+    if (!swapInitializedRef.current || !sellNetwork) {
       return;
     }
 
@@ -12198,8 +11472,7 @@ function SwapView({
   // ============================================================
 
   useEffect(() => {
-    if (!buyNetwork) {
-      setBuyTokens([]);
+    if (!swapInitializedRef.current || !buyNetwork) {
       return;
     }
 
@@ -12510,6 +11783,10 @@ function SwapView({
     // swaps are supported. Changing Sell must never overwrite Buy.
     setSellNetwork(next);
 
+    if (next && swapInitializedRef.current) {
+      void loadSwapBalancesForNetwork(next.chainId);
+    }
+
     setSellToken(null);
     setBuyToken(null);
 
@@ -12559,6 +11836,11 @@ function SwapView({
       networks.find((item) => item.chainId === chainId) ?? null;
 
     setBuyNetwork(next);
+
+    if (next && swapInitializedRef.current) {
+      void loadSwapBalancesForNetwork(next.chainId);
+    }
+
     setBuyToken(null);
     setBuyAmount("");
     setBuySearch("");
@@ -13383,26 +12665,13 @@ function SwapView({
       : sellAmount;
 
   const getSwapTokenBalance = (token: SwapToken) => {
-    if (token.address.toLowerCase() ===
-      "0x0000000000000000000000000000000000000000") {
-      return sellToken?.address.toLowerCase() === token.address.toLowerCase()
-        ? (sellBalanceLoading ? "..." : sellTokenBalance)
-        : buyToken?.address.toLowerCase() === token.address.toLowerCase()
-        ? (buyBalanceLoading ? "..." : buyTokenBalance)
-        : "0";
+    const key = getSwapBalanceKey(token);
+
+    if (key in swapBalances) {
+      return swapBalances[key];
     }
 
-    if (sellToken?.address.toLowerCase() === token.address.toLowerCase() &&
-        sellToken?.chainId === token.chainId) {
-      return sellBalanceLoading ? "..." : sellTokenBalance;
-    }
-
-    if (buyToken?.address.toLowerCase() === token.address.toLowerCase() &&
-        buyToken?.chainId === token.chainId) {
-      return buyBalanceLoading ? "..." : buyTokenBalance;
-    }
-
-    return "0";
+    return swapBalancesLoading ? "..." : "0";
   };
 
   const displayedBuyAmount =
@@ -13760,6 +13029,8 @@ function SwapView({
                     onSelect={
                       handleSellTokenSelect
                     }
+                    onOpen={handleSwapSelectorOpen}
+                    getTokenBalance={getSwapTokenBalance}
                     networks={networks}
                     selectedNetwork={
                       sellNetwork
@@ -13771,9 +13042,7 @@ function SwapView({
                     // network list has loaded. It is intentionally
                     // independent from the Buy network.
                     networkDisabled={false}
-                    disabled={
-                      networksLoading
-                    }
+                    disabled={false}
                   />
 
                   <div className="group flex min-w-0 flex-1 items-center">
@@ -13868,6 +13137,7 @@ function SwapView({
                     onSelect={
                       handleBuyTokenSelect
                     }
+                    onOpen={handleSwapSelectorOpen}
                     networks={networks}
                     selectedNetwork={buyNetwork}
                     onNetworkChange={handleBuyNetworkChange}
@@ -13875,7 +13145,7 @@ function SwapView({
                     // Buy network is independently selectable for
                     // cross-chain swaps.
                     networkDisabled={false}
-                    disabled={!sellNetwork || !sellToken}
+                    disabled={false}
                   />
 
                   <div className="group flex min-w-0 flex-1 items-center">
@@ -14227,43 +13497,20 @@ function SiteNav({
   const [helpOpen, setHelpOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [promoOpen, setPromoOpen] = useState(false);
 
   useEffect(() => {
     setActiveMobileTab(activeTab);
   }, [activeTab]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
 
-    const key = "biyaport-promo-shown";
-
-    if (window.sessionStorage.getItem(key)) return;
-
-    window.sessionStorage.setItem(key, "1");
-    setPromoOpen(true);
-
-    const timeout = window.setTimeout(
-      () => setPromoOpen(false),
-      10_000
-    );
-
-    return () => window.clearTimeout(timeout);
-  }, []);
 
   const closeHelp = () => setHelpOpen(false);
-  const closePromo = () => setPromoOpen(false);
 
   const faqs = [
     {
       question: "What is Biyaport?",
       answer:
-        "Biyaport lets you buy and sell supported crypto with local currency, swap tokens, and create or redeem B-Codes.",
-    },
-    {
-      question: "How do I buy crypto?",
-      answer:
-        "Connect your wallet, choose Buy, enter an amount, and follow the payment instructions to complete your order.",
+        "Biyaport lets you sell supported crypto for local currency, swap tokens, and create or redeem B-Codes.",
     },
     {
       question: "How do I sell crypto?",
@@ -14289,7 +13536,6 @@ function SiteNav({
       aria-expanded={helpOpen}
       onClick={() => {
         setHelpOpen((open) => !open);
-        setPromoOpen(false);
         setFaqOpen(false);
       }}
       className={`${
@@ -14302,25 +13548,7 @@ function SiteNav({
     </button>
   );
 
-  const promoButton = (mobile = false) => (
-    <button
-      type="button"
-      aria-label={promoOpen ? "Close promotion" : "Open promotion"}
-      aria-expanded={promoOpen}
-      onClick={() => {
-        setPromoOpen((open) => !open);
-        setHelpOpen(false);
-        setFaqOpen(false);
-      }}
-      className={`${
-        mobile
-          ? "h-12 w-12 rounded-[12px]"
-          : "h-12 w-12 rounded-full"
-      } relative z-[141] flex shrink-0 items-center justify-center border border-[#0F0F1B] bg-[#050511] text-white shadow-lg transition-transform duration-300 hover:scale-105 active:scale-95`}
-    >
-      <Gift className="h-5 w-5" strokeWidth={2} />
-    </button>
-  );
+
 
   return (
     <>
@@ -14391,48 +13619,17 @@ function SiteNav({
         </div>
       </header>
 
-      {(helpOpen || faqOpen || promoOpen) && (
+      {(helpOpen || faqOpen) && (
         <button
           type="button"
           aria-label="Close overlay"
           onClick={() => {
             closeHelp();
             setFaqOpen(false);
-            closePromo();
           }}
           className="fixed inset-0 z-[120] cursor-default bg-[#050511]/25 backdrop-blur-[6px]"
         />
       )}
-
-      {/* Desktop promotion */}
-      <div className="fixed bottom-5 left-5 z-[140] hidden items-end md:flex">
-        {promoOpen && (
-          <div className="absolute bottom-14 left-0 origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#070812] p-4 text-[14px] leading-6 text-white shadow-2xl whitespace-nowrap">
-  <button
-    type="button"
-    onClick={closePromo}
-    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
-    aria-label="Close promotion"
-  >
-    <X className="h-4 w-4" />
-  </button>
-
-  <p className="pr-6">
-    Get <strong>₦5k</strong> cashback when you Buy/sell up to $150!{" "}
-    <a
-      href="https://t.me/biyaport"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-bold text-[#4D8DFF] transition hover:text-white"
-    >
-      Claim now
-    </a>
-  </p>
-</div>
-        )}
-
-        {promoButton(false)}
-      </div>
 
       {/* Desktop help */}
       <div className="fixed bottom-5 right-5 z-[140] hidden items-end md:flex">
@@ -14474,20 +13671,6 @@ function SiteNav({
       {/* Mobile bottom utility bar */}
       <div className="fixed bottom-0 left-0 right-0 z-[140] flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+4px)] md:hidden">
         <div className="flex w-full max-w-[430px] items-center justify-between gap-2">
-          {promoOpen ? (
-            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-              <button
-                type="button"
-                aria-label="Close promotion"
-                onClick={closePromo}
-                className="relative z-[141] flex h-12 w-12 items-center justify-center rounded-[12px] border border-[#0F0F1B] bg-[#050511] text-white"
-              >
-                <Gift className="h-5 w-5" />
-              </button>
-            </div>
-          ) : (
-            promoButton(true)
-          )}
 
           <nav
             className="flex w-fit max-w-[calc(100vw-152px)] items-center gap-1 rounded-[15px] border border-[#0F0F1B] bg-[#050511] p-2"
@@ -14623,32 +13806,6 @@ function SiteNav({
             Support
           </button>
         </div>
-      )}
-
-      {/* Mobile promotion */}
-      {promoOpen && (
-        <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+80px)] left-5 z-[141] w-max max-w-[calc(100vw-40px)] origin-bottom-left animate-[biyaport-promo-in_500ms_cubic-bezier(0.16,1,0.3,1)] rounded-[14px] border border-[#242434] bg-[#070812] p-4 text-[14px] leading-6 text-white shadow-2xl md:hidden">
-  <button
-    type="button"
-    onClick={closePromo}
-    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
-    aria-label="Close promotion"
-  >
-    <X className="h-4 w-4" />
-  </button>
-
-  <p className="pr-6">
-    Get <strong>₦5k</strong> cashback when you Buy/sell up to $150!{" "}
-    <a
-      href="https://t.me/biyaport"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-bold text-[#4D8DFF] transition hover:text-white"
-    >
-      Claim now
-    </a>
-  </p>
-</div>
       )}
 
       {/* FAQ dialog */}

@@ -10,9 +10,7 @@ export async function GET() {
 
   if (!apiKey) {
     return NextResponse.json(
-      {
-        error: "ZEROX_API_KEY is not configured",
-      },
+      { error: "ZEROX_API_KEY is not configured" },
       { status: 500 }
     );
   }
@@ -32,15 +30,9 @@ export async function GET() {
             }
           );
 
-          return {
-            ...network,
-            available: response.ok,
-          };
+          return { ...network, available: response.ok };
         } catch {
-          return {
-            ...network,
-            available: false,
-          };
+          return { ...network, available: false };
         }
       })
     );
@@ -49,16 +41,11 @@ export async function GET() {
       .filter((network) => network.available)
       .map(({ available, ...network }) => network);
 
-    return NextResponse.json({
-      networks,
-    });
+    return NextResponse.json({ networks });
   } catch (error) {
     console.error("[SWAP NETWORKS]", error);
-
     return NextResponse.json(
-      {
-        error: "Failed to load swap networks",
-      },
+      { error: "Failed to load swap networks" },
       { status: 500 }
     );
   }

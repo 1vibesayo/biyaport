@@ -24,7 +24,9 @@ function getNetwork(chainId: number) {
   );
 }
 
-function getDefaultTokens(network: (typeof SWAP_NETWORKS)[number]): Token[] {
+function getDefaultTokens(
+  network: (typeof SWAP_NETWORKS)[number]
+): Token[] {
   return [
     {
       chainId: network.chainId,
@@ -170,9 +172,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    /*
-     * CoinGecko standard API contract lookup.
-     */
     const response = await fetch(
       `https://api.coingecko.com/api/v3/coins/${platform}/contract/${search}`,
       {
@@ -222,7 +221,9 @@ export async function GET(request: Request) {
       symbol: data.symbol
         ? String(data.symbol).toUpperCase()
         : "UNKNOWN",
-      decimals: Number.isInteger(data.detail_platforms?.[platform]?.decimal_place)
+      decimals: Number.isInteger(
+        data.detail_platforms?.[platform]?.decimal_place
+      )
         ? data.detail_platforms[platform].decimal_place
         : 18,
       logoURI:

@@ -1068,6 +1068,9 @@ export default function Home() {
   const [loadingBanks, setLoadingBanks] =
     useState(false);
 
+  const [banksLoadError, setBanksLoadError] =
+    useState(false);
+
   const [accountNumber, setAccountNumber] =
     useState("");
 
@@ -1335,6 +1338,7 @@ export default function Home() {
 
     const request = (async () => {
       setLoadingBanks(true);
+      setBanksLoadError(false);
 
       try {
         const response = await fetch(
@@ -1358,16 +1362,33 @@ export default function Home() {
           ? data.data
           : Array.isArray(data)
           ? data
-          : [];
+          : null;
+
+        if (
+          !banks ||
+          banks.length === 0 ||
+          !banks.every(
+            (bank: Institution) =>
+              bank &&
+              typeof bank.name === "string" &&
+              bank.name.trim().length > 0 &&
+              typeof bank.code === "string" &&
+              bank.code.trim().length > 0
+          )
+        ) {
+          throw new Error("Invalid banks response");
+        }
 
         setInstitutions(banks);
-        institutionsLoadedRef.current = banks.length > 0;
+        institutionsLoadedRef.current = true;
       } catch (error) {
         console.error(
           "BANK FETCH ERROR:",
           error
         );
         institutionsLoadedRef.current = false;
+        setBanksLoadError(true);
+        setInstitutions([]);
       } finally {
         setLoadingBanks(false);
         institutionsRequestRef.current = null;
@@ -4423,7 +4444,15 @@ if (selectedCrypto.symbol === "ETH") {
                             </div>
 
                             <div className="max-h-[280px] overflow-y-auto p-1.5">
-                              {filteredInstitutions.length >
+                              {loadingBanks ? (
+                                <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
+                                  Loading banks...
+                                </div>
+                              ) : banksLoadError ? (
+                                <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
+                                  Could not load banks right now, kindly refresh.
+                                </div>
+                              ) : filteredInstitutions.length >
                               0 ? (
                                 filteredInstitutions.map(
                                   (
@@ -4456,7 +4485,7 @@ if (selectedCrypto.symbol === "ETH") {
                                 )
                               ) : (
                                 <div className="px-3 py-8 text-center text-[14px] text-muted-foreground">
-                                  No banks found.
+                                  Loading Banks...
                                 </div>
                               )}
                             </div>

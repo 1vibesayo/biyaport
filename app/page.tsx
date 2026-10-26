@@ -10813,7 +10813,7 @@ function SwapView({
   onBCodes?: () => void;
   onSwap?: () => void;
 }) {
-  const { authenticated, login } = usePrivy();
+  const { authenticated } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
 
@@ -11608,12 +11608,8 @@ function SwapView({
                    * Do not send the buy-side amount as sellAmount.
                    */
                   sellAmount: units,
-                  ...(activeWalletAddress
-                    ? {
-                        originAddress: activeWalletAddress,
-                        destinationAddress: activeWalletAddress,
-                      }
-                    : {}),
+                  originAddress: activeWalletAddress,
+                  destinationAddress: activeWalletAddress,
                   slippageBps: getSlippageBps(),
                 }
               : {
@@ -11623,9 +11619,7 @@ function SwapView({
                   ...(activeSide === "sell"
                     ? { sellAmount: units }
                     : { buyAmount: units }),
-                  ...(activeWalletAddress
-                    ? { taker: activeWalletAddress }
-                    : {}),
+                  taker: activeWalletAddress,
                 }
           ),
         }
@@ -13293,29 +13287,18 @@ function SwapView({
               ) : null}
 
               {/* ==================================================
-                  WALLET
-              ================================================== */}
-
-              {/* ==================================================
                   SWAP BUTTON
               ================================================== */}
 
               <button
                 type="button"
                 disabled={
-                  (authenticated && activeWalletAddress
-                    ? !canSwap
-                    : false) ||
+                  !canSwap ||
                   swapLoading
                 }
-                onClick={() => {
-                  if (!authenticated || !activeWalletAddress) {
-                    login();
-                    return;
-                  }
-
-                  void executeSwap();
-                }}
+                onClick={
+                  executeSwap
+                }
                 className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span
@@ -13324,8 +13307,6 @@ function SwapView({
                       ? sellToken?.isNative
                         ? "confirm-swap"
                         : "preparing-swap"
-                      : !authenticated || !activeWalletAddress
-                      ? "connect-wallet"
                       : !sellNetwork || !sellToken || !buyToken
                       ? "select-tokens"
                       : !hasAmount
@@ -13345,8 +13326,6 @@ function SwapView({
                       <Loader2 className="h-5 w-5 animate-spin" />
                       {sellToken?.isNative ? "Confirm swap" : "Preparing swap"}
                     </>
-                  ) : !authenticated || !activeWalletAddress ? (
-                    "Connect wallet"
                   ) : !sellNetwork || !sellToken || !buyToken ? (
                     "Select tokens to swap"
                   ) : !hasAmount ? (
@@ -13358,6 +13337,8 @@ function SwapView({
                     </>
                   ) : !price ? (
                     "Fetching the best rate"
+                  ) : !authenticated || !activeWalletAddress ? (
+                    "Connect wallet"
                   ) : (
                     "Swap"
                   )}

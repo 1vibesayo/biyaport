@@ -13,6 +13,7 @@
     "@privy-io/react-auth": "^3.37.0",
     "@solana/web3.js": "^1.99.0",
     "@types/qrcode": "^1.5.6",
+    "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.30.0",

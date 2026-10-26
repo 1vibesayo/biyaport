@@ -4383,10 +4383,7 @@ if (selectedCrypto.symbol === "ETH") {
                       >
                         <button
                           type="button"
-                          disabled={
-                            !authenticated ||
-                            loadingBanks
-                          }
+                          disabled={loadingBanks}
                           onClick={handleBankDropdownToggle}
                           className="flex h-[52px] w-full items-center justify-between rounded-[10px] border border-border bg-input px-4 text-left text-[15px] disabled:opacity-50 sm:h-[56px] sm:px-5 sm:text-[16px]"
                         >

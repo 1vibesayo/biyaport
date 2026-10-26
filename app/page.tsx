@@ -4534,7 +4534,8 @@ if (selectedCrypto.symbol === "ETH") {
 
                       <QuickSendWalletButton />
 
-                      {accountName &&
+                      {authenticated &&
+                        accountName &&
                         !verifyingAccount && (
                           <button
                             type="button"
@@ -10812,7 +10813,7 @@ function SwapView({
   onBCodes?: () => void;
   onSwap?: () => void;
 }) {
-  const { authenticated } = usePrivy();
+  const { authenticated, login } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
 
@@ -11607,8 +11608,12 @@ function SwapView({
                    * Do not send the buy-side amount as sellAmount.
                    */
                   sellAmount: units,
-                  originAddress: activeWalletAddress,
-                  destinationAddress: activeWalletAddress,
+                  ...(activeWalletAddress
+                    ? {
+                        originAddress: activeWalletAddress,
+                        destinationAddress: activeWalletAddress,
+                      }
+                    : {}),
                   slippageBps: getSlippageBps(),
                 }
               : {
@@ -11618,7 +11623,9 @@ function SwapView({
                   ...(activeSide === "sell"
                     ? { sellAmount: units }
                     : { buyAmount: units }),
-                  taker: activeWalletAddress,
+                  ...(activeWalletAddress
+                    ? { taker: activeWalletAddress }
+                    : {}),
                 }
           ),
         }
@@ -13289,13 +13296,6 @@ function SwapView({
                   WALLET
               ================================================== */}
 
-              {!authenticated ||
-              !activeWalletAddress ? (
-                <div className="mt-5 rounded-[10px] border border-border bg-[#070812] p-3 text-center text-[13px] text-muted-foreground">
-                  Connect your wallet to swap.
-                </div>
-              ) : null}
-
               {/* ==================================================
                   SWAP BUTTON
               ================================================== */}
@@ -13303,12 +13303,19 @@ function SwapView({
               <button
                 type="button"
                 disabled={
-                  !canSwap ||
+                  (authenticated && activeWalletAddress
+                    ? !canSwap
+                    : false) ||
                   swapLoading
                 }
-                onClick={
-                  executeSwap
-                }
+                onClick={() => {
+                  if (!authenticated || !activeWalletAddress) {
+                    login();
+                    return;
+                  }
+
+                  void executeSwap();
+                }}
                 className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary text-[15px] font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span
@@ -13317,6 +13324,8 @@ function SwapView({
                       ? sellToken?.isNative
                         ? "confirm-swap"
                         : "preparing-swap"
+                      : !authenticated || !activeWalletAddress
+                      ? "connect-wallet"
                       : !sellNetwork || !sellToken || !buyToken
                       ? "select-tokens"
                       : !hasAmount
@@ -13336,6 +13345,8 @@ function SwapView({
                       <Loader2 className="h-5 w-5 animate-spin" />
                       {sellToken?.isNative ? "Confirm swap" : "Preparing swap"}
                     </>
+                  ) : !authenticated || !activeWalletAddress ? (
+                    "Connect wallet"
                   ) : !sellNetwork || !sellToken || !buyToken ? (
                     "Select tokens to swap"
                   ) : !hasAmount ? (
@@ -13347,8 +13358,6 @@ function SwapView({
                     </>
                   ) : !price ? (
                     "Fetching the best rate"
-                  ) : !authenticated || !activeWalletAddress ? (
-                    "Connect wallet"
                   ) : (
                     "Swap"
                   )}
